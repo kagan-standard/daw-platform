@@ -1,4 +1,7 @@
 # Phase 1: Ship BeerBook with DAW SSO
+Existing Traefik docker network name is `traefik`.
+BeerBook source files are already in apps/beerbook/.
+
 
 ## Goal
 Ship a working BeerBook at `https://beerbook.drinksafterwork.net` with DAW SSO via Keycloak at `https://auth.drinksafterwork.net`, and self-hosted Supabase as the data + realtime layer. All services run on the Hetzner VM (`178.156.232.88`) behind the existing Traefik reverse proxy.
