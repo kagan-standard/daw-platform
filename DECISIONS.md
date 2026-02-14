@@ -1,40 +1,33 @@
-DECISIONS.md
-Platform Identity Decision
+# DECISIONS.md
+
+## Platform Identity Decision
 
 Identity Provider: Keycloak
 Realm: daw
 Canonical User ID: sub (OIDC subject from Keycloak)
 
 Keycloak is the single source of truth for identity across:
-
-BeerBook
-
-Matrix (future OIDC integration)
-
-DAWFootball (future)
-
-DAW Web (future)
+- BeerBook
+- Matrix (future OIDC integration)
+- DAWFootball (future)
+- DAW Web (future)
 
 Supabase Auth will NOT be used.
 
-Data Platform Decision
+## Data Platform Decision
 
 Standard DAW Data Platform: Self-hosted Supabase
 
 Supabase provides:
-
-Postgres database
-
-Realtime (Broadcast / Presence / Postgres Changes)
-
-Row Level Security (RLS)
-
-Storage (optional later)
+- Postgres database
+- Realtime (Broadcast / Presence / Postgres Changes)
+- Row Level Security (RLS)
+- Storage (optional later)
 
 BeerBook uses Supabase for data only.
 Future DAWFootball live draft features will use Supabase Realtime.
 
-Hosting Decision
+## Hosting Decision
 
 Primary Host: Hetzner VM
 Public IP: 178.156.232.88
@@ -43,110 +36,89 @@ All core services will run as Docker containers on this VM unless future scaling
 
 Reverse proxy: Traefik (existing, playbook-managed)
 
-Domain Strategy
+## Domain Strategy
 
 Primary domain: drinksafterwork.net
 DNS: Google name servers
 
 Subdomains:
-
-auth.drinksafterwork.net → Keycloak
-
-beerbook.drinksafterwork.net → BeerBook
-
-matrix.drinksafterwork.net → Synapse
-
-element.drinksafterwork.net → Element
-
-football.drinksafterwork.net → DAWFootball (later)
+- auth.drinksafterwork.net → Keycloak
+- beerbook.drinksafterwork.net → BeerBook
+- api.beerbook.drinksafterwork.net → beerbook-api
+- matrix.drinksafterwork.net → Synapse
+- element.drinksafterwork.net → Element
+- football.drinksafterwork.net → DAWFootball (later)
 
 All A records point to: 178.156.232.88
 
-TLS handled via Traefik + Let’s Encrypt.
+TLS handled via Traefik + Let's Encrypt.
 
-Phase 1 Scope Decision (Stability First)
+## Phase 1 Scope Decision (Stability First)
 
 Phase 1 includes:
-
-Keycloak deployed
-
-Supabase self-host deployed
-
-BeerBook deployed behind Traefik
-
-OIDC login working
-
-Reviews persist in database
+- Keycloak deployed
+- Supabase self-host deployed
+- BeerBook deployed behind Traefik
+- OIDC login working
+- Reviews persist in database
+- Token audience/azp validation enforced
+- Pagination and rate limiting on public endpoints
+- CORS origin hardening
+- Rollback runbook tested
+- Secret rotation runbook documented
 
 Phase 1 excludes:
+- Matrix OIDC integration
+- DAWFootball resurrection
+- Multi-VM scaling
+- Advanced logging stack
+- Production hardening beyond baseline security
 
-Matrix OIDC integration
-
-DAWFootball resurrection
-
-Multi-VM scaling
-
-Advanced logging stack
-
-Production hardening beyond baseline security
-
-Database Isolation Decision
+## Database Isolation Decision
 
 Supabase Postgres will:
+- Not be exposed publicly
+- Only be accessible via Docker internal network
+- Be backed up regularly (backup process defined in runbooks)
 
-Not be exposed publicly
+## Secrets Management Decision
 
-Only be accessible via Docker internal network
+All secrets stored in .env files.
+.env never committed.
+Keycloak admin credentials stored securely.
+Supabase JWT secret stored securely.
 
-Be backed up regularly (backup process defined in runbooks)
+### Secret Rotation Policy
+- Rotation cadence: Quarterly, or immediately on incident / staff turnover
+- Covered secrets: Keycloak admin password, PGRST_JWT_SECRET, Supabase service_role key, Supabase anon key
+- Rotation procedure documented in `runbooks/secret_rotation.md`
+- Emergency invalidation procedure documented for key-compromise scenarios
+- Post-rotation verification checklist required after every rotation
 
-Secrets Management Decision
-
-All secrets stored in .env files
-
-.env never committed
-
-Keycloak admin credentials stored securely
-
-Supabase JWT secret stored securely
-
-Agent Execution Rules
+## Agent Execution Rules
 
 Agents (Cursor, Claude, etc.) must:
+- Assume sensible defaults
+- Log assumptions in PHASE1.md Agent Assumption Log instead of asking unless:
+  - DNS change required
+  - Security risk introduced
+  - Data deletion involved
+  - Additional hosting cost introduced
+- Always produce:
+  - docker-compose updates
+  - runbook steps
+  - smoke test verification steps
 
-Assume sensible defaults
+## Future Architectural Direction
 
-Log assumptions here instead of asking unless:
+DAW becomes a multi-service platform.
+Keycloak remains identity spine.
+Supabase remains data + realtime spine.
+Services remain isolated deployments (no monolithic merge).
+Event-driven features (live draft, notifications) will use Supabase Realtime.
 
-DNS change required
+## BeerBook Stack Decision
 
-Security risk introduced
-
-Data deletion involved
-
-Additional hosting cost introduced
-
-Always produce:
-
-docker-compose updates
-
-runbook steps
-
-smoke test verification steps
-
-Future Architectural Direction
-
-DAW becomes a multi-service platform
-
-Keycloak remains identity spine
-
-Supabase remains data + realtime spine
-
-Services remain isolated deployments (no monolithic merge)
-
-Event-driven features (live draft, notifications) will use Supabase Realtime
-
-BeerBook Stack Decision
 Framework: Vanilla JavaScript (no build step, no bundler)
 Charts: Chart.js 4.x (CDN)
 Styling: Custom CSS (pub/craft brewery theme)
@@ -154,22 +126,110 @@ Auth: Keycloak OIDC Authorization Code + PKCE (implemented in supabase.js)
 Data: Supabase Postgres via beerbook-api (NOT direct browser-to-Supabase)
 Serving: nginx:alpine container behind Traefik
 Source: Existing codebase (claude_beerbook_with_keycloak_expected.zip)
-Known debt: Frontend supabase.js must be rewired from direct Supabase client
-calls to fetch() calls against beerbook-api. Supabase JS CDN removed from frontend.
-Data Access Pattern Decision
+Known debt: Frontend supabase.js must be rewired from direct Supabase client calls to fetch() calls against beerbook-api. Supabase JS CDN removed from frontend.
+
+## Data Access Pattern Decision
+
 Pattern: Backend-for-Frontend (BFF) via beerbook-api
 
-Browser calls ONLY beerbook-api (https://api.beerbook.drinksafterwork.net)
-beerbook-api validates Keycloak access tokens via JWKS
-beerbook-api calls PostgREST internally using Supabase service role key
-Supabase containers (PostgREST, Realtime, Postgres) are NEVER exposed publicly
-RLS disabled in Phase 1 — safe because PostgREST has no public access
-Phase 2: re-enable RLS with JWT sub verification for defense-in-depth
+- Browser calls ONLY beerbook-api (https://api.beerbook.drinksafterwork.net)
+- beerbook-api validates Keycloak access tokens via JWKS
+- beerbook-api calls PostgREST internally using Supabase service role key
+- Supabase containers (PostgREST, Realtime, Postgres) are NEVER exposed publicly
+- RLS disabled in Phase 1 — safe because PostgREST has no public access
+- Phase 2: re-enable RLS with JWT sub verification for defense-in-depth
 
-Database Schema Decision
+## Token Validation Decision
 
-profiles.id and ratings.user_id are TEXT (Keycloak sub claim)
-No references to Supabase auth.users table
-No use of auth.uid() in RLS policies
-Original database-schema.sql must be replaced with corrected version (see PHASE1.md Task 4)
-End of Decisions v1
+beerbook-api validates Keycloak access tokens with the following checks:
+
+| Check | Requirement | Failure response |
+|-------|-------------|-----------------|
+| `iss` | Must equal `https://auth.drinksafterwork.net/realms/daw` | 401 |
+| `exp` | Must not be expired (30s clock skew tolerance) | 401 |
+| `aud` | Must include `beerbook` | 403 |
+| `azp` | Must equal `beerbook` | 403 |
+| Signature | Must validate against Keycloak JWKS | 401 |
+
+Rationale: Without `aud`/`azp` checks, tokens minted for other DAW clients (e.g. future dawfootball) would be accepted by beerbook-api. This is a cross-client token confusion risk.
+
+Keycloak must be configured with an audience mapper on the `beerbook` client so that `aud: beerbook` appears in access tokens.
+
+Clock skew tolerance is configurable via `TOKEN_CLOCK_SKEW_SECONDS` env var (default: 30).
+
+## Pagination Decision
+
+All public read endpoints enforce pagination:
+- Default page size: 50
+- Maximum page size: 100 (values above 100 clamped)
+- Sort fields: whitelisted (`created_at`, `rating`, `beer_name`); invalid fields → 400
+- Response format: `{ "data": [...], "pagination": { "limit": N, "offset": N, "total": N } }`
+
+Rationale: Without pagination, public endpoints are vulnerable to memory exhaustion, expensive aggregate queries, and abusive scraping.
+
+## Rate Limiting Decision
+
+All public API routes are rate-limited per IP:
+- Window: 60 seconds
+- Max requests per window: 100
+- Burst allowance: 120 (sliding window)
+- Exceeded → 429 with `Retry-After` header
+- Thresholds configurable via env vars (`RATE_LIMIT_WINDOW_MS`, `RATE_LIMIT_MAX`)
+
+Rationale: Public endpoints without rate limiting are vulnerable to DoS and noisy scraping.
+
+## CORS Decision
+
+beerbook-api allows requests only from `https://beerbook.drinksafterwork.net`:
+- Exact origin match (no wildcards)
+- Preflight `OPTIONS` returns 204 for allowed origin, 403 for others
+- Non-allowed origins receive no CORS headers
+
+Tests for CORS behavior are included in smoke tests to prevent silent regression.
+
+## Rollback Decision
+
+Every deployment task has explicit abort/rollback criteria:
+- "Abort if" conditions defined per task
+- Last-known-good image tags recorded after each successful deploy
+- All images pinned to explicit version tags (no `:latest`)
+- Rollback target: recovery in < 10 minutes
+- Rollback drill required in Phase 1 smoke tests
+
+Documented in `runbooks/rollback.md`.
+
+## RLS Phase 2 Gate Decision
+
+> **No Phase 2 feature work begins until:**
+> - RLS baseline policy is enabled on `ratings` and `profiles` tables
+> - RLS policies tested: service_role bypasses, anon blocked, per-user filtering works
+> - Smoke tests updated to validate RLS behavior
+
+Rationale: "RLS disabled" is acceptable in Phase 1 because PostgREST is internal-only. Without an explicit gate, this temporary control becomes permanent tech debt.
+
+## Database Schema Decision
+
+- `profiles.id` and `ratings.user_id` are TEXT (Keycloak sub claim)
+- No references to Supabase `auth.users` table
+- No use of `auth.uid()` in RLS policies
+- Original `database-schema.sql` must be replaced with corrected version (see PHASE1.md Task 4)
+
+## Filename Convention Decision
+
+All root-level documentation files use UPPERCASE names:
+- `ARCHITECTURE.md`
+- `DECISIONS.md`
+- `PHASE1.md`
+- `PLAN_CRITIQUE.md`
+
+Rationale: Case-sensitive filesystems (Linux) treat `architecture.md` and `ARCHITECTURE.md` as different files. Standardizing prevents automation breakage when scripts or agent prompts reference these files.
+
+## Container Image Versioning Decision
+
+All docker-compose services pin to explicit image version tags. `:latest` is never used.
+
+Rationale: Explicit tags provide a known-good rollback target and prevent surprise behavior changes from upstream image updates.
+
+---
+
+_End of Decisions v2_
