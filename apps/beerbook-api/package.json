@@ -1,0 +1,15 @@
+{
+  "name": "beerbook-api",
+  "version": "1.0.0",
+  "description": "BFF for BeerBook — validates Keycloak tokens, proxies to PostgREST",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "express": "^4.21.0",
+    "express-rate-limit": "^7.2.0",
+    "jose": "^5.9.6"
+  }
+}
