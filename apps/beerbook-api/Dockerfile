@@ -1,8 +1,8 @@
 # beerbook-api — Node 20 Alpine, explicit tag for rollback
 FROM node:20-alpine3.19
 WORKDIR /app
-COPY package.json ./
-RUN npm ci --omit=dev
+COPY package.json package-lock.json* ./
+RUN npm ci --omit=dev || npm install --omit=dev
 COPY server.js ./
 EXPOSE 3001
 USER node

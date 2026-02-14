@@ -22,6 +22,8 @@ const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
 
 // ---------- Helpers: call PostgREST ----------
+// BUG FIX #2: Don't spread opts into fetch — it overrides the constructed headers.
+// Instead, only pass method, headers, and body explicitly.
 async function rest(method, path, opts = {}) {
   const url = `${REST_URL}${path}`;
   const headers = {
@@ -30,7 +32,7 @@ async function rest(method, path, opts = {}) {
     'apikey': SERVICE_ROLE_KEY,
     ...opts.headers,
   };
-  const res = await fetch(url, { method, headers, body: opts.body, ...opts });
+  const res = await fetch(url, { method, headers, body: opts.body });
   const text = await res.text();
   let body;
   try { body = text ? JSON.parse(text) : null; } catch { body = null; }
@@ -138,6 +140,15 @@ function parsePagination(req) {
   return { limit, offset, sort, order };
 }
 
+// ---------- Sort validation middleware ----------
+// BUG FIX #3: Reject invalid sort fields with 400 on all endpoints consistently.
+function validateSort(req, res, next) {
+  if (req.query.sort && !SORT_WHITELIST.includes(req.query.sort)) {
+    return res.status(400).json({ error: 'Invalid sort field. Allowed: ' + SORT_WHITELIST.join(', ') });
+  }
+  next();
+}
+
 // ---------- Routes ----------
 
 // GET /api/health
@@ -146,7 +157,8 @@ app.get('/api/health', (req, res) => {
 });
 
 // GET /api/ratings — public, paginated
-app.get('/api/ratings', async (req, res) => {
+// BUG FIX #3: Added validateSort middleware
+app.get('/api/ratings', validateSort, async (req, res) => {
   const { limit, offset, sort, order } = parsePagination(req);
   const orderDir = order === 'asc' ? 'asc' : 'desc';
   const { status, headers, body } = await rest('GET', `/ratings?limit=${limit}&offset=${offset}&order=${sort}.${orderDir}`, {
@@ -163,10 +175,7 @@ app.get('/api/ratings', async (req, res) => {
 });
 
 // GET /api/ratings/user/:id — public, paginated
-app.get('/api/ratings/user/:id', async (req, res) => {
-  if (req.query.sort && !SORT_WHITELIST.includes(req.query.sort)) {
-    return res.status(400).json({ error: 'Invalid sort field. Allowed: ' + SORT_WHITELIST.join(', ') });
-  }
+app.get('/api/ratings/user/:id', validateSort, async (req, res) => {
   const { limit, offset, sort, order } = parsePagination(req);
   const orderDir = order === 'asc' ? 'asc' : 'desc';
   const id = encodeURIComponent(req.params.id);
@@ -184,6 +193,7 @@ app.get('/api/ratings/user/:id', async (req, res) => {
 });
 
 // POST /api/ratings — auth required
+// BUG FIX #5: Added Prefer: return=representation so PostgREST returns the created row
 app.post('/api/ratings', authMiddleware, async (req, res) => {
   const { sub, preferred_username } = req.claims;
   const b = req.body || {};
@@ -206,6 +216,7 @@ app.post('/api/ratings', authMiddleware, async (req, res) => {
     return res.status(400).json({ error: 'beer_name, style, and rating required' });
   }
   const { status, body } = await rest('POST', '/ratings', {
+    headers: { 'Prefer': 'return=representation' },
     body: JSON.stringify(record),
   });
   if (status >= 400) {
@@ -231,6 +242,7 @@ app.delete('/api/ratings/:id', authMiddleware, async (req, res) => {
 });
 
 // GET /api/profile — auth required, get or create
+// BUG FIX #5: Added Prefer: return=representation on profile creation
 app.get('/api/profile', authMiddleware, async (req, res) => {
   const { sub, preferred_username, email } = req.claims;
   const { status: getStatus, body: rows } = await rest('GET', `/profiles?id=eq.${encodeURIComponent(sub)}&limit=1`);
@@ -246,6 +258,7 @@ app.get('/api/profile', authMiddleware, async (req, res) => {
     email: email || null,
   };
   const { status: postStatus, body: created } = await rest('POST', '/profiles', {
+    headers: { 'Prefer': 'return=representation' },
     body: JSON.stringify(newProfile),
   });
   if (postStatus >= 400) {
@@ -256,30 +269,37 @@ app.get('/api/profile', authMiddleware, async (req, res) => {
 });
 
 // GET /api/stats — public, paginated (beer_averages + summary counts)
+// BUG FIX #4: Use count=exact on beer_averages to get accurate totalBeers
 app.get('/api/stats', async (req, res) => {
   const { limit, offset } = parsePagination(req);
-  const { status: viewStatus, body: averages } = await rest('GET', `/beer_averages?limit=${limit}&offset=${offset}`);
+  const { status: viewStatus, headers: viewHeaders, body: averages } = await rest('GET', `/beer_averages?limit=${limit}&offset=${offset}`, {
+    headers: { 'Prefer': 'count=exact' },
+  });
   if (viewStatus >= 400) {
     return res.status(viewStatus).json(averages || { error: 'Upstream error' });
   }
   const list = Array.isArray(averages) ? averages : [];
+  const totalBeers = totalFromContentRange(viewHeaders['content-range']) ?? list.length;
+
   const countRes = await rest('GET', '/ratings?limit=0', { headers: { 'Prefer': 'count=exact' } });
   const totalReviews = totalFromContentRange(countRes.headers['content-range']) ?? 0;
+
   const ratingsRes = await rest('GET', '/ratings?limit=5000&select=user_id');
   const allRatings = Array.isArray(ratingsRes.body) ? ratingsRes.body : [];
   const totalUsers = new Set(allRatings.map((r) => r.user_id)).size;
-  const totalBeers = list.length;
+
   res.json({
     data: list,
     pagination: { limit, offset, total: totalBeers },
     summary: {
-      totalBeers: totalBeers,
+      totalBeers,
       totalReviews,
       totalUsers,
     },
   });
 });
 
+// ---------- Startup ----------
 if (!SERVICE_ROLE_KEY) {
   console.error('SUPABASE_SERVICE_ROLE_KEY is required');
   process.exit(1);
@@ -287,8 +307,3 @@ if (!SERVICE_ROLE_KEY) {
 app.listen(PORT, () => {
   console.log(`beerbook-api listening on port ${PORT}`);
 });
-
-</think>
-Fixing duplicate route and invalid-sort check: validate sort in the ratings handler and remove the duplicate route.
-<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>
-StrReplace
