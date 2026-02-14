@@ -28,9 +28,9 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.keycloak.rule=Host(`auth.drinksafterwork.net`)"
-      - "traefik.http.routers.keycloak.entrypoints=websecure"
+      - "traefik.http.routers.keycloak.entrypoints=web-secure"
       - "traefik.http.routers.keycloak.tls=true"
-      - "traefik.http.routers.keycloak.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.keycloak.tls.certresolver=default"
       - "traefik.http.services.keycloak.loadbalancer.server.port=8080"
 
   beerbook:
@@ -44,9 +44,9 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.beerbook.rule=Host(`beerbook.drinksafterwork.net`)"
-      - "traefik.http.routers.beerbook.entrypoints=websecure"
+      - "traefik.http.routers.beerbook.entrypoints=web-secure"
       - "traefik.http.routers.beerbook.tls=true"
-      - "traefik.http.routers.beerbook.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.beerbook.tls.certresolver=default"
       - "traefik.http.services.beerbook.loadbalancer.server.port=80"
 
   beerbook-api:
@@ -74,9 +74,9 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.beerbook-api.rule=Host(`api.beerbook.drinksafterwork.net`)"
-      - "traefik.http.routers.beerbook-api.entrypoints=websecure"
+      - "traefik.http.routers.beerbook-api.entrypoints=web-secure"
       - "traefik.http.routers.beerbook-api.tls=true"
-      - "traefik.http.routers.beerbook-api.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.beerbook-api.tls.certresolver=default"
       - "traefik.http.services.beerbook-api.loadbalancer.server.port=3001"
 
   # ---------- Keycloak DB (internal only) ----------
