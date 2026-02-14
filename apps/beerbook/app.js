@@ -33,15 +33,13 @@ const App = {
             e.preventDefault();
             const kcAuthority = document.getElementById('kc-authority').value.trim();
             const kcClientId = document.getElementById('kc-client-id').value.trim() || 'beerbook';
-            const sbUrl = document.getElementById('sb-url').value.trim();
-            const sbKey = document.getElementById('sb-key').value.trim();
 
             if (!kcAuthority) {
                 Utils.toast('Keycloak Realm URL is required', 'error');
                 return;
             }
 
-            DB.saveConfig(sbUrl, sbKey, kcAuthority, kcClientId);
+            DB.saveConfig(null, null, kcAuthority, kcClientId);
             await DB.init();
 
             document.getElementById('setup-config').style.display = 'none';

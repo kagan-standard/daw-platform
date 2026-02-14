@@ -17,9 +17,6 @@
     <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
-    <!-- Supabase -->
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -43,10 +40,10 @@
                 <p class="auth-subtitle">by Drinks After Work</p>
             </div>
 
-            <!-- Setup Config (shown if not configured) -->
+            <!-- Setup Config (Keycloak only; shown if not configured and no baked config) -->
             <div id="setup-config" class="auth-card" style="display:none;">
                 <h2>Connect BeerBook</h2>
-                <p class="config-hint">Enter your Keycloak realm URL and optionally Supabase credentials for cloud data. Or skip to demo mode.</p>
+                <p class="config-hint">Enter your Keycloak realm URL, or skip to demo mode.</p>
                 <form id="config-form">
                     <div class="form-group">
                         <label for="kc-authority">Keycloak Realm URL</label>
@@ -55,15 +52,6 @@
                     <div class="form-group">
                         <label for="kc-client-id">Client ID</label>
                         <input type="text" id="kc-client-id" value="beerbook" placeholder="beerbook" autocomplete="off">
-                    </div>
-                    <div class="auth-divider"><span>data layer (optional)</span></div>
-                    <div class="form-group">
-                        <label for="sb-url">Supabase URL</label>
-                        <input type="url" id="sb-url" placeholder="https://xxxxx.supabase.co" autocomplete="off">
-                    </div>
-                    <div class="form-group">
-                        <label for="sb-key">Supabase Anon Key</label>
-                        <input type="text" id="sb-key" placeholder="eyJhbGciOiJIUzI1NiIs..." autocomplete="off">
                     </div>
                     <button type="submit" class="btn btn-primary btn-full">Save & Connect</button>
                     <button type="button" id="skip-config" class="btn btn-ghost btn-full">Skip — Use Demo Mode</button>

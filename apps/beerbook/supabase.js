@@ -1,8 +1,7 @@
 /* ============================================
-   BeerBook — Supabase (data) + Keycloak (auth)
-   
+   BeerBook — Keycloak (auth) + beerbook-api (data)
    Auth: Keycloak OIDC Authorization Code + PKCE
-   Data: Supabase (PostgreSQL + Realtime)
+   Data: fetch() to api.beerbook.drinksafterwork.net (no direct Supabase)
    Demo: localStorage fallback
    ============================================ */
 
@@ -11,8 +10,8 @@ const DB = {
     isDemo: false,
     currentUser: null,
     subscriptions: [],
+    apiBaseUrl: '',
 
-    // Keycloak OIDC config
     oidc: {
         authority: '',
         clientId: 'beerbook',
@@ -24,42 +23,33 @@ const DB = {
         endSessionEndpoint: '',
     },
 
-    // ========== INITIALIZATION ==========
     async init() {
-        const sbConfig = Utils.storage.get('supabase_config');
-        const kcConfig = Utils.storage.get('keycloak_config');
         this.oidc.redirectUri = window.location.origin + window.location.pathname;
+        const baked = window.BEERBOOK_CONFIG;
+        const kcConfig = Utils.storage.get('keycloak_config');
 
-        if (kcConfig && kcConfig.authority) {
-            this.oidc.authority = kcConfig.authority;
+        if (baked?.keycloak) {
+            this.oidc.authority = (baked.keycloak.authority || '').replace(/\/+$/, '');
+            this.oidc.clientId = baked.keycloak.clientId || 'beerbook';
+            this.apiBaseUrl = (baked.apiBaseUrl || '').replace(/\/+$/, '');
+        }
+        if (!this.oidc.authority && kcConfig?.authority) {
+            this.oidc.authority = kcConfig.authority.replace(/\/+$/, '');
             this.oidc.clientId = kcConfig.clientId || 'beerbook';
+        }
+        if (baked?.apiBaseUrl) {
+            this.apiBaseUrl = baked.apiBaseUrl.replace(/\/+$/, '');
+        }
+
+        if (this.oidc.authority) {
             await this._discoverOIDC();
         }
 
-        if (sbConfig && sbConfig.url && sbConfig.key) {
-            try {
-                this.client = supabase.createClient(sbConfig.url, sbConfig.key, {
-                    auth: { persistSession: false, autoRefreshToken: false }
-                });
-                const { error } = await this.client.from('ratings').select('id').limit(1);
-                if (error && error.code === '42P01') {
-                    Utils.toast('Database tables not found. Run schema SQL first.', 'error');
-                    this.isDemo = true;
-                } else if (error) {
-                    throw error;
-                }
-                console.log('Supabase data layer connected');
-            } catch (e) {
-                console.warn('Supabase failed, demo mode:', e.message);
-                this.isDemo = true;
-                this.client = null;
-            }
-        } else {
+        if (!this.apiBaseUrl) {
             this.isDemo = true;
         }
     },
 
-    // ========== OIDC DISCOVERY ==========
     async _discoverOIDC() {
         try {
             const res = await fetch(`${this.oidc.authority}/.well-known/openid-configuration`);
@@ -69,7 +59,6 @@ const DB = {
             this.oidc.tokenEndpoint = cfg.token_endpoint;
             this.oidc.userinfoEndpoint = cfg.userinfo_endpoint;
             this.oidc.endSessionEndpoint = cfg.end_session_endpoint;
-            console.log('OIDC discovery complete');
             return true;
         } catch (e) {
             console.warn('OIDC discovery failed:', e.message);
@@ -77,9 +66,7 @@ const DB = {
         }
     },
 
-    // ========== CONFIG ==========
     saveConfig(sbUrl, sbKey, kcAuthority, kcClientId) {
-        if (sbUrl && sbKey) Utils.storage.set('supabase_config', { url: sbUrl, key: sbKey });
         if (kcAuthority) {
             Utils.storage.set('keycloak_config', {
                 authority: kcAuthority.replace(/\/+$/, ''),
@@ -87,11 +74,34 @@ const DB = {
             });
         }
     },
-    hasConfig() { const kc = Utils.storage.get('keycloak_config'); return kc && kc.authority; },
-    hasDataConfig() { const sb = Utils.storage.get('supabase_config'); return sb && sb.url && sb.key; },
-    clearConfig() { Utils.storage.remove('supabase_config'); Utils.storage.remove('keycloak_config'); },
+    hasConfig() {
+        return !!(this.oidc.authority || Utils.storage.get('keycloak_config')?.authority);
+    },
+    hasDataConfig() {
+        return !!this.apiBaseUrl;
+    },
+    clearConfig() {
+        Utils.storage.remove('keycloak_config');
+    },
 
-    // ========== PKCE HELPERS ==========
+    _getAccessToken() {
+        const tokens = Utils.storage.get('oidc_tokens');
+        return tokens?.access_token || null;
+    },
+
+    async _api(method, path, opts = {}) {
+        const url = `${this.apiBaseUrl}${path}`;
+        const headers = { 'Content-Type': 'application/json', ...opts.headers };
+        const token = this._getAccessToken();
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        const res = await fetch(url, { method, headers, ...opts });
+        const text = await res.text();
+        let body;
+        try { body = text ? JSON.parse(text) : null; } catch { body = null; }
+        if (!res.ok) throw new Error(body?.error || body?.message || `HTTP ${res.status}`);
+        return body;
+    },
+
     async _generatePKCE() {
         const array = new Uint8Array(32);
         crypto.getRandomValues(array);
@@ -104,7 +114,6 @@ const DB = {
         return btoa(String.fromCharCode(...buf)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
     },
 
-    // ========== KEYCLOAK LOGIN ==========
     async startLogin() {
         if (!this.oidc.authEndpoint && !(await this._discoverOIDC())) {
             Utils.toast('Cannot connect to Keycloak.', 'error'); return;
@@ -113,7 +122,6 @@ const DB = {
         const state = Utils.uid();
         Utils.storage.set('oidc_verifier', verifier);
         Utils.storage.set('oidc_state', state);
-
         const params = new URLSearchParams({
             response_type: 'code', client_id: this.oidc.clientId,
             redirect_uri: this.oidc.redirectUri, scope: this.oidc.scopes,
@@ -122,7 +130,6 @@ const DB = {
         window.location.href = `${this.oidc.authEndpoint}?${params}`;
     },
 
-    // ========== KEYCLOAK REGISTRATION ==========
     async startRegistration() {
         if (!this.oidc.authEndpoint && !(await this._discoverOIDC())) {
             Utils.toast('Cannot connect to Keycloak.', 'error'); return;
@@ -131,30 +138,25 @@ const DB = {
         const state = Utils.uid();
         Utils.storage.set('oidc_verifier', verifier);
         Utils.storage.set('oidc_state', state);
-
         const params = new URLSearchParams({
             response_type: 'code', client_id: this.oidc.clientId,
             redirect_uri: this.oidc.redirectUri, scope: this.oidc.scopes,
             state, code_challenge: challenge, code_challenge_method: 'S256',
         });
-        // Keycloak registration hint
         window.location.href = `${this.oidc.authEndpoint}?${params}&kc_action=register`;
     },
 
-    // ========== HANDLE OIDC CALLBACK ==========
     async handleOIDCCallback() {
         const params = new URLSearchParams(window.location.search);
         const code = params.get('code');
         const state = params.get('state');
         const error = params.get('error');
-
         if (error) {
             Utils.toast(`Login error: ${params.get('error_description') || error}`, 'error');
             window.history.replaceState({}, '', this.oidc.redirectUri);
             return null;
         }
         if (!code) return null;
-
         const savedState = Utils.storage.get('oidc_state');
         const verifier = Utils.storage.get('oidc_verifier');
         if (state !== savedState) {
@@ -162,10 +164,8 @@ const DB = {
             window.history.replaceState({}, '', this.oidc.redirectUri);
             return null;
         }
-
         try {
             if (!this.oidc.tokenEndpoint) await this._discoverOIDC();
-
             const tokenRes = await fetch(this.oidc.tokenEndpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -176,12 +176,10 @@ const DB = {
                     code_verifier: verifier,
                 }).toString()
             });
-
             if (!tokenRes.ok) {
                 const err = await tokenRes.json().catch(() => ({}));
                 throw new Error(err.error_description || err.error || 'Token exchange failed');
             }
-
             const tokens = await tokenRes.json();
             Utils.storage.set('oidc_tokens', {
                 access_token: tokens.access_token,
@@ -189,7 +187,6 @@ const DB = {
                 id_token: tokens.id_token,
                 expires_at: Date.now() + (tokens.expires_in * 1000)
             });
-
             const user = await this._getUserInfo(tokens.access_token);
             window.history.replaceState({}, '', this.oidc.redirectUri);
             Utils.storage.remove('oidc_verifier');
@@ -246,30 +243,22 @@ const DB = {
         } catch { return false; }
     },
 
-    // ========== SESSION ==========
     async getSession() {
-        // Demo check
         if (this.isDemo || !this.hasConfig()) {
             const demo = Utils.storage.get('demo_user');
             if (demo) { this.currentUser = demo; this.isDemo = true; return demo; }
             return null;
         }
-
-        // OIDC callback?
         const cbUser = await this.handleOIDCCallback();
         if (cbUser) return cbUser;
-
-        // Existing tokens?
         const tokens = Utils.storage.get('oidc_tokens');
         if (!tokens) return null;
-
         if (tokens.expires_at && Date.now() > tokens.expires_at - 60000) {
             if (!(await this._refreshToken())) { Utils.storage.remove('oidc_tokens'); return null; }
             const t = Utils.storage.get('oidc_tokens');
             this.currentUser = await this._getUserInfo(t.access_token);
             return this.currentUser;
         }
-
         try {
             this.currentUser = await this._getUserInfo(tokens.access_token);
             return this.currentUser;
@@ -285,15 +274,14 @@ const DB = {
     },
 
     async signOut() {
-        const tokens = Utils.storage.get('oidc_tokens');
-        this.subscriptions.forEach(s => { if (s?.unsubscribe) s.unsubscribe(); });
+        this.subscriptions.forEach(s => { if (s && typeof s === 'number') clearInterval(s); });
         this.subscriptions = [];
+        const tokens = Utils.storage.get('oidc_tokens');
         this.currentUser = null;
         Utils.storage.remove('oidc_tokens');
         Utils.storage.remove('oidc_verifier');
         Utils.storage.remove('oidc_state');
         Utils.storage.remove('demo_user');
-
         if (this.oidc.endSessionEndpoint && tokens?.id_token) {
             const params = new URLSearchParams({
                 id_token_hint: tokens.id_token,
@@ -314,63 +302,88 @@ const DB = {
         return user;
     },
 
-    // ========== CRUD (unchanged) ==========
     async addRating(rating) {
         const record = {
-            id: Utils.uid(), user_id: this.currentUser.id, user_name: this.currentUser.display_name,
-            beer_name: rating.beerName, brewery: rating.brewery || '', style: rating.style,
-            abv: rating.abv || null, rating: rating.rating,
-            flavor_hoppy: rating.flavors?.hoppy || 0, flavor_malty: rating.flavors?.malty || 0,
-            flavor_bitter: rating.flavors?.bitter || 0, flavor_sweet: rating.flavors?.sweet || 0,
-            flavor_fruity: rating.flavors?.fruity || 0,
-            notes: rating.notes || '', created_at: new Date().toISOString()
+            beerName: rating.beerName,
+            brewery: rating.brewery || '',
+            style: rating.style,
+            abv: rating.abv || null,
+            rating: rating.rating,
+            flavors: rating.flavors || {},
+            notes: rating.notes || '',
         };
         if (this.isDemo) {
+            const rev = {
+                id: Utils.uid(), user_id: this.currentUser.id, user_name: this.currentUser.display_name,
+                beer_name: record.beerName, brewery: record.brewery, style: record.style,
+                abv: record.abv, rating: record.rating,
+                flavor_hoppy: record.flavors?.hoppy || 0, flavor_malty: record.flavors?.malty || 0,
+                flavor_bitter: record.flavors?.bitter || 0, flavor_sweet: record.flavors?.sweet || 0,
+                flavor_fruity: record.flavors?.fruity || 0,
+                notes: record.notes || '', created_at: new Date().toISOString()
+            };
             const reviews = Utils.storage.get('reviews', []);
-            reviews.unshift(record); Utils.storage.set('reviews', reviews); return record;
+            reviews.unshift(rev);
+            Utils.storage.set('reviews', reviews);
+            return rev;
         }
-        const { data, error } = await this.client.from('ratings').insert(record).select().single();
-        if (error) throw error; return data;
+        const data = await this._api('POST', '/api/ratings', { body: JSON.stringify(record) });
+        return data;
     },
 
     async getAllRatings() {
         if (this.isDemo) return Utils.storage.get('reviews', []);
-        const { data, error } = await this.client.from('ratings').select('*').order('created_at', { ascending: false });
-        if (error) throw error; return data || [];
+        const out = await this._api('GET', '/api/ratings?limit=100&order=desc');
+        return (out && out.data) ? out.data : [];
     },
 
     async getUserRatings(userId) {
         if (this.isDemo) return Utils.storage.get('reviews', []).filter(r => r.user_id === userId);
-        const { data, error } = await this.client.from('ratings').select('*').eq('user_id', userId).order('created_at', { ascending: false });
-        if (error) throw error; return data || [];
+        const out = await this._api('GET', `/api/ratings/user/${encodeURIComponent(userId)}?limit=100&order=desc`);
+        return (out && out.data) ? out.data : [];
     },
 
     async deleteRating(id) {
         if (this.isDemo) {
             const r = Utils.storage.get('reviews', []);
-            Utils.storage.set('reviews', r.filter(x => x.id !== id)); return true;
+            Utils.storage.set('reviews', r.filter(x => x.id !== id));
+            return true;
         }
-        const { error } = await this.client.from('ratings').delete().eq('id', id).eq('user_id', this.currentUser.id);
-        if (error) throw error; return true;
+        await this._api('DELETE', `/api/ratings/${encodeURIComponent(id)}`);
+        return true;
     },
 
     async getStats() {
-        const ratings = await this.getAllRatings();
-        const users = new Set(ratings.map(r => r.user_id));
+        if (this.isDemo) {
+            const ratings = Utils.storage.get('reviews', []);
+            const users = new Set(ratings.map(r => r.user_id));
+            return {
+                totalBeers: new Set(ratings.map(r => r.beer_name.toLowerCase())).size,
+                totalReviews: ratings.length,
+                totalUsers: users.size,
+                avgRating: ratings.length ? (ratings.reduce((s, r) => s + r.rating, 0) / ratings.length).toFixed(1) : '0.0',
+                ratings
+            };
+        }
+        const [statsRes, ratingsRes] = await Promise.all([
+            this._api('GET', '/api/stats?limit=100'),
+            this._api('GET', '/api/ratings?limit=100&order=desc')
+        ]);
+        const ratings = (ratingsRes && ratingsRes.data) ? ratingsRes.data : [];
+        const summary = (statsRes && statsRes.summary) ? statsRes.summary : {};
         return {
-            totalBeers: new Set(ratings.map(r => r.beer_name.toLowerCase())).size,
-            totalReviews: ratings.length, totalUsers: users.size,
-            avgRating: ratings.length ? (ratings.reduce((s, r) => s + r.rating, 0) / ratings.length).toFixed(1) : '0.0',
+            totalBeers: summary.totalBeers ?? new Set(ratings.map(r => r.beer_name?.toLowerCase())).size,
+            totalReviews: summary.totalReviews ?? ratings.length,
+            totalUsers: summary.totalUsers ?? new Set(ratings.map(r => r.user_id)).size,
+            avgRating: summary.avgRating ?? (ratings.length ? (ratings.reduce((s, r) => s + r.rating, 0) / ratings.length).toFixed(1) : '0.0'),
             ratings
         };
     },
 
     subscribeToRatings(callback) {
-        if (this.isDemo || !this.client) return;
-        const ch = this.client.channel('ratings-changes')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'ratings' }, callback)
-            .subscribe();
-        this.subscriptions.push(ch);
+        if (this.isDemo) return;
+        const interval = setInterval(callback, 5000);
+        this.subscriptions.push(interval);
     },
 
     async getAllProfiles() {
@@ -383,7 +396,13 @@ const DB = {
             });
             return Object.values(m);
         }
-        const { data, error } = await this.client.from('profiles').select('*');
-        if (error) throw error; return data || [];
+        const out = await this._api('GET', '/api/ratings?limit=500');
+        const list = (out && out.data) ? out.data : [];
+        const m = {};
+        list.forEach(r => {
+            if (!m[r.user_id]) m[r.user_id] = { id: r.user_id, display_name: r.user_name, review_count: 0 };
+            m[r.user_id].review_count++;
+        });
+        return Object.values(m);
     }
 };

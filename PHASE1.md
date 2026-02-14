@@ -623,5 +623,9 @@ in order using Docker Compose. Key constraints:
 _Agents must log assumptions here instead of asking (per DECISIONS.md):_
 
 | Date | Task | Assumption | Rationale |
-|------|------|------------|-----------|
-| | | | |
+|------|------|------------|------------|
+| 2025-02-13 | 2 | Traefik entrypoint `websecure` and cert resolver `letsencrypt`; if host uses `web-secure` or `le`, operator edits compose or runbook. | DECISIONS.md does not fix Traefik config; runbook documents override. |
+| 2025-02-13 | 2 | Run script from repo root; compose file paths (e.g. ../../apps/beerbook) are relative to compose file dir. | Standard Compose behavior. |
+| 2025-02-13 | 4 | Supabase Postgres image may create `supabase_realtime` publication; schema uses DO block to add table or ignore duplicate. | Avoids hard dependency on image internals. |
+| 2025-02-13 | 6 | Realtime propagation in Phase 1 implemented as 5s polling in frontend; no browser Supabase Realtime. | Supabase Realtime is internal-only; smoke test documents polling. |
+| 2025-02-13 | 7–8 | Smoke tests and runbooks written so operator can run manually; rollback drill is tabletop or one-time execution. | No automated test runner required for Phase 1. |
