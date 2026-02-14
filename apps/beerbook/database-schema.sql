@@ -1,0 +1,6 @@
+-- ============================================
+-- BeerBook — Keycloak-backed schema (no auth.users)
+-- See apps/beerbook/docs/database-schema.sql for full version.
+-- Run against Supabase Postgres. RLS disabled Phase 1.
+-- ============================================
+-- Use: docker exec -i supabase-db psql -U postgres < apps/beerbook/docs/database-schema.sql
