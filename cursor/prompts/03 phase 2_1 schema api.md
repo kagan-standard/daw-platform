@@ -370,4 +370,26 @@ GET  /api/highlights/beer-of-the-week → highest avg-rated beer first reviewed 
 
 | Date | Task | Assumption | Rationale |
 |------|------|------------|-----------|
-| | | | |
+| 2025-02-15 | 2.1 | Uploads served from API at /uploads (not beerbook nginx) | Phase disallows modifying apps/beerbook except docs; serving from API keeps one origin for uploads. |
+| 2025-02-15 | 2.1 | PostgREST RPC called via POST with JSON body for venues_within_radius | Standard PostgREST RPC usage. |
+| 2025-02-15 | 2.1 | beerbook container does not mount uploads_data | Frontend loads images from API base URL when needed. |
+
+---
+
+## Phase 2.1 Checkpoint (after execution)
+
+**Files created:**  
+- `apps/beerbook/docs/migration-2.1.sql`  
+- `apps/beerbook/docs/PHASE-2.1-VALIDATION.md`  
+- `apps/beerbook-api/routes/beers.js`, `exchange.js`, `venues.js`, `deals.js`, `activity.js`, `map.js`, `leaderboard.js`, `upload.js`, `highlights.js`
+
+**Files modified:**  
+- `apps/beerbook/docs/database-schema.sql` (merged canonical schema)  
+- `apps/beerbook-api/server.js` (POST ratings fields, route mounts, static /uploads)  
+- `apps/beerbook-api/package.json` (multer)  
+- `infra/compose/docker-compose.yml` (uploads_data volume, beerbook-api 1.1.0, UPLOAD_DIR)
+
+**Acceptance:**  
+- Migration idempotent; new tables/columns/views and geo function added.  
+- All new endpoints implemented; validation and rollback documented in PHASE-2.1-VALIDATION.md.  
+- No frontend changes; existing ratings/profile/stats behavior unchanged.

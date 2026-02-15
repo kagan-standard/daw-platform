@@ -3,10 +3,12 @@
  * Proxies to PostgREST (internal) with SUPABASE_SERVICE_ROLE_KEY.
  */
 const express = require('express');
+const path = require('path');
 const rateLimit = require('express-rate-limit');
 const { createRemoteJWKSet, jwtVerify } = require('jose');
 
 const app = express();
+const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, 'data', 'uploads');
 const PORT = Number(process.env.PORT) || 3001;
 const REST_URL = (process.env.SUPABASE_REST_URL || 'http://supabase-rest:3000').replace(/\/$/, '');
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -69,6 +71,8 @@ function corsMiddleware(req, res, next) {
 
 app.use(corsMiddleware);
 app.use(express.json());
+// Phase 2.1: serve uploaded images (same origin as API)
+app.use('/uploads', express.static(UPLOAD_DIR));
 
 // ---------- Rate limiting (all /api routes) ----------
 const limiter = rateLimit({
@@ -83,6 +87,14 @@ const limiter = rateLimit({
   },
 });
 app.use('/api', limiter);
+
+// ---------- Route helpers (shared with route modules) ----------
+const routeHelpers = {
+  rest,
+  totalFromContentRange,
+  parsePagination: () => {}, // set after parsePagination is defined
+  authMiddleware: () => {}, // set after authMiddleware is defined
+};
 
 // ---------- JWKS + auth middleware ----------
 let jwks;
@@ -149,6 +161,30 @@ function validateSort(req, res, next) {
   next();
 }
 
+// ---------- Phase 2.1 route modules (mount before /api/ratings so /api/ratings/:id/cheers takes precedence) ----------
+routeHelpers.parsePagination = parsePagination;
+routeHelpers.authMiddleware = authMiddleware;
+
+const activityRoutes = require('./routes/activity')({ ...routeHelpers });
+const beersRoutes = require('./routes/beers')({ ...routeHelpers });
+const exchangeRoutes = require('./routes/exchange')({ ...routeHelpers });
+const venuesRoutes = require('./routes/venues')({ ...routeHelpers });
+const dealsRoutes = require('./routes/deals')({ ...routeHelpers });
+const mapRoutes = require('./routes/map')({ ...routeHelpers });
+const leaderboardRoutes = require('./routes/leaderboard')({ ...routeHelpers });
+const uploadRoutes = require('./routes/upload')({ ...routeHelpers });
+const highlightsRoutes = require('./routes/highlights')({ ...routeHelpers });
+
+app.use('/api', activityRoutes);
+app.use('/api/beers', beersRoutes);
+app.use('/api/exchange', exchangeRoutes);
+app.use('/api/venues', venuesRoutes);
+app.use('/api/deals', dealsRoutes);
+app.use('/api/map', mapRoutes);
+app.use('/api/leaderboard', leaderboardRoutes);
+app.use('/api/upload', uploadRoutes);
+app.use('/api/highlights', highlightsRoutes);
+
 // ---------- Routes ----------
 
 // GET /api/health
@@ -193,10 +229,22 @@ app.get('/api/ratings/user/:id', validateSort, async (req, res) => {
 });
 
 // POST /api/ratings — auth required
-// BUG FIX #5: Added Prefer: return=representation so PostgREST returns the created row
+// Phase 2.1: optional yg_value, lat/lng, location_name, venue_id, photo_url
 app.post('/api/ratings', authMiddleware, async (req, res) => {
   const { sub, preferred_username } = req.claims;
   const b = req.body || {};
+  const ygValue = b.yg_value ?? b.ygValue ?? null;
+  if (ygValue != null) {
+    const yg = Number(ygValue);
+    if (!Number.isFinite(yg) || yg < 0.1 || yg > 10.0) {
+      return res.status(400).json({ error: 'yg_value must be between 0.1 and 10.0' });
+    }
+  }
+  const lat = b.latitude ?? b.lat;
+  const lng = b.longitude ?? b.lng;
+  if ((lat != null && lng == null) || (lat == null && lng != null)) {
+    return res.status(400).json({ error: 'latitude and longitude must be provided together' });
+  }
   const record = {
     user_id: sub,
     user_name: preferred_username || 'Anonymous',
@@ -211,6 +259,12 @@ app.post('/api/ratings', authMiddleware, async (req, res) => {
     flavor_sweet: b.flavor_sweet ?? b.flavors?.sweet ?? 0,
     flavor_fruity: b.flavor_fruity ?? b.flavors?.fruity ?? 0,
     notes: b.notes || '',
+    yg_value: ygValue != null ? Number(ygValue) : null,
+    latitude: lat != null ? Number(lat) : null,
+    longitude: lng != null ? Number(lng) : null,
+    location_name: b.location_name ?? b.locationName ?? null,
+    venue_id: b.venue_id ?? b.venueId ?? null,
+    photo_url: b.photo_url ?? b.photoUrl ?? null,
   };
   if (!record.beer_name || !record.style || !record.rating) {
     return res.status(400).json({ error: 'beer_name, style, and rating required' });
