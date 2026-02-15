@@ -24,7 +24,7 @@ Drinks After Work (DAW) is a multi-service platform. One DAW account should acce
 
 | \*\*Element Web\*\* | Matrix web client | playbook-managed | https://element.drinksafterwork.net | Hetzner VM |
 
-| \*\*DAW Web (front door)\*\* | Landing + launchpad | daw-web | https://drinksafterwork.net | TBD |
+| \*\*DAW Web (front door)\*\* | Landing + launchpad | daw-platform (apps/daw-web) | https://drinksafterwork.net | Hetzner VM (Docker) |
 
 | \*\*DAWFootball (legacy)\*\* | Fantasy tracker/draft room | dawfootball-legacy | https://football.drinksafterwork.net | TBD |
 
