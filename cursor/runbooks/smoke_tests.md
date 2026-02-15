@@ -1,7 +1,11 @@
-﻿# Smoke Tests (DAW)
+# Smoke Tests (DAW)
 
-- curl -fsSI https://beerbook.drinksafterwork.net | head
-- curl -fsSI https://auth.drinksafterwork.net | head
-- curl -fsSI https://drinksafterwork.net | head
+Run on VPS or from a host that can reach the URLs:
 
-(Adjust if your front door URL differs.)
+```bash
+curl -fsSI https://beerbook.drinksafterwork.net | head
+curl -fsSI https://auth.drinksafterwork.net | head
+curl -fsSI https://drinksafterwork.net | head
+```
+
+(Adjust hostnames if your front door URL differs.) Full checks in `runbooks/smoke_tests.md`.

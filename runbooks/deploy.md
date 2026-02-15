@@ -30,16 +30,14 @@ Edit `infra/compose/.env`:
 
 ## 3. Start stack
 
-```bash
-cd /path/to/daw-platform
-./infra/compose/run.sh up
-```
-
-Or:
+On production use explicit compose path (required):
 
 ```bash
-docker compose -f infra/compose/docker-compose.yml --env-file infra/compose/.env up -d
+docker compose -f /opt/daw-platform/infra/compose/docker-compose.yml --env-file /opt/daw-platform/infra/compose/.env up -d --remove-orphans
 ```
+
+Or from repo root (e.g. dev): `./infra/compose/run.sh up` or  
+`docker compose -f infra/compose/docker-compose.yml --env-file infra/compose/.env up -d`
 
 Wait for Keycloak and Supabase DB to be healthy (e.g. 30–60s).
 
@@ -100,13 +98,13 @@ If you changed `apps/beerbook/`:
 
 - Ensure the compose volume mounts the repo’s `apps/beerbook` (as in `docker-compose.yml`).  
 - Or copy into the container/volume and restart:  
-  `docker compose -f infra/compose/docker-compose.yml restart beerbook`
+  `docker compose -f /opt/daw-platform/infra/compose/docker-compose.yml restart beerbook`
 
 ## 7. Rebuild beerbook-api (if code changed)
 
 ```bash
-docker compose -f infra/compose/docker-compose.yml --env-file infra/compose/.env build beerbook-api --no-cache
-docker compose -f infra/compose/docker-compose.yml --env-file infra/compose/.env up -d beerbook-api
+docker compose -f /opt/daw-platform/infra/compose/docker-compose.yml --env-file /opt/daw-platform/infra/compose/.env build beerbook-api --no-cache
+docker compose -f /opt/daw-platform/infra/compose/docker-compose.yml --env-file /opt/daw-platform/infra/compose/.env up -d beerbook-api
 ```
 
 ## 8. Smoke tests

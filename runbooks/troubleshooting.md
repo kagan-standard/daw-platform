@@ -17,11 +17,12 @@ Follow with `-f` for stream: `docker logs -f beerbook-api`.
 
 ## Restart commands
 
+Use explicit compose path on prod: `/opt/daw-platform/infra/compose/docker-compose.yml`.
+
 ```bash
-cd /path/to/daw-platform
-docker compose -f infra/compose/docker-compose.yml --env-file infra/compose/.env restart keycloak
-docker compose -f infra/compose/docker-compose.yml --env-file infra/compose/.env restart beerbook-api
-docker compose -f infra/compose/docker-compose.yml --env-file infra/compose/.env restart supabase-rest supabase-realtime
+docker compose -f /opt/daw-platform/infra/compose/docker-compose.yml --env-file /opt/daw-platform/infra/compose/.env restart keycloak
+docker compose -f /opt/daw-platform/infra/compose/docker-compose.yml --env-file /opt/daw-platform/infra/compose/.env restart beerbook-api
+docker compose -f /opt/daw-platform/infra/compose/docker-compose.yml --env-file /opt/daw-platform/infra/compose/.env restart supabase-rest supabase-realtime
 ```
 
 Or use `./infra/compose/run.sh restart <service>`.
@@ -34,6 +35,23 @@ Or use `./infra/compose/run.sh restart <service>`.
   Default in compose: `entrypoints=websecure`, `certresolver=letsencrypt`.  
   If your Traefik uses `web-secure` or `le`, change labels in `infra/compose/docker-compose.yml`.
 - If HTTPS fails: check Traefik logs and that DNS for the hostnames points to this host.
+
+## Verify named volumes (Phase 1.5)
+
+Data “missing” is often caused by running compose from the wrong directory. Always use:
+
+```bash
+docker compose -f /opt/daw-platform/infra/compose/docker-compose.yml ...
+```
+
+Check that DB data is on named volumes (not anonymous or wrong project):
+
+```bash
+docker inspect keycloak-db | jq '.[0].Mounts'
+docker inspect supabase-db | jq '.[0].Mounts'
+```
+
+Expect `Type: "volume"` and names containing `keycloak_db_data`, `supabase_db_data`.
 
 ## Common errors
 
@@ -67,6 +85,14 @@ Or use `./infra/compose/run.sh restart <service>`.
 
 - Phase 1 frontend uses **polling** (every 5s), not Supabase Realtime in the browser.  
   If “realtime” is meant to be Realtime server: check `docker logs supabase-realtime` and that `ratings` is in `supabase_realtime` publication (`ALTER PUBLICATION supabase_realtime ADD TABLE ratings` in schema).
+
+### Supabase Realtime crash-loop
+
+- Realtime needs the `_realtime` schema and `supabase_realtime` publication.  
+  Apply or re-run `apps/beerbook/docs/database-schema.sql` (it creates `CREATE SCHEMA IF NOT EXISTS _realtime` and the publication).  
+- Check logs: `docker logs supabase-realtime`.  
+- After fixing schema, restart:  
+  `docker compose -f /opt/daw-platform/infra/compose/docker-compose.yml restart supabase-realtime`
 
 ### Keycloak or Supabase DB won’t start
 

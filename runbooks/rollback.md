@@ -2,6 +2,8 @@
 
 Target: recovery within 10 minutes after a bad deploy or config change.
 
+**Production:** use explicit compose path: `docker compose -f /opt/daw-platform/infra/compose/docker-compose.yml --env-file /opt/daw-platform/infra/compose/.env ...`
+
 ## Last-known-good (update after each successful deploy)
 
 | Item | Value |
@@ -32,36 +34,38 @@ Target: recovery within 10 minutes after a bad deploy or config change.
 ### 2. Revert beerbook-api image (if API was redeployed bad)
 
 ```bash
-docker compose -f infra/compose/docker-compose.yml --env-file infra/compose/.env build beerbook-api  # optional: rebuild from last-known Dockerfile
-docker compose -f infra/compose/docker-compose.yml --env-file infra/compose/.env up -d beerbook-api --force-recreate
+docker compose -f /opt/daw-platform/infra/compose/docker-compose.yml --env-file /opt/daw-platform/infra/compose/.env build beerbook-api  # optional: rebuild from last-known Dockerfile
+docker compose -f /opt/daw-platform/infra/compose/docker-compose.yml --env-file /opt/daw-platform/infra/compose/.env up -d beerbook-api --force-recreate
 ```
 
 If you had a previous tag (e.g. `beerbook-api:0.9.0`), set that in `docker-compose.yml` under `beerbook-api` → `image`, then:
 
 ```bash
-docker compose -f infra/compose/docker-compose.yml --env-file infra/compose/.env up -d beerbook-api --force-recreate
+docker compose -f /opt/daw-platform/infra/compose/docker-compose.yml --env-file /opt/daw-platform/infra/compose/.env up -d beerbook-api --force-recreate
 ```
 
 ### 3. Restart Keycloak (if config/env changed)
 
 ```bash
-docker compose -f infra/compose/docker-compose.yml --env-file infra/compose/.env restart keycloak keycloak-db
+docker compose -f /opt/daw-platform/infra/compose/docker-compose.yml --env-file /opt/daw-platform/infra/compose/.env restart keycloak keycloak-db
 ```
 
 ### 4. Restart Supabase stack (if DB or REST config changed)
 
 ```bash
-docker compose -f infra/compose/docker-compose.yml --env-file infra/compose/.env restart supabase-db supabase-rest supabase-realtime
+docker compose -f /opt/daw-platform/infra/compose/docker-compose.yml --env-file /opt/daw-platform/infra/compose/.env restart supabase-db supabase-rest supabase-realtime
 # If DB was recreated from backup, then:
-docker compose -f infra/compose/docker-compose.yml --env-file infra/compose/.env restart supabase-rest supabase-realtime beerbook-api
+docker compose -f /opt/daw-platform/infra/compose/docker-compose.yml --env-file /opt/daw-platform/infra/compose/.env restart supabase-rest supabase-realtime beerbook-api
 ```
 
 ### 5. Full stack down/up (nuclear)
 
+**Do not use `down -v`** (would destroy DB volumes).
+
 ```bash
-docker compose -f infra/compose/docker-compose.yml --env-file infra/compose/.env down
+docker compose -f /opt/daw-platform/infra/compose/docker-compose.yml --env-file /opt/daw-platform/infra/compose/.env down
 # Fix .env and/or compose file
-docker compose -f infra/compose/docker-compose.yml --env-file infra/compose/.env up -d
+docker compose -f /opt/daw-platform/infra/compose/docker-compose.yml --env-file /opt/daw-platform/infra/compose/.env up -d
 ```
 
 ## Post-rollback verification

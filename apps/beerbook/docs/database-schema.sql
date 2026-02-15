@@ -50,7 +50,14 @@ CREATE INDEX IF NOT EXISTS idx_ratings_rating ON ratings(rating);
 GRANT SELECT ON profiles TO anon;
 GRANT SELECT ON ratings TO anon;
 
--- Realtime: publication must exist (Supabase postgres image usually creates supabase_realtime)
+-- Realtime: schema _realtime required by supabase/realtime server (avoids crash-loop)
+CREATE SCHEMA IF NOT EXISTS _realtime;
+
+-- Publication for Postgres logical replication (create if image did not)
+DO $$ BEGIN
+  EXECUTE 'CREATE PUBLICATION supabase_realtime';
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 DO $$ BEGIN
   ALTER PUBLICATION supabase_realtime ADD TABLE ratings;
 EXCEPTION WHEN duplicate_object THEN NULL;

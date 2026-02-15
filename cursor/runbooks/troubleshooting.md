@@ -1,29 +1,28 @@
-﻿# Troubleshooting
+# Troubleshooting (DAW)
 
 ## Data 'missing'
-Most common cause: running compose from the wrong directory/project.
-Always use:
-docker compose -f /opt/daw-platform/infra/compose/docker-compose.yml ...
 
-Check mounts:
+Most common cause: running compose from the wrong directory/project. Always use:
+
+```bash
+docker compose -f /opt/daw-platform/infra/compose/docker-compose.yml ...
+```
+
+Check that DBs use named volumes:
+
+```bash
 docker inspect keycloak-db | jq '.[0].Mounts'
 docker inspect supabase-db | jq '.[0].Mounts'
-"@
+```
 
-Write-TextFile (Join-Path C:\Users\kenyo\OneDrive\Desktop\daw-platform\daw-platform\cursor "prompts\01_phase_1_5.md") @"
-# Phase 1.5 — Stabilize & Polish
+Expect `Type: "volume"` and names containing `keycloak_db_data`, `supabase_db_data`.
 
-Apply /cursor/prompts/00_system.md rules.
+## supabase-realtime crash-loop
 
-## Objectives
-- Verify named volumes + mounts for keycloak-db and supabase-db
-- Daily backups + retention + logs (already implemented on server; ensure documented + tested restore)
-- Fix any remaining infra drift (repo matches prod)
-- Investigate/fix crash-looping services (supabase-realtime currently restarting)
-- Update runbooks: deploy, backup/restore, smoke tests, troubleshooting
+Ensure `_realtime` schema and `supabase_realtime` publication exist. Apply `apps/beerbook/docs/database-schema.sql`, then:
 
-## Must output
-- plan (<=12 bullets)
-- changes made
-- validation commands
-- rollback steps
+```bash
+docker compose -f /opt/daw-platform/infra/compose/docker-compose.yml restart supabase-realtime
+```
+
+See `runbooks/troubleshooting.md` for full log locations, restart commands, and common errors.
