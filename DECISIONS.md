@@ -1,238 +1,123 @@
-# DECISIONS.md
+# SYSTEM RULES
 
-## Platform Identity Decision
-
-Identity Provider: Keycloak
-Realm: daw
-Canonical User ID: sub (OIDC subject from Keycloak)
-
-Keycloak is the single source of truth for identity across:
-- BeerBook
-- Matrix (future OIDC integration)
-- DAWFootball (future)
-- DAW Web (future)
-
-Supabase Auth will NOT be used.
-
-## Data Platform Decision
-
-Standard DAW Data Platform: Self-hosted Supabase
-
-Supabase provides:
-- Postgres database
-- Realtime (Broadcast / Presence / Postgres Changes)
-- Row Level Security (RLS)
-- Storage (optional later)
-
-BeerBook uses Supabase for data only.
-Future DAWFootball live draft features will use Supabase Realtime.
-
-## Hosting Decision
-
-Primary Host: Hetzner VM
-Public IP: 178.156.232.88
-
-All core services will run as Docker containers on this VM unless future scaling requires separation.
-
-Reverse proxy: Traefik (existing, playbook-managed)
-
-## Domain Strategy
-
-Primary domain: drinksafterwork.net
-DNS: Google name servers
-
-Subdomains:
-- auth.drinksafterwork.net → Keycloak
-- beerbook.drinksafterwork.net → BeerBook
-- api.beerbook.drinksafterwork.net → beerbook-api
-- matrix.drinksafterwork.net → Synapse
-- element.drinksafterwork.net → Element
-- football.drinksafterwork.net → DAWFootball (later)
-
-All A records point to: 178.156.232.88
-
-TLS handled via Traefik + Let's Encrypt.
-
-## Phase 1 Scope Decision (Stability First)
-
-Phase 1 includes:
-- Keycloak deployed
-- Supabase self-host deployed
-- BeerBook deployed behind Traefik
-- OIDC login working
-- Reviews persist in database
-- Token audience/azp validation enforced
-- Pagination and rate limiting on public endpoints
-- CORS origin hardening
-- Rollback runbook tested
-- Secret rotation runbook documented
-
-Phase 1 excludes:
-- Matrix OIDC integration
-- DAWFootball resurrection
-- Multi-VM scaling
-- Advanced logging stack
-- Production hardening beyond baseline security
-
-## Database Isolation Decision
-
-Supabase Postgres will:
-- Not be exposed publicly
-- Only be accessible via Docker internal network
-- Be backed up regularly (backup process defined in runbooks)
-
-## Secrets Management Decision
-
-All secrets stored in .env files.
-.env never committed.
-Keycloak admin credentials stored securely.
-Supabase JWT secret stored securely.
-
-### Secret Rotation Policy
-- Rotation cadence: Quarterly, or immediately on incident / staff turnover
-- Covered secrets: Keycloak admin password, PGRST_JWT_SECRET, Supabase service_role key, Supabase anon key
-- Rotation procedure documented in `runbooks/secret_rotation.md`
-- Emergency invalidation procedure documented for key-compromise scenarios
-- Post-rotation verification checklist required after every rotation
-
-## Agent Execution Rules
-
-Agents (Cursor, Claude, etc.) must:
-- Assume sensible defaults
-- Log assumptions in PHASE1.md Agent Assumption Log instead of asking unless:
-  - DNS change required
-  - Security risk introduced
-  - Data deletion involved
-  - Additional hosting cost introduced
-- Always produce:
-  - docker-compose updates
-  - runbook steps
-  - smoke test verification steps
-
-## Future Architectural Direction
-
-DAW becomes a multi-service platform.
-Keycloak remains identity spine.
-Supabase remains data + realtime spine.
-Services remain isolated deployments (no monolithic merge).
-Event-driven features (live draft, notifications) will use Supabase Realtime.
-
-## BeerBook Stack Decision
-
-Framework: Vanilla JavaScript (no build step, no bundler)
-Charts: Chart.js 4.x (CDN)
-Styling: Custom CSS (pub/craft brewery theme)
-Auth: Keycloak OIDC Authorization Code + PKCE (implemented in supabase.js)
-Data: Supabase Postgres via beerbook-api (NOT direct browser-to-Supabase)
-Serving: nginx:alpine container behind Traefik
-Source: Existing codebase (claude_beerbook_with_keycloak_expected.zip)
-Known debt: Frontend supabase.js must be rewired from direct Supabase client calls to fetch() calls against beerbook-api. Supabase JS CDN removed from frontend.
-
-## Data Access Pattern Decision
-
-Pattern: Backend-for-Frontend (BFF) via beerbook-api
-
-- Browser calls ONLY beerbook-api (https://api.beerbook.drinksafterwork.net)
-- beerbook-api validates Keycloak access tokens via JWKS
-- beerbook-api calls PostgREST internally using Supabase service role key
-- Supabase containers (PostgREST, Realtime, Postgres) are NEVER exposed publicly
-- RLS disabled in Phase 1 — safe because PostgREST has no public access
-- Phase 2: re-enable RLS with JWT sub verification for defense-in-depth
-
-## Token Validation Decision
-
-beerbook-api validates Keycloak access tokens with the following checks:
-
-| Check | Requirement | Failure response |
-|-------|-------------|-----------------|
-| `iss` | Must equal `https://auth.drinksafterwork.net/realms/daw` | 401 |
-| `exp` | Must not be expired (30s clock skew tolerance) | 401 |
-| `aud` | Must include `beerbook` | 403 |
-| `azp` | Must equal `beerbook` | 403 |
-| Signature | Must validate against Keycloak JWKS | 401 |
-
-Rationale: Without `aud`/`azp` checks, tokens minted for other DAW clients (e.g. future dawfootball) would be accepted by beerbook-api. This is a cross-client token confusion risk.
-
-Keycloak must be configured with an audience mapper on the `beerbook` client so that `aud: beerbook` appears in access tokens.
-
-Clock skew tolerance is configurable via `TOKEN_CLOCK_SKEW_SECONDS` env var (default: 30).
-
-## Pagination Decision
-
-All public read endpoints enforce pagination:
-- Default page size: 50
-- Maximum page size: 100 (values above 100 clamped)
-- Sort fields: whitelisted (`created_at`, `rating`, `beer_name`); invalid fields → 400
-- Response format: `{ "data": [...], "pagination": { "limit": N, "offset": N, "total": N } }`
-
-Rationale: Without pagination, public endpoints are vulnerable to memory exhaustion, expensive aggregate queries, and abusive scraping.
-
-## Rate Limiting Decision
-
-All public API routes are rate-limited per IP:
-- Window: 60 seconds
-- Max requests per window: 100
-- Burst allowance: 120 (sliding window)
-- Exceeded → 429 with `Retry-After` header
-- Thresholds configurable via env vars (`RATE_LIMIT_WINDOW_MS`, `RATE_LIMIT_MAX`)
-
-Rationale: Public endpoints without rate limiting are vulnerable to DoS and noisy scraping.
-
-## CORS Decision
-
-beerbook-api allows requests only from `https://beerbook.drinksafterwork.net`:
-- Exact origin match (no wildcards)
-- Preflight `OPTIONS` returns 204 for allowed origin, 403 for others
-- Non-allowed origins receive no CORS headers
-
-Tests for CORS behavior are included in smoke tests to prevent silent regression.
-
-## Rollback Decision
-
-Every deployment task has explicit abort/rollback criteria:
-- "Abort if" conditions defined per task
-- Last-known-good image tags recorded after each successful deploy
-- All images pinned to explicit version tags (no `:latest`)
-- Rollback target: recovery in < 10 minutes
-- Rollback drill required in Phase 1 smoke tests
-
-Documented in `runbooks/rollback.md`.
-
-## RLS Phase 2 Gate Deferral (Phase 2)
-
-RLS gate deferred to pre-Phase 4 (before a second service shares the database). Rationale: beerbook-api validates all tokens and enforces ownership; PostgREST is internal-only. RLS becomes necessary when multiple services share Supabase.
-
-## daw-web Identity Decision (Phase 2)
-
-daw-web uses Keycloak OIDC: client `daw-web`, public client, Authorization Code + PKCE. Matrix direct login is retired for the front door; registration is via Keycloak self-registration (`kc_action=register`).
-
-## daw-web Session Decision (Phase 2)
-
-Tokens are stored in sessionStorage only (not localStorage). The landing page does not require persistent sessions; closing the tab ends the session.
-
-## Database Schema Decision
-
-- `profiles.id` and `ratings.user_id` are TEXT (Keycloak sub claim)
-- No references to Supabase `auth.users` table
-- No use of `auth.uid()` in RLS policies
-- Original `database-schema.sql` must be replaced with corrected version (see PHASE1.md Task 4)
-
-## Filename Convention Decision
-
-All root-level documentation files use UPPERCASE names:
-- `ARCHITECTURE.md`
-- `DECISIONS.md`
-- `PHASE1.md`
-- `PLAN_CRITIQUE.md`
-
-Rationale: Case-sensitive filesystems (Linux) treat `architecture.md` and `ARCHITECTURE.md` as different files. Standardizing prevents automation breakage when scripts or agent prompts reference these files.
-
-## Container Image Versioning Decision
-
-All docker-compose services pin to explicit image version tags. `:latest` is never used.
-
-Rationale: Explicit tags provide a known-good rollback target and prevent surprise behavior changes from upstream image updates.
+You are operating inside an existing live deployment (DAW Platform). Do NOT rebuild from scratch.
 
 ---
 
-_End of Decisions v2_
+## Prime Directive
+
+Do not break production. Avoid changes that can lock users out or lose DB data.
+
+---
+
+## Context Loading (do this FIRST on every session)
+
+1. Read `ARCHITECTURE.md` — understand the full system topology
+2. Read `DECISIONS.md` — understand past decisions and constraints
+3. Read the **active phase prompt** (e.g., `cursor/prompts/03_phase_2_5_beerbook_polish.md`) — understand what you're building
+4. Read the **existing code you're about to modify** before changing it — understand current state
+5. If the phase prompt references existing files (schema, API, frontend), read them before writing
+
+**Do not start writing code until you have read all context files.**
+
+---
+
+## Execution Model
+
+### Workstream Ordering
+
+Phase prompts are organized into numbered workstreams. Execute them **in order** unless the prompt explicitly says otherwise. Each workstream builds on the previous one:
+- **Schema first** (workstream 1) — tables must exist before API endpoints reference them
+- **API second** (workstream 2) — endpoints must exist before frontend calls them
+- **Frontend after** (workstreams 3+) — UI wires up to working API
+
+**Never skip ahead.** If workstream 4 depends on workstream 2 endpoints, finish workstream 2 first.
+
+### Checkpoint Gates
+
+After completing each workstream:
+1. List all files created or modified
+2. State acceptance criteria that passed
+3. State any assumptions made (add to assumption log)
+4. Confirm no regressions to prior workstreams
+
+**Do not proceed to the next workstream until the current one's acceptance criteria are met.**
+
+### Large Phase Execution (5+ workstreams)
+
+For phases with many workstreams:
+- **Plan first:** Before writing any code, produce a numbered execution plan (max 20 bullets) showing the order of operations across all workstreams
+- **One workstream at a time:** Complete, verify, then move on
+- **Track progress:** Maintain a running checklist of completed workstreams at the top of your deliverable
+- **Incremental delivery:** Each workstream should leave the app in a working state — no half-built features that break existing functionality
+
+---
+
+## Required in Every Phase
+
+- Acceptance criteria (per workstream and overall)
+- Validation commands (exact, VPS-side)
+- Rollback steps (exact, per workstream)
+
+---
+
+## Safety Rails
+
+- **Never** run `docker compose down -v` on prod
+- **Always** use explicit compose file path:
+  ```
+  docker compose -f /opt/daw-platform/infra/compose/docker-compose.yml --env-file /opt/daw-platform/infra/compose/.env ...
+  ```
+- **Backup first**; document restore
+- **No docker commands executed locally** — all deploy instructions target VPS at `/opt/daw-platform/`
+- **Schema changes must be additive** — no column drops, no renames, no destructive migrations
+- **Use `IF NOT EXISTS` / `IF EXISTS`** on all DDL — migrations must be idempotent (safe to run twice)
+
+---
+
+## Code Quality Rules
+
+### File Organization
+- Keep files focused: one concern per file
+- Frontend JS files: split by feature area (e.g., `exchange.js`, `map.js`, `venues.js`) not one giant `app.js`
+- If a file exceeds ~500 lines, split it
+- New CSS goes in `styles.css` (extend, don't create separate CSS files unless justified)
+- New API endpoints: add to existing `server.js` if <20 new routes; split into route files if more
+
+### Backward Compatibility
+- **Never break existing functionality** — all current features must continue working after every change
+- **New columns are nullable** — existing rows must remain valid
+- **New API endpoints don't affect existing ones** — no shared middleware changes that alter existing behavior
+- **Frontend changes are additive** — new views/features don't remove or alter existing views unless explicitly instructed
+- **Demo mode must keep working** — localStorage-only fallback for unconnected state
+
+### Style Consistency
+- **Frontend:** Match existing aesthetic — see CSS variables in `styles.css` (amber/mahogany pub theme)
+- **API:** Follow existing patterns in `server.js` — same pagination helper, same auth middleware, same PostgREST proxy pattern
+- **Naming:** snake_case for DB columns, camelCase for JS variables, kebab-case for CSS classes
+
+---
+
+## Assumption Handling
+
+Per `DECISIONS.md`: **assume sensible defaults and log them.** Do not ask unless:
+- DNS change required
+- Security risk introduced
+- Data could be deleted or corrupted
+- Cost increase (new external service, paid API, etc.)
+
+Log all assumptions in the **Agent Assumption Log** table at the bottom of the phase prompt.
+
+---
+
+## What NOT to Do
+
+- Do not introduce new frameworks (React, Vue, Svelte, etc.) — the frontend is vanilla JS
+- Do not add a build step (webpack, vite, rollup, etc.)
+- Do not install npm packages in the frontend — CDN scripts only
+- Do not expose PostgREST or any internal service to the public internet
+- Do not store secrets in code, config.js, or any file that ships to the browser
+- Do not create separate CSS files per feature — extend `styles.css`
+- Do not rewrite working code "for cleanliness" unless the phase prompt requires it
+- Do not add TypeScript, ESLint, Prettier, or other tooling unless explicitly requested
+- Do not create README files unless the phase prompt asks for documentation
