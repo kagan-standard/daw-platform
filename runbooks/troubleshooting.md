@@ -7,6 +7,7 @@
 | Keycloak | `docker logs keycloak` |
 | Keycloak DB | `docker logs keycloak-db` |
 | BeerBook (nginx) | `docker logs beerbook` |
+| daw-web (nginx) | `docker logs daw-web` |
 | beerbook-api | `docker logs beerbook-api` |
 | Supabase Postgres | `docker logs supabase-db` |
 | PostgREST | `docker logs supabase-rest` |
@@ -59,6 +60,12 @@ Expect `Type: "volume"` and names containing `keycloak_db_data`, `supabase_db_da
 
 - Ensure `KC_PROXY=edge`, `KC_HOSTNAME=auth.drinksafterwork.net`, `KC_HTTP_ENABLED=true` in Keycloak env.
 - In client `beerbook`, Valid redirect URIs must include `https://beerbook.drinksafterwork.net/*` (no trailing slash on origin).
+- For **daw-web**: client `daw-web` must have Valid redirect URIs `https://drinksafterwork.net/*` and Post logout redirect URIs `https://drinksafterwork.net/*`. Web origins: `https://drinksafterwork.net`.
+
+### daw-web OIDC / Traefik
+
+- If "Sign in with DAW" fails with redirect_uri_mismatch: confirm Keycloak client `daw-web` has exactly `https://drinksafterwork.net/*` (and that the site is loaded at https://drinksafterwork.net, not a different origin).
+- If daw-web returns 404 or Traefik error: ensure container is on `traefik` network: `docker network inspect traefik` (should list daw-web). Restart: `docker compose -f /opt/daw-platform/infra/compose/docker-compose.yml --env-file /opt/daw-platform/infra/compose/.env restart daw-web`.
 
 ### 401 on API with “valid” token
 

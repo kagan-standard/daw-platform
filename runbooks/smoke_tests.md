@@ -1,10 +1,10 @@
-# Smoke Tests — Phase 1
+# Smoke Tests — Phase 1 + Phase 2 (daw-web)
 
 Run after deploy. All from a host that can reach the VM (or from the VM).
 
 ## Prerequisites
 
-- DNS: `auth.drinksafterwork.net`, `beerbook.drinksafterwork.net`, `api.beerbook.drinksafterwork.net` → `178.156.232.88`
+- DNS: `auth.drinksafterwork.net`, `beerbook.drinksafterwork.net`, `api.beerbook.drinksafterwork.net`, `drinksafterwork.net` → `178.156.232.88`
 - TLS certs valid on all three
 - Containers up: `docker compose -f infra/compose/docker-compose.yml --env-file infra/compose/.env ps`
 
@@ -14,7 +14,7 @@ Run after deploy. All from a host that can reach the VM (or from the VM).
 
 | Check | Command / Step | Expected |
 |-------|----------------|----------|
-| DNS | `nslookup auth.drinksafterwork.net` | `178.156.232.88` (and same for beerbook, api.beerbook) |
+| DNS | `nslookup auth.drinksafterwork.net` | `178.156.232.88` (and same for beerbook, api.beerbook, drinksafterwork.net) |
 | TLS | `curl -sI https://auth.drinksafterwork.net` | 200, valid cert |
 | OIDC Discovery | `curl -s https://auth.drinksafterwork.net/realms/daw/.well-known/openid-configuration` | JSON with `authorization_endpoint`, `token_endpoint`, `jwks_uri` |
 | API health | `curl -s https://api.beerbook.drinksafterwork.net/api/health` | `{"status":"ok","service":"beerbook-api"}` |
@@ -24,6 +24,21 @@ Run after deploy. All from a host that can reach the VM (or from the VM).
 | Login flow | Browser: beerbook → Sign in with DAW → Keycloak → back to BeerBook | Session established |
 | Data persistence | Create a review in BeerBook, refresh page | Review still visible |
 | Ownership | User A creates review; User B (different account) cannot delete it | Delete fails or 404 |
+
+---
+
+## Phase 2 — daw-web (front door)
+
+| Check | Command / Step | Expected |
+|-------|----------------|----------|
+| daw-web loads | `curl -fsSI https://drinksafterwork.net \| head` | 200, HTML |
+| Existing services | `curl -fsSI https://beerbook.drinksafterwork.net \| head`; `curl -fsSI https://auth.drinksafterwork.net \| head`; `curl -fsSI https://api.beerbook.drinksafterwork.net/api/health` | 200 / healthy |
+| config.js | `curl -fsSI https://drinksafterwork.net/config.js` | 200 |
+| OIDC discovery | `curl -s https://auth.drinksafterwork.net/realms/daw/.well-known/openid-configuration` | JSON with endpoints |
+| No Matrix in source | `curl -s https://drinksafterwork.net \| grep -c "_matrix/client"` | 0 |
+| No reCAPTCHA | `curl -s https://drinksafterwork.net \| grep -c "recaptcha"` | 0 |
+
+**Manual browser:** Open https://drinksafterwork.net → launcher cards visible; "Sign in with DAW" → Keycloak; log in → return with username; BeerBook / DAW Chat cards link correctly; DAWFootball disabled; Sign out → logged-out state; test at 375px width.
 
 ---
 

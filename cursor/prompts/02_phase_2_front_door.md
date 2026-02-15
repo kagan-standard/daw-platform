@@ -1,4 +1,4 @@
-﻿# Phase 2 — DAW Web as the Front Door
+# Phase 2 — DAW Web as the Front Door
 
 Apply cursor/prompts/00_system.md rules.
 
@@ -354,4 +354,38 @@ _Agents must log assumptions here instead of asking (per DECISIONS.md):_
 
 | Date | Task | Assumption | Rationale |
 |------|------|------------|-----------|
-| | | | |
+| 2025-02-15 | 0 | Compose path on VPS is `/opt/daw-platform`; Traefik entrypoint `web-secure` and cert resolver `default` match existing beerbook labels. | Same as Phase 1 deploy runbook. |
+| 2025-02-15 | 1 | Keycloak client `daw-web` is created manually by operator; no admin API automation. | DECISIONS + prompt: do not automate Keycloak admin unless credentials available. |
+| 2025-02-15 | 2 | config.js loaded synchronously before inline script. | Single HTML + separate config pattern per prompt. |
+| 2025-02-15 | 3 | OIDC storage: sessionStorage prefix `daw_oidc_`; no refresh on landing. | sessionStorage-only per DECISIONS; PKCE from BeerBook supabase.js. |
+| 2025-02-15 | 3 | Tagline "Where the crew links up"; service icons emoji. | Sensible default. |
+| 2025-02-15 | 4 | signup.html not present in apps/daw-web; no file deleted. | Glob found 0 files. |
+| 2025-02-15 | 5–7 | Runbooks/docs updated; operator runs deploy on VPS. | No docker locally per prompt. |
+
+---
+
+## Validation commands (VPS)
+
+```bash
+docker compose -f /opt/daw-platform/infra/compose/docker-compose.yml --env-file /opt/daw-platform/infra/compose/.env up -d daw-web
+docker network inspect traefik
+curl -fsSI https://drinksafterwork.net
+curl -fsSI https://beerbook.drinksafterwork.net
+curl -fsSI https://auth.drinksafterwork.net
+curl -fsSI https://drinksafterwork.net/config.js
+curl -s https://auth.drinksafterwork.net/realms/daw/.well-known/openid-configuration
+curl -s https://drinksafterwork.net | grep -c "_matrix/client"
+curl -s https://drinksafterwork.net | grep -c "recaptcha"
+```
+
+---
+
+## Rollback steps (exact)
+
+1. **Revert daw-web service:** Remove the `daw-web` service block from `infra/compose/docker-compose.yml`. Run:  
+   `docker compose -f /opt/daw-platform/infra/compose/docker-compose.yml --env-file /opt/daw-platform/infra/compose/.env up -d --remove-orphans`  
+   Old standalone `daw-signup` (if still running) remains as fallback.
+
+2. **Revert index.html only:**  
+   `git checkout HEAD~1 -- apps/daw-web/index.html`  
+   Restart or rely on volume mount to serve reverted file.

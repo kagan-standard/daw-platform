@@ -1,4 +1,4 @@
-# Deploy — Phase 1 (BeerBook + Keycloak + Supabase)
+# Deploy — Phase 1 (BeerBook + Keycloak + Supabase) + Phase 2 (daw-web)
 
 ## Prerequisites
 
@@ -13,6 +13,7 @@ Ensure A records point to `178.156.232.88`:
 - `auth.drinksafterwork.net`
 - `beerbook.drinksafterwork.net`
 - `api.beerbook.drinksafterwork.net`
+- `drinksafterwork.net` (Phase 2: daw-web front door)
 
 ## 2. Secrets and env
 
@@ -89,10 +90,42 @@ docker exec supabase-db psql -U postgres -c '\dt'
    - Use OIDC discovery: `curl -s https://auth.drinksafterwork.net/realms/daw/.well-known/openid-configuration`.  
    - Log in via BeerBook, decode access token (e.g. jwt.io): must contain `aud` including `beerbook` and `azp: "beerbook"`.
 
-6. **Test user**  
+6. **Create client `daw-web` (Phase 2)**  
+   - Clients → Create client.  
+   - Client type: OpenID Connect.  
+   - Client ID: `daw-web`.  
+   - Next → Client authentication: **OFF** (public).  
+   - Next → Valid redirect URIs: `https://drinksafterwork.net/*`.  
+   - Valid post logout redirect URIs: `https://drinksafterwork.net/*`.  
+   - Web origins: `https://drinksafterwork.net`.  
+   - Save.  
+   - Add audience mapper (Client scopes → create or use dedicated scope):  
+     - Mapper type: **Audience**, Included Client Audience: `daw-web`, Add to access token: ON, Add to ID token: OFF.  
+   - Ensure client’s Assigned client scopes include this scope so access tokens contain `aud: daw-web`.
+
+7. **Test user**  
    - Users → Add user (e.g. `testuser`), set password in Credentials tab.
 
-## 6. Update BeerBook static files (if changed)
+## 6a. Deploy daw-web (Phase 2)
+
+daw-web is defined in the same `docker-compose.yml`. To start it:
+
+```bash
+docker compose -f /opt/daw-platform/infra/compose/docker-compose.yml --env-file /opt/daw-platform/infra/compose/.env up -d daw-web
+```
+
+Verify:
+
+```bash
+docker network inspect traefik
+# Should list daw-web.
+curl -fsSI https://drinksafterwork.net
+# Should return 200 with HTML.
+```
+
+**Retiring old daw-signup:** After Phase 2 is verified, the operator can stop the old standalone container: `docker stop daw-signup` and `docker rm daw-signup`. Optionally archive: `mv /opt/daw-signup /opt/daw-signup.bak`. Do not delete `/opt/daw-signup` until the new daw-web has been confirmed working; keep backup for at least a week. See Task 7 in Phase 2 prompt.
+
+## 6b. Update BeerBook static files (if changed)
 
 If you changed `apps/beerbook/`:
 
@@ -100,18 +133,18 @@ If you changed `apps/beerbook/`:
 - Or copy into the container/volume and restart:  
   `docker compose -f /opt/daw-platform/infra/compose/docker-compose.yml restart beerbook`
 
-## 7. Rebuild beerbook-api (if code changed)
+## 7. Rebuild beerbook-api (if code changed) (if code changed)
 
 ```bash
 docker compose -f /opt/daw-platform/infra/compose/docker-compose.yml --env-file /opt/daw-platform/infra/compose/.env build beerbook-api --no-cache
 docker compose -f /opt/daw-platform/infra/compose/docker-compose.yml --env-file /opt/daw-platform/infra/compose/.env up -d beerbook-api
 ```
 
-## 8. Smoke tests
+## 8. Smoke tests (Phase 1 + Phase 2)
 
 Run checks in `runbooks/smoke_tests.md` (health, auth, pagination, rate limit, CORS, rollback drill).
 
-## 9. Record last-known-good (rollback)
+## 9. Record last-known-good (rollback) (rollback)
 
 After a successful deploy, note in `runbooks/rollback.md`:
 

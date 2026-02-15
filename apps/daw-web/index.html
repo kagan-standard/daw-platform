@@ -21,7 +21,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-<script src="https://www.google.com/recaptcha/api.js" async defer></script>
+<script src="config.js"></script>
 <style>
   *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
   :root {
@@ -38,200 +38,84 @@
   .cityscape svg { width: 100%; height: 100%; }
   .page { position: relative; z-index: 2; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; padding: 20px 20px 40px; }
 
-  /* Logo */
   .logo-area { margin-bottom: 24px; text-align: center; animation: fadeDown 0.8s ease-out; }
   .logo-area img { width: 100px; height: 100px; border-radius: 50%; border: 2px solid var(--gold); box-shadow: 0 0 30px var(--gold-glow); object-fit: cover; }
   .site-title { font-family: 'Bebas Neue', sans-serif; font-size: 32px; letter-spacing: 4px; color: var(--gold); margin-top: 12px; text-shadow: 0 0 20px var(--gold-glow); }
+  .tagline { font-size: 14px; color: var(--text-dim); margin-top: 6px; letter-spacing: 0.5px; }
 
-  /* Card system */
   .card-wrapper { position: relative; width: 440px; max-width: 100%; animation: fadeUp 0.8s ease-out 0.2s both; }
   .card-base { background: var(--bg-card); border: 1px solid var(--input-border); border-radius: 16px; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,0.5), 0 0 40px var(--gold-glow); transition: opacity 0.5s, transform 0.5s; }
   .card-hidden { opacity: 0; transform: scale(0.95) translateY(-10px); pointer-events: none; position: absolute; width: 100%; top: 0; }
   .card-visible { opacity: 1; transform: scale(1) translateY(0); pointer-events: all; position: relative; }
 
-  /* Tabs */
-  .tabs { display: flex; position: relative; background: var(--bg-card-alt); border-bottom: 1px solid var(--input-border); }
-  .tab { flex: 1; padding: 16px; text-align: center; font-family: 'Bebas Neue', sans-serif; font-size: 20px; letter-spacing: 2px; color: var(--text-dim); cursor: pointer; transition: color 0.3s; position: relative; z-index: 1; user-select: none; }
-  .tab:hover { color: var(--text); }
-  .tab.active { color: var(--gold); }
-  .tab-indicator { position: absolute; bottom: 0; left: 0; width: 50%; height: 3px; background: var(--gold); border-radius: 3px 3px 0 0; transition: transform 0.4s cubic-bezier(0.4,0,0.2,1); box-shadow: 0 0 10px var(--gold-glow); }
-  .tab-indicator.register { transform: translateX(100%); }
+  .front-door-pad { padding: 32px; text-align: center; }
+  .service-grid { display: flex; flex-direction: column; gap: 14px; margin-bottom: 28px; }
+  .service-card { display: flex; align-items: center; gap: 16px; background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 12px; padding: 18px 20px; transition: all 0.3s; text-align: left; }
+  .service-card a { text-decoration: none; color: inherit; display: flex; align-items: center; gap: 16px; flex: 1; min-width: 0; }
+  .service-card.live { cursor: pointer; }
+  .service-card.live:hover { border-color: var(--gold); box-shadow: 0 0 20px var(--gold-glow); transform: translateX(4px); background: rgba(245,183,49,0.05); }
+  .service-card.coming-soon { opacity: 0.6; cursor: default; }
+  .service-icon { width: 44px; height: 44px; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .service-icon.beer { background: rgba(245,183,49,0.15); color: var(--gold); }
+  .service-icon.chat { background: #6c5ce722; color: #6c5ce7; }
+  .service-icon.football { background: rgba(46,204,113,0.12); color: #2ecc71; }
+  .service-info { flex: 1; min-width: 0; }
+  .service-name { font-family: 'Bebas Neue', sans-serif; font-size: 18px; letter-spacing: 1.5px; margin-bottom: 2px; }
+  .service-desc { font-size: 12px; color: var(--text-dim); }
+  .service-badge { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; padding: 3px 8px; border-radius: 6px; flex-shrink: 0; }
+  .badge-live { background: rgba(46,204,113,0.2); color: var(--success); }
+  .badge-soon { background: #ffffff11; color: var(--text-dim); }
+  .service-arrow { color: var(--text-dim); font-size: 18px; transition: color 0.3s, transform 0.3s; flex-shrink: 0; }
+  .service-card.live:hover .service-arrow { color: var(--gold); transform: translateX(3px); }
 
-  /* Sliding panels */
-  .panels { position: relative; overflow: hidden; width: 100%; }
-  .panels-track { display: flex; width: 200%; transition: transform 0.5s cubic-bezier(0.4,0,0.2,1); will-change: transform; }
-  .panels-track.show-register { transform: translateX(-50%); }
-  .panel { width: 50%; flex-shrink: 0; padding: 32px; }
-
-  /* Forms */
-  .form-group { margin-bottom: 20px; }
-  .form-group label { display: block; font-size: 12px; font-weight: 500; text-transform: uppercase; letter-spacing: 1.5px; color: var(--text-dim); margin-bottom: 8px; }
-  .form-group input { width: 100%; padding: 14px 16px; background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 10px; color: var(--text); font-family: 'Outfit', sans-serif; font-size: 15px; transition: border-color 0.3s, box-shadow 0.3s; outline: none; }
-  .form-group input::placeholder { color: var(--text-dim); opacity: 0.5; }
-  .form-group input:focus { border-color: var(--gold); box-shadow: 0 0 0 3px var(--gold-glow); }
-  .password-wrapper { position: relative; }
-  .password-toggle { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); background: none; border: none; color: var(--text-dim); cursor: pointer; font-size: 13px; padding: 4px; transition: color 0.2s; font-family: 'Outfit', sans-serif; }
-  .password-toggle:hover { color: var(--gold); }
-  .btn { width: 100%; padding: 15px; border: none; border-radius: 10px; font-family: 'Bebas Neue', sans-serif; font-size: 20px; letter-spacing: 3px; cursor: pointer; transition: all 0.3s; position: relative; overflow: hidden; }
+  .auth-buttons { display: flex; flex-direction: column; gap: 12px; }
+  .btn { width: 100%; padding: 15px; border: none; border-radius: 10px; font-family: 'Bebas Neue', sans-serif; font-size: 20px; letter-spacing: 3px; cursor: pointer; transition: all 0.3s; text-decoration: none; text-align: center; display: inline-block; box-sizing: border-box; }
   .btn-gold { background: var(--gold); color: var(--bg); }
   .btn-gold:hover { background: var(--gold-dim); box-shadow: 0 4px 20px var(--gold-glow); transform: translateY(-1px); }
-  .btn-gold:active { transform: translateY(0); }
-  .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important; }
-  .btn .spinner { display: none; width: 20px; height: 20px; border: 2px solid transparent; border-top-color: var(--bg); border-radius: 50%; animation: spin 0.6s linear infinite; margin: 0 auto; }
-  .btn.loading .btn-text { display: none; }
-  .btn.loading .spinner { display: block; }
-  .status-msg { text-align: center; font-size: 13px; margin-top: 16px; min-height: 20px; }
-  .status-msg.error { color: var(--error); }
-  .status-msg.success { color: var(--success); }
-  .homeserver-badge { text-align: center; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--input-border); font-size: 12px; color: var(--text-dim); letter-spacing: 0.5px; }
-  .homeserver-badge span { color: var(--gold); }
-  .pw-requirements { font-size: 11px; color: var(--text-dim); margin-top: 6px; opacity: 0.7; }
-  .recaptcha-container { margin-bottom: 20px; display: flex; justify-content: center; min-height: 78px; }
+  .btn-outline { background: transparent; color: var(--gold); border: 2px solid var(--gold); }
+  .btn-outline:hover { background: rgba(245,183,49,0.1); }
+  .status-msg { text-align: center; font-size: 13px; margin-top: 12px; min-height: 20px; color: var(--error); }
 
-  /* ═══ LAUNCHER (post-login) ═══ */
   .launcher-pad { padding: 32px; text-align: center; }
-  .launcher-welcome { font-family: 'Bebas Neue', sans-serif; font-size: 24px; letter-spacing: 3px; color: var(--gold); margin-bottom: 6px; }
-  .launcher-sub { font-size: 14px; color: var(--text-dim); margin-bottom: 28px; }
-  .launcher-grid { display: flex; flex-direction: column; gap: 14px; }
-  .launch-btn { display: flex; align-items: center; gap: 16px; background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 12px; padding: 18px 20px; cursor: pointer; transition: all 0.3s; text-align: left; text-decoration: none; color: var(--text); }
-  .launch-btn:hover { border-color: var(--gold); box-shadow: 0 0 20px var(--gold-glow); transform: translateX(4px); background: rgba(245,183,49,0.05); }
-  .launch-btn.disabled { opacity: 0.4; cursor: default; pointer-events: none; }
-  .launch-icon { width: 44px; height: 44px; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-  .launch-icon.website { background: rgba(245,183,49,0.15); color: var(--gold); }
-  .launch-icon.fantasy { background: #6c5ce722; color: #6c5ce7; }
-  .launch-info { flex: 1; }
-  .launch-name { font-family: 'Bebas Neue', sans-serif; font-size: 18px; letter-spacing: 1.5px; margin-bottom: 2px; }
-  .launch-desc { font-size: 12px; color: var(--text-dim); }
-  .launch-badge { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; padding: 3px 8px; border-radius: 6px; flex-shrink: 0; }
-  .badge-soon { background: #ffffff11; color: var(--text-dim); }
-  .launch-arrow { color: var(--text-dim); font-size: 18px; transition: color 0.3s, transform 0.3s; flex-shrink: 0; }
-  .launch-btn:hover .launch-arrow { color: var(--gold); transform: translateX(3px); }
-
-  /* Footer links (sign out + web chat) */
+  .user-bar { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; justify-content: center; flex-wrap: wrap; }
+  .user-avatar { width: 48px; height: 48px; border-radius: 50%; object-fit: cover; border: 2px solid var(--gold); }
+  .user-avatar.initials { display: flex; align-items: center; justify-content: center; background: rgba(245,183,49,0.2); color: var(--gold); font-family: 'Bebas Neue', sans-serif; font-size: 18px; letter-spacing: 1px; }
+  .user-greeting { font-family: 'Bebas Neue', sans-serif; font-size: 24px; letter-spacing: 3px; color: var(--gold); }
+  .launcher-sub { font-size: 14px; color: var(--text-dim); margin-bottom: 24px; }
   .card-footer { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--input-border); text-align: center; }
   .card-signout { font-size: 13px; color: var(--gold); cursor: pointer; transition: all 0.2s; background: none; border: 1px solid var(--gold); border-radius: 8px; padding: 8px 20px; font-family: 'Outfit', sans-serif; }
   .card-signout:hover { background: var(--gold); color: var(--bg); }
   .web-chat-hint { margin-top: 16px; font-size: 14px; color: var(--text-dim); opacity: 0.6; line-height: 1.5; }
   .web-chat-hint a { color: var(--gold); text-decoration: underline; text-decoration-style: dotted; transition: color 0.2s; }
-  .web-chat-hint a:hover { color: var(--gold); opacity: 1; }
 
-  /* ═══ WELCOME (post-register) ═══ */
-  .welcome-pad { padding: 32px; text-align: center; }
-  .welcome-check { width: 56px; height: 56px; border-radius: 50%; background: rgba(46,204,113,0.12); display: flex; align-items: center; justify-content: center; margin: 0 auto 16px; }
-  .welcome-check svg { color: var(--success); }
-  .welcome-title { font-family: 'Bebas Neue', sans-serif; font-size: 26px; letter-spacing: 3px; color: var(--gold); margin-bottom: 6px; }
-  .welcome-sub { font-size: 14px; color: var(--text-dim); margin-bottom: 28px; line-height: 1.5; }
-
-  /* App download */
-  .app-section { margin-bottom: 24px; }
-  .app-section-title { font-family: 'Bebas Neue', sans-serif; font-size: 18px; letter-spacing: 2px; color: var(--text); margin-bottom: 14px; }
-  .app-links { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
-  .app-link { display: flex; align-items: center; gap: 8px; padding: 10px 16px; border-radius: 10px; background: var(--input-bg); border: 1px solid var(--input-border); color: var(--text); text-decoration: none; font-size: 13px; font-weight: 500; transition: all 0.3s; }
-  .app-link:hover { border-color: var(--gold); background: rgba(245,183,49,0.05); }
-  .app-link svg { flex-shrink: 0; }
-
-  /* Setup instructions */
-  .setup-box { background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 12px; padding: 16px; margin-bottom: 20px; text-align: left; }
-  .setup-toggle { display: flex; align-items: center; justify-content: space-between; cursor: pointer; user-select: none; width: 100%; background: none; border: none; color: var(--text); font-family: 'Outfit', sans-serif; font-size: 14px; font-weight: 500; }
-  .setup-toggle:hover { color: var(--gold); }
-  .setup-chevron { transition: transform 0.3s; font-size: 12px; color: var(--text-dim); }
-  .setup-chevron.open { transform: rotate(180deg); }
-  .setup-steps { display: none; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--input-border); }
-  .setup-steps.open { display: block; }
-  .setup-step { display: flex; gap: 10px; margin-bottom: 10px; font-size: 13px; color: var(--text-dim); line-height: 1.5; }
-  .setup-step:last-child { margin-bottom: 0; }
-  .step-num { width: 22px; height: 22px; border-radius: 50%; background: var(--gold); color: var(--bg); font-family: 'Bebas Neue', sans-serif; font-size: 13px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 1px; }
-  .setup-step code { background: rgba(245,183,49,0.1); color: var(--gold); padding: 1px 6px; border-radius: 4px; font-size: 12px; }
-
-  /* Animations */
   @keyframes fadeDown { from { opacity: 0; transform: translateY(-20px); } to { opacity: 1; transform: translateY(0); } }
   @keyframes fadeUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  @keyframes popIn { from { opacity: 0; transform: scale(0.5); } to { opacity: 1; transform: scale(1); } }
 
   @media (max-width: 480px) {
     .card-wrapper { width: 100%; }
-    .panel { padding: 24px 20px; }
+    .front-door-pad, .launcher-pad { padding: 24px 20px; }
     .site-title { font-size: 26px; }
     .cityscape { height: 260px; }
-    .launcher-pad, .welcome-pad { padding: 24px 20px; }
-    .launch-btn { padding: 14px 16px; }
-    .recaptcha-container > div { transform: scale(0.85); transform-origin: center; }
-    .app-links { flex-direction: column; }
+    .service-card { padding: 14px 16px; }
+  }
+  @media (min-width: 360px) and (max-width: 480px) {
+    .service-grid { gap: 12px; }
   }
 </style>
 </head>
 <body>
 <canvas id="stars-canvas"></canvas>
-
-<!-- Giant beer behind cityscape -->
-<div style="position:fixed; bottom:-40px; right:-80px; z-index:0; pointer-events:none; opacity:0.15;">
-  <svg width="900" height="900" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
-    <rect x="12" y="16" width="32" height="40" rx="4" fill="#f5b731"/>
-    <rect x="14" y="22" width="28" height="32" rx="2" fill="#e8a520"/>
-    <ellipse cx="20" cy="18" rx="8" ry="6" fill="white" opacity="0.95"/>
-    <ellipse cx="32" cy="17" rx="9" ry="7" fill="white" opacity="0.95"/>
-    <ellipse cx="26" cy="15" rx="7" ry="5" fill="white" opacity="0.9"/>
-    <ellipse cx="38" cy="19" rx="6" ry="5" fill="white" opacity="0.9"/>
-    <path d="M44 24 Q56 24 56 36 Q56 48 44 48" fill="none" stroke="#f5b731" stroke-width="4" stroke-linecap="round"/>
-    <rect x="16" y="24" width="4" height="26" rx="2" fill="white" opacity="0.2"/>
-    <circle cx="24" cy="42" r="1.5" fill="white" opacity="0.3"/>
-    <circle cx="30" cy="36" r="1" fill="white" opacity="0.25"/>
-    <circle cx="22" cy="32" r="1.2" fill="white" opacity="0.3"/>
-    <circle cx="34" cy="44" r="1" fill="white" opacity="0.2"/>
-  </svg>
-</div>
 <div class="cityscape">
   <svg viewBox="0 0 1440 400" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
     <defs><linearGradient id="cityGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#0f1428"/><stop offset="100%" stop-color="#080a14"/></linearGradient></defs>
     <path fill="#0e1225" opacity="0.5" d="M0,400 L0,280 L30,280 L30,220 L50,220 L50,180 L65,180 L65,220 L90,220 L90,160 L110,160 L110,120 L125,120 L125,100 L140,100 L140,140 L160,140 L160,200 L190,200 L190,150 L210,150 L210,100 L225,100 L225,70 L240,70 L240,60 L255,60 L255,100 L280,100 L280,160 L310,160 L310,220 L340,220 L340,180 L360,180 L360,130 L375,130 L375,90 L390,90 L390,70 L405,70 L405,110 L430,110 L430,170 L460,170 L460,230 L490,230 L490,190 L510,190 L510,140 L525,140 L525,100 L540,100 L540,80 L555,80 L555,60 L570,60 L570,100 L590,100 L590,150 L620,150 L620,210 L650,210 L650,260 L680,260 L680,200 L700,200 L700,150 L715,150 L715,110 L730,110 L730,80 L745,80 L745,50 L760,50 L760,90 L780,90 L780,140 L810,140 L810,200 L840,200 L840,250 L870,250 L870,210 L890,210 L890,160 L910,160 L910,120 L925,120 L925,80 L940,80 L940,110 L960,110 L960,160 L990,160 L990,220 L1020,220 L1020,260 L1050,260 L1050,200 L1070,200 L1070,150 L1085,150 L1085,110 L1100,110 L1100,80 L1115,80 L1115,55 L1130,55 L1130,90 L1150,90 L1150,140 L1180,140 L1180,200 L1210,200 L1210,250 L1240,250 L1240,190 L1260,190 L1260,140 L1275,140 L1275,100 L1290,100 L1290,70 L1305,70 L1305,110 L1330,110 L1330,170 L1360,170 L1360,230 L1390,230 L1390,180 L1410,180 L1410,140 L1430,140 L1430,200 L1440,200 L1440,400 Z"/>
-    <path fill="url(#cityGrad)" d="M0,400 L0,310 L25,310 L25,270 L45,270 L45,240 L60,240 L60,210 L75,210 L75,240 L95,240 L95,280 L120,280 L120,230 L135,230 L135,190 L150,190 L150,160 L170,160 L170,200 L195,200 L195,250 L220,250 L220,290 L245,290 L245,240 L260,240 L260,200 L275,200 L275,160 L290,160 L290,130 L310,130 L310,170 L335,170 L335,220 L360,220 L360,270 L385,270 L385,310 L410,310 L410,260 L425,260 L425,220 L440,220 L440,180 L455,180 L455,150 L475,150 L475,190 L500,190 L500,240 L525,240 L525,280 L550,280 L550,230 L565,230 L565,190 L580,190 L580,150 L595,150 L595,120 L615,120 L615,160 L640,160 L640,210 L665,210 L665,260 L690,260 L690,300 L715,300 L715,250 L730,250 L730,210 L745,210 L745,170 L760,170 L760,140 L780,140 L780,110 L795,110 L795,150 L820,150 L820,200 L845,200 L845,250 L870,250 L870,300 L895,300 L895,340 L920,340 L920,280 L935,280 L935,240 L950,240 L950,200 L965,200 L965,160 L985,160 L985,200 L1010,200 L1010,250 L1035,250 L1035,290 L1060,290 L1060,240 L1075,240 L1075,200 L1090,200 L1090,160 L1105,160 L1105,130 L1125,130 L1125,170 L1150,170 L1150,220 L1175,220 L1175,270 L1200,270 L1200,310 L1225,310 L1225,260 L1240,260 L1240,220 L1255,220 L1255,180 L1270,180 L1270,150 L1290,150 L1290,190 L1315,190 L1315,240 L1340,240 L1340,280 L1365,280 L1365,230 L1380,230 L1380,200 L1395,200 L1395,240 L1420,240 L1420,280 L1440,280 L1440,400 Z"/>
+    <path fill="url(#cityGrad)" d="M0,400 L0,310 L25,310 L25,270 L45,270 L45,240 L60,240 L60,210 L75,210 L75,240 L95,240 L95,280 L120,280 L120,230 L135,230 L135,190 L150,190 L150,160 L170,170 L170,200 L195,200 L195,250 L220,250 L220,290 L245,290 L245,240 L260,260 L260,200 L275,200 L275,160 L290,160 L290,130 L310,130 L310,170 L335,170 L335,220 L360,220 L360,270 L385,270 L385,310 L410,310 L410,260 L425,260 L425,220 L440,220 L440,180 L455,180 L455,150 L475,150 L475,190 L500,190 L500,240 L525,240 L525,280 L550,280 L550,230 L565,230 L565,190 L580,190 L580,150 L595,150 L595,120 L615,120 L615,160 L640,160 L640,210 L665,210 L665,260 L690,260 L690,300 L715,300 L715,250 L730,250 L730,210 L745,210 L745,170 L760,170 L760,140 L780,140 L780,110 L795,110 L795,150 L820,150 L820,200 L845,200 L845,250 L870,250 L870,300 L895,300 L895,340 L920,340 L920,280 L935,280 L935,240 L950,240 L950,200 L965,200 L965,160 L985,160 L985,200 L1010,200 L1010,250 L1035,250 L1035,290 L1060,290 L1060,240 L1075,240 L1075,200 L1090,200 L1090,160 L1105,160 L1105,130 L1125,130 L1125,170 L1150,170 L1150,220 L1175,220 L1175,270 L1200,270 L1200,310 L1225,310 L1225,260 L1240,260 L1240,220 L1255,220 L1255,180 L1270,180 L1270,150 L1290,150 L1290,190 L1315,190 L1315,240 L1340,240 L1340,280 L1365,280 L1365,230 L1380,230 L1380,200 L1395,200 L1395,240 L1420,240 L1420,280 L1440,280 L1440,400 Z"/>
     <g fill="#f5b731">
-      <!-- Building 1 windows -->
       <rect x="52" y="220" width="5" height="7" rx="1" opacity="0.6"/><rect x="62" y="220" width="5" height="7" rx="1" opacity="0.3"/>
-      <rect x="52" y="232" width="5" height="7" rx="1" opacity="0.4"/><rect x="62" y="232" width="5" height="7" rx="1" opacity="0.5"/>
-      <!-- Building 2 windows -->
-      <rect x="140" y="170" width="5" height="7" rx="1" opacity="0.7"/><rect x="150" y="170" width="5" height="7" rx="1" opacity="0.3"/><rect x="160" y="170" width="5" height="7" rx="1" opacity="0.5"/>
-      <rect x="140" y="182" width="5" height="7" rx="1" opacity="0.4"/><rect x="150" y="182" width="5" height="7" rx="1" opacity="0.6"/><rect x="160" y="182" width="5" height="7" rx="1" opacity="0.3"/>
-      <rect x="140" y="194" width="5" height="7" rx="1" opacity="0.5"/><rect x="150" y="194" width="5" height="7" rx="1" opacity="0.4"/>
-      <!-- Building 3 tall -->
+      <rect x="140" y="170" width="5" height="7" rx="1" opacity="0.7"/><rect x="150" y="170" width="5" height="7" rx="1" opacity="0.3"/>
       <rect x="293" y="140" width="5" height="7" rx="1" opacity="0.6"/><rect x="303" y="140" width="5" height="7" rx="1" opacity="0.4"/>
-      <rect x="293" y="152" width="5" height="7" rx="1" opacity="0.3"/><rect x="303" y="152" width="5" height="7" rx="1" opacity="0.7"/>
-      <rect x="293" y="164" width="5" height="7" rx="1" opacity="0.5"/><rect x="303" y="164" width="5" height="7" rx="1" opacity="0.3"/>
-      <rect x="293" y="176" width="5" height="7" rx="1" opacity="0.4"/><rect x="303" y="176" width="5" height="7" rx="1" opacity="0.6"/>
-      <!-- Building 4 -->
-      <rect x="460" y="160" width="5" height="7" rx="1" opacity="0.5"/><rect x="470" y="160" width="5" height="7" rx="1" opacity="0.7"/>
-      <rect x="460" y="172" width="5" height="7" rx="1" opacity="0.6"/><rect x="470" y="172" width="5" height="7" rx="1" opacity="0.3"/>
-      <rect x="460" y="184" width="5" height="7" rx="1" opacity="0.4"/><rect x="470" y="184" width="5" height="7" rx="1" opacity="0.5"/>
-      <!-- Building 5 tallest -->
       <rect x="598" y="130" width="5" height="7" rx="1" opacity="0.7"/><rect x="608" y="130" width="5" height="7" rx="1" opacity="0.4"/>
-      <rect x="598" y="142" width="5" height="7" rx="1" opacity="0.3"/><rect x="608" y="142" width="5" height="7" rx="1" opacity="0.6"/>
-      <rect x="598" y="154" width="5" height="7" rx="1" opacity="0.5"/><rect x="608" y="154" width="5" height="7" rx="1" opacity="0.7"/>
-      <rect x="598" y="166" width="5" height="7" rx="1" opacity="0.4"/><rect x="608" y="166" width="5" height="7" rx="1" opacity="0.3"/>
-      <!-- Building 6 -->
-      <rect x="783" y="120" width="5" height="7" rx="1" opacity="0.6"/><rect x="790" y="120" width="5" height="7" rx="1" opacity="0.4"/>
-      <rect x="783" y="132" width="5" height="7" rx="1" opacity="0.5"/><rect x="790" y="132" width="5" height="7" rx="1" opacity="0.7"/>
-      <rect x="783" y="144" width="5" height="7" rx="1" opacity="0.3"/><rect x="790" y="144" width="5" height="7" rx="1" opacity="0.5"/>
-      <rect x="783" y="156" width="5" height="7" rx="1" opacity="0.6"/><rect x="790" y="156" width="5" height="7" rx="1" opacity="0.4"/>
-      <rect x="783" y="168" width="5" height="7" rx="1" opacity="0.4"/>
-      <!-- Building 7 -->
       <rect x="968" y="170" width="5" height="7" rx="1" opacity="0.5"/><rect x="978" y="170" width="5" height="7" rx="1" opacity="0.7"/>
-      <rect x="968" y="182" width="5" height="7" rx="1" opacity="0.6"/><rect x="978" y="182" width="5" height="7" rx="1" opacity="0.3"/>
-      <rect x="968" y="194" width="5" height="7" rx="1" opacity="0.4"/><rect x="978" y="194" width="5" height="7" rx="1" opacity="0.6"/>
-      <!-- Building 8 tall -->
-      <rect x="1108" y="140" width="5" height="7" rx="1" opacity="0.7"/><rect x="1118" y="140" width="5" height="7" rx="1" opacity="0.3"/>
-      <rect x="1108" y="152" width="5" height="7" rx="1" opacity="0.4"/><rect x="1118" y="152" width="5" height="7" rx="1" opacity="0.6"/>
-      <rect x="1108" y="164" width="5" height="7" rx="1" opacity="0.5"/><rect x="1118" y="164" width="5" height="7" rx="1" opacity="0.7"/>
-      <rect x="1108" y="176" width="5" height="7" rx="1" opacity="0.3"/><rect x="1118" y="176" width="5" height="7" rx="1" opacity="0.5"/>
-      <!-- Building 9 -->
-      <rect x="1273" y="160" width="5" height="7" rx="1" opacity="0.6"/><rect x="1283" y="160" width="5" height="7" rx="1" opacity="0.4"/>
-      <rect x="1273" y="172" width="5" height="7" rx="1" opacity="0.5"/><rect x="1283" y="172" width="5" height="7" rx="1" opacity="0.7"/>
-      <rect x="1273" y="184" width="5" height="7" rx="1" opacity="0.3"/><rect x="1283" y="184" width="5" height="7" rx="1" opacity="0.5"/>
-      <!-- Scattered extra windows -->
-      <rect x="210" y="258" width="5" height="7" rx="1" opacity="0.4"/><rect x="370" y="228" width="5" height="7" rx="1" opacity="0.5"/>
-      <rect x="540" y="238" width="5" height="7" rx="1" opacity="0.3"/><rect x="700" y="258" width="5" height="7" rx="1" opacity="0.6"/>
-      <rect x="850" y="258" width="5" height="7" rx="1" opacity="0.4"/><rect x="1040" y="248" width="5" height="7" rx="1" opacity="0.5"/>
-      <rect x="1200" y="278" width="5" height="7" rx="1" opacity="0.3"/><rect x="1380" y="238" width="5" height="7" rx="1" opacity="0.4"/>
     </g>
   </svg>
 </div>
@@ -240,253 +124,363 @@
   <div class="logo-area">
     <img src="logo.jpg" alt="Drinks After Work">
     <div class="site-title">Drinks After Work</div>
+    <div class="tagline">Where the crew links up</div>
   </div>
 
   <div class="card-wrapper">
-
-    <!-- ═══ AUTH CARD ═══ -->
-    <div class="card-base card-visible" id="auth-card">
-      <div class="tabs">
-        <div class="tab active" id="tab-login" onclick="switchTo('login')">Sign In</div>
-        <div class="tab" id="tab-register" onclick="switchTo('register')">Register</div>
-        <div class="tab-indicator" id="tab-indicator"></div>
-      </div>
-      <div class="panels">
-        <div class="panels-track" id="panels-track">
-          <!-- LOGIN -->
-          <div class="panel">
-            <form id="login-form" onsubmit="handleLogin(event)">
-              <div class="form-group"><label>Username</label><input type="text" id="login-user" placeholder="your_username" autocomplete="username" required></div>
-              <div class="form-group"><label>Password</label><div class="password-wrapper"><input type="password" id="login-pass" placeholder="••••••••" autocomplete="current-password" required><button type="button" class="password-toggle" onclick="togglePw(this)">show</button></div></div>
-              <button type="submit" class="btn btn-gold" id="login-btn"><span class="btn-text">Sign In</span><div class="spinner"></div></button>
-              <div class="status-msg" id="login-status"></div>
-            </form>
-            <div class="homeserver-badge">Connecting to <span>drinksafterwork.net</span></div>
-          </div>
-          <!-- REGISTER -->
-          <div class="panel">
-            <form id="register-form" onsubmit="handleRegister(event)">
-              <div class="form-group"><label>Choose a Username</label><input type="text" id="reg-user" placeholder="your_username" autocomplete="username" required></div>
-              <div class="form-group"><label>Password</label><div class="password-wrapper"><input type="password" id="reg-pass" placeholder="••••••••" autocomplete="new-password" required minlength="8"><button type="button" class="password-toggle" onclick="togglePw(this)">show</button></div><div class="pw-requirements">Minimum 8 characters</div></div>
-              <div class="form-group"><label>Confirm Password</label><div class="password-wrapper"><input type="password" id="reg-pass-confirm" placeholder="••••••••" autocomplete="new-password" required><button type="button" class="password-toggle" onclick="togglePw(this)">show</button></div></div>
-              <div class="recaptcha-container"><div class="g-recaptcha" data-sitekey="6LdJOmgsAAAAANdTkN8WfLog8L-aRc7zLUIsOMzv" data-theme="dark"></div></div>
-              <button type="submit" class="btn btn-gold" id="reg-btn"><span class="btn-text">Create Account</span><div class="spinner"></div></button>
-              <div class="status-msg" id="reg-status"></div>
-            </form>
-            <div class="homeserver-badge">Joining <span>drinksafterwork.net</span></div>
-          </div>
+    <!-- Logged-out: service cards + Sign in / Create Account -->
+    <div class="card-base card-visible" id="logged-out-card">
+      <div class="front-door-pad">
+        <div class="service-grid" id="logged-out-services"></div>
+        <div class="auth-buttons">
+          <button type="button" class="btn btn-gold" id="btn-signin" onclick="startLogin()">Sign in with DAW</button>
+          <button type="button" class="btn btn-outline" id="btn-register" onclick="startRegistration()">Create Account</button>
         </div>
+        <div class="status-msg" id="auth-status"></div>
       </div>
     </div>
 
-    <!-- ═══ LAUNCHER CARD (post-login) ═══ -->
-    <div class="card-base card-hidden" id="launcher-card">
+    <!-- Logged-in: greeting + avatar + service cards + Sign out -->
+    <div class="card-base card-hidden" id="logged-in-card">
       <div class="launcher-pad">
-        <div class="launcher-welcome" id="launcher-greeting">Welcome back</div>
-        <div class="launcher-sub">Where do you want to go?</div>
-        <div class="launcher-grid">
-          <div class="launch-btn disabled">
-            <div class="launch-icon website"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg></div>
-            <div class="launch-info"><div class="launch-name">DAW Website</div><div class="launch-desc">The main hub</div></div>
-            <span class="launch-badge badge-soon">Coming Soon</span>
-          </div>
-          <div class="launch-btn disabled">
-            <div class="launch-icon fantasy"><span style="font-size:24px">🏈</span></div>
-            <div class="launch-info"><div class="launch-name">Fantasy Football</div><div class="launch-desc">League tracker &amp; social</div></div>
-            <span class="launch-badge badge-soon">Coming Soon</span>
-          </div>
+        <div class="user-bar">
+          <div id="user-avatar-wrap"></div>
+          <div class="user-greeting" id="logged-in-greeting">Welcome</div>
         </div>
+        <div class="launcher-sub">Where do you want to go?</div>
+        <div class="service-grid" id="logged-in-services"></div>
         <div class="card-footer">
           <button class="card-signout" onclick="signOut()">Sign out</button>
-          <div class="web-chat-hint">Need access to the web-based chat? <a href="https://element.drinksafterwork.net/#/login" target="_blank">Open web chat</a> (separate sign-in required)</div>
+          <div class="web-chat-hint">Web chat: <a href="https://element.drinksafterwork.net" target="_blank" rel="noopener">Element</a></div>
         </div>
       </div>
     </div>
-
-    <!-- ═══ WELCOME CARD (post-register) ═══ -->
-    <div class="card-base card-hidden" id="welcome-card">
-      <div class="welcome-pad">
-        <div class="welcome-check" id="welcome-check-icon">
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-        </div>
-        <div class="welcome-title" id="welcome-greeting">You're in!</div>
-        <div class="welcome-sub">Your account is ready. Download the Element app to start chatting with the crew.</div>
-
-        <div class="app-section">
-          <div class="app-section-title">Get the App</div>
-          <div class="app-links">
-            <a href="https://apps.apple.com/app/element-x-secure-chat-call/id1631335820" target="_blank" class="app-link">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
-              iPhone
-            </a>
-            <a href="https://play.google.com/store/apps/details?id=io.element.android.x" target="_blank" class="app-link">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M3.18 23.77L14.56 12.4 3.18.24c-.2-.17-.45-.24-.7-.24-.55 0-1 .45-1 1v22c0 .55.45 1.02 1 1.02.25-.02.5-.09.7-.25zm2.4-1.4L17.7 13.8l-3.15-3.15L5.58 22.37zM21.6 11.05l-3.3-1.85-3.56 3.56 3.56 3.56 3.3-1.85c.7-.4 1.14-1.12 1.14-1.93 0-.73-.37-1.4-1.14-1.49zM5.58 1.63l8.97 11.72 3.15-3.15L5.58 1.63z"/></svg>
-              Android
-            </a>
-            <a href="https://element.io/download" target="_blank" class="app-link">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
-              Desktop
-            </a>
-          </div>
-        </div>
-
-        <div class="setup-box">
-          <button class="setup-toggle" onclick="toggleSetup()">
-            <span>How to connect the app</span>
-            <span class="setup-chevron" id="setup-chevron">▼</span>
-          </button>
-          <div class="setup-steps" id="setup-steps">
-            <div class="setup-step"><span class="step-num">1</span><span>Open the Element app and tap <strong style="color:var(--text)">Sign In</strong></span></div>
-            <div class="setup-step"><span class="step-num">2</span><span>Tap <strong style="color:var(--text)">Change homeserver</strong> (or "Edit")</span></div>
-            <div class="setup-step"><span class="step-num">3</span><span>Enter <code>matrix.drinksafterwork.net</code></span></div>
-            <div class="setup-step"><span class="step-num">4</span><span>Sign in with the username and password you just created</span></div>
-          </div>
-        </div>
-
-        <div class="web-chat-hint">Prefer your browser? <a href="https://element.drinksafterwork.net/#/login" target="_blank">Open web chat</a> (separate sign-in required)</div>
-      </div>
-    </div>
-
   </div>
 </div>
 
 <script>
-const HOMESERVER = 'https://matrix.drinksafterwork.net';
-let currentUser = null, accessToken = null;
-
-// Restore session on load
 (function() {
-  const saved = sessionStorage.getItem('daw_session');
-  if (saved) {
+  'use strict';
+
+  var DAW = window.DAW_CONFIG || {};
+  var authority = (DAW.keycloak && DAW.keycloak.authority) ? DAW.keycloak.authority.replace(/\/+$/, '') : '';
+  var clientId = (DAW.keycloak && DAW.keycloak.clientId) ? DAW.keycloak.clientId : 'daw-web';
+  var redirectUri = window.location.origin + (window.location.pathname || '/');
+  var services = Array.isArray(DAW.services) ? DAW.services : [];
+
+  var oidc = {
+    authEndpoint: '',
+    tokenEndpoint: '',
+    userinfoEndpoint: '',
+    endSessionEndpoint: ''
+  };
+
+  function storageGet(key, fallback) {
     try {
-      const s = JSON.parse(saved);
-      if (s.user && s.token) {
-        currentUser = s.user;
-        accessToken = s.token;
-        document.getElementById('launcher-greeting').textContent = 'Welcome, ' + s.user;
-        showCard('launcher-card');
-      }
-    } catch(e) { sessionStorage.removeItem('daw_session'); }
+      var raw = sessionStorage.getItem('daw_oidc_' + key);
+      return raw ? JSON.parse(raw) : (fallback !== undefined ? fallback : null);
+    } catch (e) { return fallback !== undefined ? fallback : null; }
   }
-})();
+  function storageSet(key, val) {
+    try { sessionStorage.setItem('daw_oidc_' + key, JSON.stringify(val)); } catch (e) {}
+  }
+  function storageRemove(key) {
+    sessionStorage.removeItem('daw_oidc_' + key);
+  }
+  function uid() {
+    return Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
+  }
 
-function showCard(id) {
-  ['auth-card', 'launcher-card', 'welcome-card'].forEach(cid => {
-    const el = document.getElementById(cid);
-    if (cid === id) { el.classList.remove('card-hidden'); el.classList.add('card-visible'); }
-    else { el.classList.add('card-hidden'); el.classList.remove('card-visible'); }
-  });
-}
-function switchTo(panel) {
-  const track = document.getElementById('panels-track');
-  const indicator = document.getElementById('tab-indicator');
-  document.getElementById('tab-login').classList.toggle('active', panel === 'login');
-  document.getElementById('tab-register').classList.toggle('active', panel === 'register');
-  track.classList.toggle('show-register', panel === 'register');
-  indicator.classList.toggle('register', panel === 'register');
-  clearStatus();
-}
-function clearStatus() { document.getElementById('login-status').textContent = ''; document.getElementById('reg-status').textContent = ''; }
-function togglePw(btn) { const i = btn.previousElementSibling; if (i.type === 'password') { i.type = 'text'; btn.textContent = 'hide'; } else { i.type = 'password'; btn.textContent = 'show'; } }
-function setStatus(id, msg, type) { const el = document.getElementById(id); el.textContent = msg; el.className = 'status-msg ' + type; }
-function setLoading(btnId, on) { const b = document.getElementById(btnId); b.classList.toggle('loading', on); b.disabled = on; }
-function toggleSetup() {
-  document.getElementById('setup-steps').classList.toggle('open');
-  document.getElementById('setup-chevron').classList.toggle('open');
-}
-function signOut() {
-  currentUser = null; accessToken = null;
-  sessionStorage.removeItem('daw_session');
-  showCard('auth-card');
-  document.getElementById('login-form').reset();
-  document.getElementById('register-form').reset();
-  clearStatus();
-  try { grecaptcha.reset(); } catch(e) {}
-}
+  function setAuthStatus(msg, isError) {
+    var el = document.getElementById('auth-status');
+    if (el) { el.textContent = msg || ''; el.style.color = isError ? 'var(--error)' : 'var(--text-dim)'; }
+  }
 
-async function handleLogin(e) {
-  e.preventDefault();
-  const user = document.getElementById('login-user').value.trim();
-  const pass = document.getElementById('login-pass').value;
-  if (!user || !pass) return setStatus('login-status', 'Please fill in all fields.', 'error');
-  setLoading('login-btn', true); setStatus('login-status', '', '');
-  try {
-    const res = await fetch(HOMESERVER + '/_matrix/client/v3/login', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type: 'm.login.password', identifier: { type: 'm.id.user', user }, password: pass, initial_device_display_name: 'DAW Web' })
+  function renderServiceCard(containerId, loggedIn) {
+    var container = document.getElementById(containerId);
+    if (!container) return;
+    container.innerHTML = '';
+    var iconMap = { beer: 'beer', chat: 'chat', football: 'football' };
+    services.forEach(function(s) {
+      var isLive = (s.status || '').toLowerCase() === 'live';
+      var card = document.createElement('div');
+      card.className = 'service-card ' + (isLive ? 'live' : 'coming-soon');
+      var iconClass = iconMap[s.icon] || 'beer';
+      if (isLive) {
+        var a = document.createElement('a');
+        a.href = s.url;
+        a.target = '_blank';
+        a.rel = 'noopener';
+        a.innerHTML = '<div class="service-icon ' + iconClass + '">' + (s.icon === 'beer' ? '🍺' : s.icon === 'chat' ? '💬' : '🏈') + '</div>' +
+          '<div class="service-info"><div class="service-name">' + escapeHtml(s.name) + '</div><div class="service-desc">' + escapeHtml(s.desc || '') + '</div></div>' +
+          '<span class="service-badge badge-live">Live</span><span class="service-arrow">→</span>';
+        card.appendChild(a);
+      } else {
+        card.innerHTML = '<div class="service-icon ' + iconClass + '">' + (s.icon === 'football' ? '🏈' : '🍺') + '</div>' +
+          '<div class="service-info"><div class="service-name">' + escapeHtml(s.name) + '</div><div class="service-desc">' + escapeHtml(s.desc || '') + '</div></div>' +
+          '<span class="service-badge badge-soon">Coming Soon</span>';
+      }
+      container.appendChild(card);
     });
-    const data = await res.json();
-    if (res.ok && data.access_token) {
-      accessToken = data.access_token;
-      setStatus('login-status', 'Authenticated!', 'success');
-      document.getElementById('launcher-greeting').textContent = 'Welcome, ' + user;
-      sessionStorage.setItem('daw_session', JSON.stringify({user, token: accessToken}));
-      setTimeout(() => showCard('launcher-card'), 600);
+  }
+  function escapeHtml(str) {
+    if (!str) return '';
+    var div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  function showCard(id) {
+    var out = document.getElementById('logged-out-card');
+    var in_ = document.getElementById('logged-in-card');
+    if (id === 'logged-in-card') {
+      if (out) { out.classList.add('card-hidden'); out.classList.remove('card-visible'); }
+      if (in_) { in_.classList.remove('card-hidden'); in_.classList.add('card-visible'); }
     } else {
-      setStatus('login-status', data.error || 'Invalid username or password.', 'error');
+      if (out) { out.classList.remove('card-hidden'); out.classList.add('card-visible'); }
+      if (in_) { in_.classList.add('card-hidden'); in_.classList.remove('card-visible'); }
     }
-  } catch (err) { setStatus('login-status', 'Connection error. Please try again.', 'error'); }
-  finally { setLoading('login-btn', false); }
-}
+  }
 
-async function handleRegister(e) {
-  e.preventDefault();
-  const user = document.getElementById('reg-user').value.trim();
-  const pass = document.getElementById('reg-pass').value;
-  const passC = document.getElementById('reg-pass-confirm').value;
-  if (!user || !pass || !passC) return setStatus('reg-status', 'Please fill in all fields.', 'error');
-  if (pass !== passC) return setStatus('reg-status', 'Passwords do not match.', 'error');
-  if (pass.length < 8) return setStatus('reg-status', 'Password must be at least 8 characters.', 'error');
-  if (!/^[a-zA-Z0-9._=\-\/]+$/.test(user)) return setStatus('reg-status', 'Username can only contain letters, numbers, ._-/=', 'error');
-  const captcha = grecaptcha.getResponse();
-  if (!captcha) return setStatus('reg-status', 'Please complete the CAPTCHA.', 'error');
-  setLoading('reg-btn', true); setStatus('reg-status', '', '');
-  try {
-    const r1 = await fetch(HOMESERVER + '/_matrix/client/v3/register', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: user, password: pass, initial_device_display_name: 'DAW Web' })
-    });
-    const d1 = await r1.json();
-    if (r1.ok && d1.access_token) { onRegisterSuccess(user, d1.access_token); return; }
-    if (r1.status === 401 && d1.session) {
-      const r2 = await fetch(HOMESERVER + '/_matrix/client/v3/register', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: user, password: pass, auth: { type: 'm.login.recaptcha', response: captcha, session: d1.session }, initial_device_display_name: 'DAW Web' })
-      });
-      const d2 = await r2.json();
-      if (r2.ok && d2.access_token) { onRegisterSuccess(user, d2.access_token); return; }
-      if (r2.status === 401 && d2.completed && d2.completed.includes('m.login.recaptcha')) {
-        const r3 = await fetch(HOMESERVER + '/_matrix/client/v3/register', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username: user, password: pass, auth: { type: 'm.login.dummy', session: d2.session }, initial_device_display_name: 'DAW Web' })
+  function showLoggedIn(user) {
+    var greeting = document.getElementById('logged-in-greeting');
+    var avatarWrap = document.getElementById('user-avatar-wrap');
+    if (greeting) greeting.textContent = 'Welcome, ' + (user.display_name || user.email || 'Member');
+    if (avatarWrap) {
+      if (user.picture) {
+        avatarWrap.innerHTML = '<img class="user-avatar" src="' + escapeHtml(user.picture) + '" alt="">';
+      } else {
+        var initials = (user.display_name || user.email || 'U').split(/[\s@]/).map(function(w) { return w[0]; }).join('').toUpperCase().slice(0, 2) || 'U';
+        avatarWrap.innerHTML = '<div class="user-avatar initials">' + escapeHtml(initials) + '</div>';
+      }
+    }
+    showCard('logged-in-card');
+  }
+
+  function generatePKCE() {
+    var array = new Uint8Array(32);
+    crypto.getRandomValues(array);
+    var verifier = btoa(String.fromCharCode.apply(null, array)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    return Promise.all([
+      Promise.resolve(verifier),
+      crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)).then(function(hash) {
+        return btoa(String.fromCharCode.apply(null, new Uint8Array(hash))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      })
+    ]).then(function(arr) { return { verifier: arr[0], challenge: arr[1] }; });
+  }
+
+  function discoverOIDC() {
+    if (oidc.authEndpoint) return Promise.resolve(true);
+    if (!authority) return Promise.resolve(false);
+    return fetch(authority + '/.well-known/openid-configuration')
+      .then(function(r) { return r.ok ? r.json() : Promise.reject(new Error('Discovery failed')); })
+      .then(function(cfg) {
+        oidc.authEndpoint = cfg.authorization_endpoint;
+        oidc.tokenEndpoint = cfg.token_endpoint;
+        oidc.userinfoEndpoint = cfg.userinfo_endpoint;
+        oidc.endSessionEndpoint = cfg.end_session_endpoint;
+        return true;
+      })
+      .catch(function(e) { console.warn('OIDC discovery failed:', e); return false; });
+  }
+
+  window.startLogin = function() {
+    discoverOIDC().then(function(ok) {
+      if (!ok) { setAuthStatus('Cannot connect to Keycloak.', true); return; }
+      generatePKCE().then(function(pkce) {
+        var state = uid();
+        storageSet('verifier', pkce.verifier);
+        storageSet('state', state);
+        var params = new URLSearchParams({
+          response_type: 'code',
+          client_id: clientId,
+          redirect_uri: redirectUri,
+          scope: 'openid profile email',
+          state: state,
+          code_challenge: pkce.challenge,
+          code_challenge_method: 'S256'
         });
-        const d3 = await r3.json();
-        if (r3.ok && d3.access_token) { onRegisterSuccess(user, d3.access_token); return; }
-        else { setStatus('reg-status', d3.error || 'Registration failed.', 'error'); grecaptcha.reset(); }
-      } else { setStatus('reg-status', d2.error || 'CAPTCHA verification failed.', 'error'); grecaptcha.reset(); }
-    } else { setStatus('reg-status', d1.error || 'Registration failed.', 'error'); grecaptcha.reset(); }
-  } catch (err) { setStatus('reg-status', 'Connection error. Please try again.', 'error'); grecaptcha.reset(); }
-  finally { setLoading('reg-btn', false); }
-}
+        window.location.href = oidc.authEndpoint + '?' + params;
+      });
+    });
+  };
 
-function onRegisterSuccess(user, token) {
-  accessToken = token; currentUser = user;
-  sessionStorage.setItem('daw_session', JSON.stringify({user, token}));
-  setStatus('reg-status', 'Account created!', 'success');
-  document.getElementById('welcome-greeting').textContent = 'Welcome, ' + user + '!';
-  setTimeout(() => {
-    showCard('welcome-card');
-    document.getElementById('welcome-check-icon').style.animation = 'popIn 0.4s ease-out';
-  }, 600);
-}
+  window.startRegistration = function() {
+    discoverOIDC().then(function(ok) {
+      if (!ok) { setAuthStatus('Cannot connect to Keycloak.', true); return; }
+      generatePKCE().then(function(pkce) {
+        var state = uid();
+        storageSet('verifier', pkce.verifier);
+        storageSet('state', state);
+        var params = new URLSearchParams({
+          response_type: 'code',
+          client_id: clientId,
+          redirect_uri: redirectUri,
+          scope: 'openid profile email',
+          state: state,
+          code_challenge: pkce.challenge,
+          code_challenge_method: 'S256'
+        });
+        window.location.href = oidc.authEndpoint + '?' + params + '&kc_action=register';
+      });
+    });
+  };
 
-// Stars
+  function getUserInfo(accessToken) {
+    if (!oidc.userinfoEndpoint) return Promise.reject(new Error('No userinfo endpoint'));
+    return fetch(oidc.userinfoEndpoint, { headers: { 'Authorization': 'Bearer ' + accessToken } })
+      .then(function(r) {
+        if (!r.ok) throw new Error('Failed to fetch user info');
+        return r.json();
+      })
+      .then(function(info) {
+        return {
+          id: info.sub,
+          email: info.email || '',
+          display_name: info.preferred_username || info.name || (info.email ? info.email.split('@')[0] : 'Member'),
+          name: info.name || '',
+          picture: info.picture || null
+        };
+      });
+  }
+
+  function handleCallback() {
+    var params = new URLSearchParams(window.location.search);
+    var code = params.get('code');
+    var state = params.get('state');
+    var error = params.get('error');
+    if (error) {
+      setAuthStatus('Login error: ' + (params.get('error_description') || error), true);
+      window.history.replaceState({}, '', redirectUri);
+      return Promise.resolve(null);
+    }
+    if (!code) return Promise.resolve(null);
+    var savedState = storageGet('state');
+    var verifier = storageGet('verifier');
+    if (state !== savedState) {
+      setAuthStatus('Invalid auth state. Try again.', true);
+      window.history.replaceState({}, '', redirectUri);
+      return Promise.resolve(null);
+    }
+    return discoverOIDC().then(function() {
+      return fetch(oidc.tokenEndpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          grant_type: 'authorization_code',
+          code: code,
+          redirect_uri: redirectUri,
+          client_id: clientId,
+          code_verifier: verifier
+        }).toString()
+      });
+    })
+    .then(function(r) {
+      if (!r.ok) return r.json().then(function(err) { throw new Error(err.error_description || err.error || 'Token exchange failed'); });
+      return r.json();
+    })
+    .then(function(tokens) {
+      storageSet('tokens', {
+        access_token: tokens.access_token,
+        refresh_token: tokens.refresh_token,
+        id_token: tokens.id_token,
+        expires_at: Date.now() + (tokens.expires_in * 1000)
+      });
+      storageRemove('verifier');
+      storageRemove('state');
+      window.history.replaceState({}, '', redirectUri);
+      return getUserInfo(tokens.access_token);
+    })
+    .then(function(user) {
+      if (user) showLoggedIn(user);
+      return user;
+    })
+    .catch(function(e) {
+      console.error('OIDC callback error:', e);
+      setAuthStatus('Auth failed: ' + e.message, true);
+      window.history.replaceState({}, '', redirectUri);
+      return null;
+    });
+  }
+
+  window.signOut = function() {
+    var tokens = storageGet('tokens');
+    storageRemove('tokens');
+    storageRemove('verifier');
+    storageRemove('state');
+    if (oidc.endSessionEndpoint && tokens && tokens.id_token) {
+      var params = new URLSearchParams({
+        id_token_hint: tokens.id_token,
+        post_logout_redirect_uri: redirectUri
+      });
+      window.location.href = oidc.endSessionEndpoint + '?' + params;
+      return;
+    }
+    showCard('logged-out-card');
+    setAuthStatus('');
+  };
+
+  function init() {
+    renderServiceCard('logged-out-services', false);
+    renderServiceCard('logged-in-services', true);
+
+    if (!authority) {
+      setAuthStatus('Keycloak not configured.', true);
+      return;
+    }
+
+    handleCallback().then(function(user) {
+      if (user) return;
+      var tokens = storageGet('tokens');
+      if (!tokens || !tokens.access_token) return;
+      if (tokens.expires_at && Date.now() > tokens.expires_at - 60000) {
+        storageRemove('tokens');
+        return;
+      }
+      getUserInfo(tokens.access_token).then(showLoggedIn).catch(function() {
+        storageRemove('tokens');
+      });
+    });
+  }
+
+  init();
+})();
+</script>
+<script>
 (function() {
-  const c = document.getElementById('stars-canvas'), ctx = c.getContext('2d'); let stars = [];
-  function resize() { c.width = innerWidth; c.height = innerHeight; }
-  function create() { stars = []; for (let i = 0; i < 180; i++) stars.push({ x: Math.random()*c.width, y: Math.random()*c.height*0.7, r: Math.random()*1.5+0.3, speed: Math.random()*0.02+0.005, phase: Math.random()*Math.PI*2 }); }
-  function draw(t) { ctx.clearRect(0,0,c.width,c.height); stars.forEach(s => { const tw = 0.4+0.6*Math.sin(t*s.speed+s.phase); ctx.beginPath(); ctx.arc(s.x,s.y,s.r,0,Math.PI*2); ctx.fillStyle = `rgba(255,255,240,${tw*0.8})`; ctx.fill(); }); requestAnimationFrame(draw); }
-  addEventListener('resize', () => { resize(); create(); }); resize(); create(); requestAnimationFrame(draw);
+  var c = document.getElementById('stars-canvas');
+  if (!c) return;
+  var ctx = c.getContext('2d');
+  var stars = [];
+  function resize() { c.width = window.innerWidth; c.height = window.innerHeight; }
+  function create() {
+    stars = [];
+    for (var i = 0; i < 180; i++) {
+      stars.push({
+        x: Math.random() * c.width,
+        y: Math.random() * c.height * 0.7,
+        r: Math.random() * 1.5 + 0.3,
+        speed: Math.random() * 0.02 + 0.005,
+        phase: Math.random() * Math.PI * 2
+      });
+    }
+  }
+  function draw(t) {
+    if (!ctx) return;
+    ctx.clearRect(0, 0, c.width, c.height);
+    stars.forEach(function(s) {
+      var tw = 0.4 + 0.6 * Math.sin(t * s.speed + s.phase);
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255,255,240,' + (tw * 0.8) + ')';
+      ctx.fill();
+    });
+    requestAnimationFrame(draw);
+  }
+  window.addEventListener('resize', function() { resize(); create(); });
+  resize();
+  create();
+  requestAnimationFrame(draw);
 })();
 </script>
 </body>

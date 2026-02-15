@@ -198,14 +198,17 @@ Every deployment task has explicit abort/rollback criteria:
 
 Documented in `runbooks/rollback.md`.
 
-## RLS Phase 2 Gate Decision
+## RLS Phase 2 Gate Deferral (Phase 2)
 
-> **No Phase 2 feature work begins until:**
-> - RLS baseline policy is enabled on `ratings` and `profiles` tables
-> - RLS policies tested: service_role bypasses, anon blocked, per-user filtering works
-> - Smoke tests updated to validate RLS behavior
+RLS gate deferred to pre-Phase 4 (before a second service shares the database). Rationale: beerbook-api validates all tokens and enforces ownership; PostgREST is internal-only. RLS becomes necessary when multiple services share Supabase.
 
-Rationale: "RLS disabled" is acceptable in Phase 1 because PostgREST is internal-only. Without an explicit gate, this temporary control becomes permanent tech debt.
+## daw-web Identity Decision (Phase 2)
+
+daw-web uses Keycloak OIDC: client `daw-web`, public client, Authorization Code + PKCE. Matrix direct login is retired for the front door; registration is via Keycloak self-registration (`kc_action=register`).
+
+## daw-web Session Decision (Phase 2)
+
+Tokens are stored in sessionStorage only (not localStorage). The landing page does not require persistent sessions; closing the tab ends the session.
 
 ## Database Schema Decision
 
