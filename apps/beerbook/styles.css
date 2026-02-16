@@ -969,6 +969,10 @@ input, select, textarea, button {
     opacity: 1;
 }
 
+.yg-glass.yg-glass-preview {
+    opacity: 1;
+}
+
 .yg-glass.yg-glass-pop {
     animation: ygGlassPop 0.2s var(--ease-spring) forwards;
     transform: scale(0);

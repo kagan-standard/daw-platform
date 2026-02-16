@@ -361,13 +361,17 @@ const App = {
             if (v <= 10) return hints['9-10'];
             return hints['11-12'];
         };
+        const updateDisplayFromValue = (v) => {
+            ygContext.textContent = getHint(v);
+            ygDisplay.textContent = v > 0 ? v + ' YG' : '';
+        };
         let dragging = false;
+        let hoverValue = null;
         const setValue = (val) => {
             const v = Math.max(0, Math.min(12, Math.round(Number(val)) || 0));
             ygValueInput.value = String(v);
             ygTrack.setAttribute('aria-valuenow', String(v));
-            ygDisplay.textContent = v + ' YG';
-            ygContext.textContent = getHint(v);
+            updateDisplayFromValue(v);
             if (ygClearBtn) ygClearBtn.style.display = v > 0 ? 'inline-flex' : 'none';
             const glassEls = ygGlasses.querySelectorAll('.yg-glass');
             glassEls.forEach((el, i) => {
@@ -380,6 +384,17 @@ const App = {
                     const t = setTimeout(() => el.classList.remove('yg-glass-pop'), 250);
                 }
             });
+        };
+        const applyPreview = (n) => {
+            const glassEls = ygGlasses.querySelectorAll('.yg-glass');
+            glassEls.forEach((el, i) => {
+                el.classList.toggle('yg-glass-preview', i < n);
+            });
+        };
+        const clearPreview = () => {
+            hoverValue = null;
+            ygGlasses.querySelectorAll('.yg-glass').forEach((g) => g.classList.remove('yg-glass-preview'));
+            updateDisplayFromValue(parseInt(ygValueInput.value, 10) || 0);
         };
         const getValueFromElement = (el) => {
             const glass = el?.closest?.('.yg-glass');
@@ -408,6 +423,7 @@ const App = {
         });
         ygGlasses.addEventListener('mousedown', (e) => {
             if (e.button !== 0) return;
+            clearPreview();
             const val = getValueFromElement(e.target);
             if (val != null) { dragging = true; setValue(val); }
         });
@@ -433,10 +449,16 @@ const App = {
         document.addEventListener('touchend', () => { dragging = false; }, { passive: true });
 
         ygGlasses.querySelectorAll('.yg-glass').forEach((glass) => {
-            glass.addEventListener('mouseenter', () => glass.classList.add('yg-glass-hover'));
-            glass.addEventListener('mouseleave', () => glass.classList.remove('yg-glass-hover'));
+            glass.addEventListener('mouseenter', () => {
+                if (dragging) return;
+                const n = getValueFromElement(glass);
+                if (n == null) return;
+                hoverValue = n;
+                applyPreview(n);
+                updateDisplayFromValue(n);
+            });
         });
-        ygGlasses.addEventListener('mouseleave', () => ygGlasses.querySelectorAll('.yg-glass').forEach(g => g.classList.remove('yg-glass-hover')));
+        ygGlasses.addEventListener('mouseleave', () => clearPreview());
 
         ygTrack.addEventListener('keydown', (e) => {
             const v = parseInt(ygValueInput.value, 10) || 0;
