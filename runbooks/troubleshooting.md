@@ -31,10 +31,12 @@ Or use `./infra/compose/run.sh restart <service>`.
 ## Traefik routing
 
 - Containers must be on network `traefik`:  
-  `docker network inspect traefik` — should list keycloak, beerbook, beerbook-api.
+  `docker network inspect traefik` — should list keycloak, beerbook, beerbook-api, daw-web.
+- **Explicit network for routing:** Compose sets `traefik.docker.network=traefik` so Traefik uses the `traefik` network to reach each container (needed when a container is on multiple networks, e.g. beerbook-api on default + traefik). If a service returns 404 but the container is healthy, recreate it so Traefik picks up the label:  
+  `docker compose -f /opt/daw-platform/infra/compose/docker-compose.yml --env-file /opt/daw-platform/infra/compose/.env up -d beerbook-api`
 - Labels must match your Traefik entrypoints/cert resolver.  
-  Default in compose: `entrypoints=websecure`, `certresolver=letsencrypt`.  
-  If your Traefik uses `web-secure` or `le`, change labels in `infra/compose/docker-compose.yml`.
+  Compose uses `entrypoints=web-secure`, `certresolver=default`.  
+  If your Traefik uses `websecure` (no hyphen) or `letsencrypt`, change labels in `infra/compose/docker-compose.yml`.
 - If HTTPS fails: check Traefik logs and that DNS for the hostnames points to this host.
 
 ## Verify named volumes (Phase 1.5)

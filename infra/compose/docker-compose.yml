@@ -27,6 +27,7 @@ services:
       - traefik
     labels:
       - "traefik.enable=true"
+      - "traefik.docker.network=traefik"
       - "traefik.http.routers.keycloak.rule=Host(`auth.drinksafterwork.net`)"
       - "traefik.http.routers.keycloak.entrypoints=web-secure"
       - "traefik.http.routers.keycloak.tls=true"
@@ -43,6 +44,7 @@ services:
       - traefik
     labels:
       - "traefik.enable=true"
+      - "traefik.docker.network=traefik"
       - "traefik.http.routers.beerbook.rule=Host(`beerbook.drinksafterwork.net`)"
       - "traefik.http.routers.beerbook.entrypoints=web-secure"
       - "traefik.http.routers.beerbook.tls=true"
@@ -59,6 +61,7 @@ services:
       - traefik
     labels:
       - "traefik.enable=true"
+      - "traefik.docker.network=traefik"
       - "traefik.http.routers.daw-web.rule=Host(`drinksafterwork.net`)"
       - "traefik.http.routers.daw-web.entrypoints=web-secure"
       - "traefik.http.routers.daw-web.tls=true"
@@ -92,6 +95,7 @@ services:
       - traefik
     labels:
       - "traefik.enable=true"
+      - "traefik.docker.network=traefik"
       - "traefik.http.routers.beerbook-api.rule=Host(`api.beerbook.drinksafterwork.net`)"
       - "traefik.http.routers.beerbook-api.entrypoints=web-secure"
       - "traefik.http.routers.beerbook-api.tls=true"
