@@ -1032,6 +1032,8 @@ input, select, textarea, button {
     .yg-glasses { min-height: 44px; }
     .yg-track-wrap { min-height: 44px; }
     .yg-track { min-height: 44px; }
+    .yg-context { font-size: 0.95rem; }
+    .yg-display { font-size: 1rem; }
 }
 
 @media (max-width: 400px) {
