@@ -20,6 +20,8 @@ services:
       KC_DB_PASSWORD: ${KC_DB_PASSWORD}
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+    volumes:
+      - ../../infra/keycloak/themes/daw:/opt/keycloak/themes/daw:ro
     depends_on:
       keycloak-db: { condition: service_healthy }
     networks:
