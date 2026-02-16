@@ -499,6 +499,89 @@ input, select, textarea, button {
     color: var(--amber-500);
 }
 
+/* Mobile menu (hamburger) — visible only below 520px */
+.mobile-menu-btn {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    background: transparent;
+    border: none;
+    color: var(--amber-400);
+    font-size: 1.5rem;
+    line-height: 1;
+    cursor: pointer;
+    margin-left: auto;
+}
+
+.mobile-menu-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    background: transparent;
+    pointer-events: none;
+}
+
+.mobile-menu-dropdown {
+    display: none;
+    position: fixed;
+    top: 60px;
+    left: 0;
+    right: 0;
+    z-index: 10001;
+    background: rgba(26,16,6,0.98);
+    backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--dark-700);
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 200ms var(--ease-out);
+}
+
+.mobile-nav-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+    width: 100%;
+    min-height: 48px;
+    padding: 0 var(--space-xl);
+    background: transparent;
+    border: none;
+    border-left: 3px solid transparent;
+    color: var(--amber-600);
+    font-size: 0.95rem;
+    font-weight: 500;
+    font-family: var(--font-body);
+    cursor: pointer;
+    text-align: left;
+    transition: background 0.15s, color 0.15s;
+}
+
+.mobile-nav-item:hover {
+    background: var(--dark-800);
+    color: var(--amber-300);
+}
+
+.mobile-nav-item.active {
+    color: var(--amber-300);
+    border-left-color: var(--amber-400);
+}
+
+.mobile-nav-item.mobile-nav-signout {
+    color: var(--error);
+}
+
+.mobile-nav-item.mobile-nav-signout:hover {
+    color: var(--error);
+    background: var(--dark-800);
+}
+
+.mobile-nav-item svg {
+    flex-shrink: 0;
+}
+
 /* ============ VIEWS ============ */
 .view {
     display: none;
@@ -1770,6 +1853,29 @@ input, select, textarea, button {
     .beer-grid { grid-template-columns: 1fr; }
     .browse-controls { flex-direction: column; }
     .user-greeting { display: none; }
+}
+
+@media (max-width: 519px) {
+    .topbar-nav,
+    .topbar-right {
+        display: none !important;
+    }
+    .mobile-menu-btn {
+        display: flex;
+    }
+    .mobile-menu-overlay,
+    .mobile-menu-dropdown {
+        display: block;
+    }
+    body.mobile-menu-open {
+        overflow: hidden;
+    }
+    body.mobile-menu-open .mobile-menu-overlay {
+        pointer-events: auto;
+    }
+    body.mobile-menu-open .mobile-menu-dropdown {
+        max-height: 80vh;
+    }
 }
 
 @media (max-width: 480px) {

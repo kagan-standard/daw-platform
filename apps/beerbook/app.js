@@ -91,6 +91,46 @@ const App = {
             btn.addEventListener('click', () => this.navigate(btn.dataset.view));
         });
 
+        // Mobile menu (below 520px)
+        const mobileMenuBtn = document.getElementById('mobile-menu-btn');
+        const mobileOverlay = document.getElementById('mobile-menu-overlay');
+        const mobileDropdown = document.getElementById('mobile-menu-dropdown');
+        const closeMobileMenu = () => {
+            document.body.classList.remove('mobile-menu-open');
+            if (mobileMenuBtn) mobileMenuBtn.setAttribute('aria-expanded', 'false');
+            if (mobileDropdown) mobileDropdown.setAttribute('aria-hidden', 'true');
+            if (mobileOverlay) mobileOverlay.setAttribute('aria-hidden', 'true');
+        };
+        const openMobileMenu = () => {
+            document.body.classList.add('mobile-menu-open');
+            if (mobileMenuBtn) mobileMenuBtn.setAttribute('aria-expanded', 'true');
+            if (mobileDropdown) mobileDropdown.setAttribute('aria-hidden', 'false');
+            if (mobileOverlay) mobileOverlay.setAttribute('aria-hidden', 'false');
+        };
+        if (mobileMenuBtn) {
+            mobileMenuBtn.addEventListener('click', () => {
+                if (document.body.classList.contains('mobile-menu-open')) closeMobileMenu();
+                else openMobileMenu();
+            });
+        }
+        if (mobileOverlay) {
+            mobileOverlay.addEventListener('click', closeMobileMenu);
+        }
+        document.querySelectorAll('.mobile-nav-item').forEach(item => {
+            item.addEventListener('click', () => {
+                if (item.dataset.view) {
+                    this.navigate(item.dataset.view);
+                    closeMobileMenu();
+                } else if (item.dataset.action === 'signout') {
+                    DB.signOut().then(() => {
+                        document.getElementById('app').style.display = 'none';
+                        document.getElementById('auth-screen').style.display = 'flex';
+                    });
+                    closeMobileMenu();
+                }
+            });
+        });
+
         // Star rating (Task 1: pulse, keyboard)
         const starContainer = document.getElementById('star-rating');
         if (starContainer) {
@@ -657,9 +697,12 @@ const App = {
 
         const view = document.getElementById(`view-${viewId}`);
         const btn = document.querySelector(`.nav-btn[data-view="${viewId}"]`);
+        const mobileBtn = document.querySelector(`.mobile-nav-item[data-view="${viewId}"]`);
 
         if (view) { view.classList.add('active'); view.style.animation = 'none'; view.offsetHeight; view.style.animation = ''; }
         if (btn) btn.classList.add('active');
+        document.querySelectorAll('.mobile-nav-item[data-view]').forEach(b => b.classList.remove('active'));
+        if (mobileBtn) mobileBtn.classList.add('active');
 
         if (viewId === 'dashboard' || viewId === 'profile') {
             setTimeout(() => { Object.values(Charts.instances).forEach(c => c.resize()); }, 100);
