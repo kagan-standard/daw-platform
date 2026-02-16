@@ -99,9 +99,11 @@ const MapView = {
     },
 
     pinColor(avgRating) {
-        if (avgRating >= 4) return '#e6a817';
-        if (avgRating >= 3) return '#c98b0a';
-        return '#6b4a24';
+        if (avgRating == null || avgRating === undefined) return '#6b7280';
+        if (avgRating >= 4) return '#22c55e';
+        if (avgRating >= 3) return '#f59e0b';
+        if (avgRating >= 2) return '#ef4444';
+        return '#6b7280';
     },
 
     renderPins() {
@@ -112,14 +114,14 @@ const MapView = {
         const venues = this.venuesFromRatings();
         const markers = [];
         venues.forEach(v => {
-            const color = this.pinColor(v.avgRating);
-            const icon = L.divIcon({
-                className: 'beer-pin',
-                html: `<span class="pin-dot" style="background:${color}"></span>`,
-                iconSize: [24, 24],
-                iconAnchor: [12, 12]
+            const fillColor = this.pinColor(v.avgRating);
+            const m = L.circleMarker([v.latitude, v.longitude], {
+                radius: 10,
+                weight: 2,
+                color: '#fff',
+                fillColor: fillColor,
+                fillOpacity: 0.85
             });
-            const m = L.marker([v.latitude, v.longitude], { icon });
             const happyHourText = ''; // could be from venue.happy_hours if we had it
             m.bindPopup(`
                 <div class="map-popup">
@@ -232,17 +234,17 @@ const MapView = {
         (this.mapData || []).forEach(r => {
             if (r.venue_id && r.latitude != null) venueCoords[r.venue_id] = [r.latitude, r.longitude];
         });
-        deals.slice(0, 15).forEach((d, i) => {
+        deals.slice(0, 15).forEach((d) => {
             const vid = d.venue && d.venue.id;
             const latLng = vid && venueCoords[vid] ? venueCoords[vid] : null;
             if (!latLng) return;
-            const icon = L.divIcon({
-                className: 'deal-number-pin',
-                html: `<span>${i + 1}</span>`,
-                iconSize: [28, 28],
-                iconAnchor: [14, 14]
-            });
-            const m = L.marker(latLng, { icon }).addTo(this.map);
+            const m = L.circleMarker(latLng, {
+                radius: 10,
+                weight: 2,
+                color: '#fff',
+                fillColor: '#f59e0b',
+                fillOpacity: 0.85
+            }).addTo(this.map);
             m.bindPopup(`${d.beer_name} — ${(d.venue && d.venue.name) || ''}`);
             this.dealsMarkers.push(m);
         });
@@ -267,14 +269,14 @@ const MapView = {
             this.map.fitBounds(this.trailLayer.getBounds(), { padding: [24, 24] });
             this.trailMarkers.forEach(m => { if (this.map.hasLayer(m)) this.map.removeLayer(m); });
             this.trailMarkers = [];
-            list.forEach((r, i) => {
-                const icon = L.divIcon({
-                    className: 'deal-number-pin',
-                    html: `<span>${i + 1}</span>`,
-                    iconSize: [24, 24],
-                    iconAnchor: [12, 12]
-                });
-                const m = L.marker([r.latitude, r.longitude], { icon }).addTo(this.map);
+            list.forEach((r) => {
+                const m = L.circleMarker([r.latitude, r.longitude], {
+                    radius: 10,
+                    weight: 2,
+                    color: '#fff',
+                    fillColor: '#e6a817',
+                    fillOpacity: 0.85
+                }).addTo(this.map);
                 m.bindPopup(`${Utils.escapeHtml(r.beer_name || '')} · ${r.rating || ''}★ ${r.yg_value != null ? r.yg_value + ' YG' : ''} · ${Utils.formatDate ? Utils.formatDate(r.created_at) : r.created_at}`);
                 this.trailMarkers.push(m);
             });
