@@ -2,6 +2,38 @@
    BeerBook — Main Application (Keycloak SSO)
    ============================================ */
 
+const STYLE_GUIDE = {
+    'IPA': { desc: 'India Pale Ale — hoppy, bitter, aromatic', abv: '5.5–7.5%' },
+    'DIPA': { desc: 'Double IPA — stronger, hoppier IPA', abv: '7.5–10%' },
+    'Double IPA': { desc: 'Double IPA — stronger, hoppier IPA', abv: '7.5–10%' },
+    'NEIPA': { desc: 'New England IPA — hazy, juicy, less bitter', abv: '6–8%' },
+    'Hazy IPA': { desc: 'New England IPA — hazy, juicy, less bitter', abv: '6–8%' },
+    'Stout': { desc: 'Dark, roasted, often creamy', abv: '4–8%' },
+    'Porter': { desc: 'Dark malt, chocolate/coffee notes', abv: '4–6.5%' },
+    'Imperial Stout': { desc: 'Strong, dark, full-bodied stout', abv: '8–12%' },
+    'Pale Ale': { desc: 'Balanced, moderate hop and malt', abv: '4.5–5.5%' },
+    'Pilsner': { desc: 'Crisp, clean, light lager', abv: '4.5–5.5%' },
+    'Lager': { desc: 'Bottom-fermented, clean and crisp', abv: '4–5%' },
+    'Wheat Beer': { desc: 'Wheat malt, often cloudy, refreshing', abv: '4–5.5%' },
+    'Hefeweizen': { desc: 'German wheat, banana/clove notes', abv: '4.5–5.5%' },
+    'Belgian': { desc: 'Belgian yeast, fruity and complex', abv: '6–9%' },
+    'Saison': { desc: 'Farmhouse ale, dry and spicy', abv: '5–7%' },
+    'Sour': { desc: 'Tart, acidic, refreshing', abv: '4–6%' },
+    'Amber Ale': { desc: 'Caramel malt, balanced', abv: '4.5–6%' },
+    'Brown Ale': { desc: 'Nutty, chocolate, toasty', abv: '4–6%' },
+    'Red Ale': { desc: 'Red/amber, caramel and hop', abv: '4.5–6%' },
+    'Barleywine': { desc: 'Strong, rich, aged', abv: '8–12%' },
+    'Scotch Ale': { desc: 'Malty, sweet, Scottish', abv: '5–8%' },
+    'Kölsch': { desc: 'Crisp, clean, German ale', abv: '4.5–5%' },
+    'Bock': { desc: 'Strong lager, malty', abv: '6–7%' },
+    'Gose': { desc: 'Tart, salty, German wheat', abv: '4–5%' },
+    'Berliner Weisse': { desc: 'Tart, low-ABV wheat', abv: '3–4%' },
+    'Cream Ale': { desc: 'Smooth, light, approachable', abv: '4.5–5.5%' },
+    'Cider': { desc: 'Fermented apple (or other fruit)', abv: '4–8%' },
+    'Mead': { desc: 'Fermented honey', abv: '8–20%' },
+    'Other': { desc: 'Other or hybrid style', abv: '—' }
+};
+
 const App = {
     currentView: 'dashboard',
     allRatings: [],
@@ -268,11 +300,27 @@ const App = {
             }
         });
 
-        // Search & filters
+        // Search & filters (reset infinite scroll when filters change)
+        const resetBrowseScroll = () => { this.browseShownCount = 24; this.renderBrowse(); };
         document.getElementById('search-input')?.addEventListener('input',
-            Utils.debounce(() => this.renderBrowse(), 200));
-        document.getElementById('filter-style')?.addEventListener('change', () => this.renderBrowse());
-        document.getElementById('sort-by')?.addEventListener('change', () => this.renderBrowse());
+            Utils.debounce(resetBrowseScroll, 200));
+        document.getElementById('filter-style')?.addEventListener('change', resetBrowseScroll);
+        document.getElementById('filter-min-rating')?.addEventListener('change', resetBrowseScroll);
+        document.getElementById('filter-yg-min')?.addEventListener('input', resetBrowseScroll);
+        document.getElementById('filter-yg-max')?.addEventListener('input', resetBrowseScroll);
+        document.getElementById('filter-user')?.addEventListener('change', resetBrowseScroll);
+        document.getElementById('sort-by')?.addEventListener('change', resetBrowseScroll);
+        document.getElementById('browse-clear-filters')?.addEventListener('click', () => {
+            document.getElementById('search-input').value = '';
+            document.getElementById('filter-style').value = '';
+            document.getElementById('filter-min-rating').value = '';
+            document.getElementById('filter-yg-min').value = '';
+            document.getElementById('filter-yg-max').value = '';
+            document.getElementById('filter-user').value = '';
+            document.getElementById('sort-by').value = 'recent';
+            this.browseShownCount = 24;
+            this.renderBrowse();
+        });
 
         // Beer autocomplete (Task 2)
         this.bindBeerAutocomplete();
@@ -316,6 +364,34 @@ const App = {
             }
         });
 
+        // Cheers button (delegation)
+        document.getElementById('app')?.addEventListener('click', async (e) => {
+            const btn = e.target.closest('.cheers-btn');
+            if (!btn || btn.disabled) return;
+            e.preventDefault();
+            const ratingId = btn.dataset.ratingId;
+            if (!ratingId) return;
+            if (!DB.currentUser || DB.isDemo) {
+                App.toast('Sign in to cheers', 'info');
+                return;
+            }
+            const countEl = btn.querySelector('.cheers-count');
+            const wasCheered = btn.classList.contains('cheered');
+            try {
+                await DB.toggleCheers(ratingId);
+                const cheers = await DB.getRatingCheers(ratingId);
+                if (countEl) countEl.textContent = cheers.count || 0;
+                const iCheered = cheers.users && DB.currentUser && cheers.users.includes(DB.currentUser.id);
+                btn.classList.toggle('cheered', !!iCheered);
+                this.cheersCache = this.cheersCache || {};
+                this.cheersCache[ratingId] = cheers.count || 0;
+                btn.classList.add('cheers-pop');
+                setTimeout(() => btn.classList.remove('cheers-pop'), 400);
+            } catch (err) {
+                App.toast('Could not update cheers', 'error');
+            }
+        });
+
         // Delete modal (Task 12)
         document.getElementById('delete-modal-cancel')?.addEventListener('click', () => this.closeDeleteModal());
         document.getElementById('delete-modal-confirm')?.addEventListener('click', () => this.confirmDeleteRating());
@@ -332,8 +408,226 @@ const App = {
         // Activity load more (Task 10)
         document.getElementById('activity-load-more')?.addEventListener('click', () => this.loadMoreActivity());
 
+        // Beer detail modal
+        document.getElementById('beer-detail-back')?.addEventListener('click', () => this.closeBeerDetail());
+        document.getElementById('beer-detail-modal')?.addEventListener('click', (e) => {
+            if (e.target.id === 'beer-detail-modal') this.closeBeerDetail();
+        });
+        document.getElementById('app')?.addEventListener('click', (e) => {
+            const el = e.target.closest('[data-beer-name]');
+            if (!el || el.closest('#beer-detail-modal') || el.closest('#profile-modal')) return;
+            e.preventDefault();
+            const name = el.getAttribute('data-beer-name');
+            const brewery = el.getAttribute('data-beer-brewery') || '';
+            const style = el.getAttribute('data-beer-style') || '';
+            if (name) this.openBeerDetail(name, brewery, style);
+        });
+
+        // Style tooltip (200ms delay)
+        let styleTooltipTimer;
+        document.addEventListener('mouseover', (e) => {
+            const el = e.target.closest('.style-tooltip');
+            if (!el) { clearTimeout(styleTooltipTimer); return; }
+            const style = el.getAttribute('data-style');
+            if (!style) return;
+            clearTimeout(styleTooltipTimer);
+            styleTooltipTimer = setTimeout(() => {
+                const tip = document.getElementById('style-tooltip');
+                const info = STYLE_GUIDE[style] || STYLE_GUIDE[style.trim()] || { desc: 'Beer style', abv: '—' };
+                if (tip) {
+                    tip.innerHTML = `<strong>${Utils.escapeHtml(style)}</strong><br>${Utils.escapeHtml(info.desc)}<br>ABV: ${Utils.escapeHtml(info.abv)}`;
+                    tip.style.display = 'block';
+                    tip.setAttribute('aria-hidden', 'false');
+                    const rect = el.getBoundingClientRect();
+                    tip.style.left = Math.min(rect.left, window.innerWidth - 260) + 'px';
+                    tip.style.top = (rect.top - 4) + 'px';
+                    tip.style.transform = 'translateY(-100%)';
+                }
+            }, 200);
+        });
+        document.addEventListener('mouseout', (e) => {
+            if (e.relatedTarget && (e.relatedTarget.closest?.('.style-tooltip') || e.relatedTarget.closest?.('#style-tooltip'))) return;
+            clearTimeout(styleTooltipTimer);
+            const tip = document.getElementById('style-tooltip');
+            if (tip) { tip.style.display = 'none'; tip.setAttribute('aria-hidden', 'true'); }
+        });
+
+        // Keyboard shortcuts (only when no input/textarea focused)
+        document.addEventListener('keydown', (e) => {
+            const tag = (e.target && e.target.tagName) || '';
+            if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+            if (e.key === '?') {
+                e.preventDefault();
+                this.showShortcutsModal();
+                return;
+            }
+            if (document.getElementById('profile-modal')?.style.display === 'flex' || document.getElementById('beer-detail-modal')?.style.display === 'flex' || document.getElementById('delete-modal')?.style.display === 'flex') {
+                if (e.key === 'Escape') {
+                    e.preventDefault();
+                    if (document.getElementById('profile-modal')?.style.display === 'flex') Profiles.close();
+                    else if (document.getElementById('beer-detail-modal')?.style.display === 'flex') this.closeBeerDetail();
+                    else if (document.getElementById('delete-modal')?.style.display === 'flex') this.closeDeleteModal();
+                }
+                return;
+            }
+            const key = e.key.toLowerCase();
+            if (key === 'escape') { this.navigate(this._previousView || 'dashboard'); return; }
+            if (key === 'n') { e.preventDefault(); this.navigate('rate'); return; }
+            if (key === '/') { e.preventDefault(); this.navigate('browse'); document.getElementById('search-input')?.focus(); return; }
+            if (key === 'm') { e.preventDefault(); this.navigate('map'); return; }
+            if (key === 'e') { e.preventDefault(); this.navigate('exchange'); return; }
+            if (key === 'b') { e.preventDefault(); this.navigate('browse'); return; }
+            if (key === 'd') { e.preventDefault(); this.navigate('dashboard'); return; }
+            if (key === 'l') { e.preventDefault(); this.navigate('leaderboard'); return; }
+        });
+
         // Real-time
         DB.subscribeToRatings(() => this.loadAllData());
+    },
+
+    showShortcutsModal() {
+        const existing = document.getElementById('shortcuts-modal');
+        if (existing) { existing.style.display = 'flex'; return; }
+        const modal = document.createElement('div');
+        modal.id = 'shortcuts-modal';
+        modal.className = 'modal-overlay';
+        modal.innerHTML = '<div class="modal-content"><h3>Keyboard shortcuts</h3><ul class="shortcuts-list"><li><kbd>N</kbd> New rating</li><li><kbd>Esc</kbd> Close / Back</li><li><kbd>/</kbd> Search (Browse)</li><li><kbd>M</kbd> Map</li><li><kbd>E</kbd> Exchange</li><li><kbd>B</kbd> Browse</li><li><kbd>D</kbd> Dashboard</li><li><kbd>L</kbd> Leaderboard</li><li><kbd>?</kbd> This help</li></ul><button type="button" class="btn btn-ghost" id="shortcuts-close">Close</button></div>';
+        modal.style.display = 'flex';
+        modal.addEventListener('click', (e) => { if (e.target === modal) modal.style.display = 'none'; });
+        document.getElementById('shortcuts-close').onclick = () => { modal.style.display = 'none'; };
+        document.body.appendChild(modal);
+    },
+
+    closeBeerDetail() {
+        const modal = document.getElementById('beer-detail-modal');
+        if (modal) modal.style.display = 'none';
+    },
+
+    async openBeerDetail(beerName, brewery, style) {
+        const modal = document.getElementById('beer-detail-modal');
+        const body = document.getElementById('beer-detail-body');
+        if (!modal || !body) return;
+        modal.style.display = 'flex';
+        body.innerHTML = '<p class="empty-state">Loading…</p>';
+
+        let data = null;
+        let crossRates = null;
+        if (DB.isDemo) {
+            const ratings = (this.allRatings || []).filter((r) => (r.beer_name || '').toLowerCase() === beerName.toLowerCase());
+            if (ratings.length) {
+                const r = ratings[0];
+                const avg = ratings.reduce((s, x) => s + (Number(x.rating) || 0), 0) / ratings.length;
+                const ygVals = ratings.map((x) => x.yg_value).filter((v) => v != null);
+                const avgYg = ygVals.length ? ygVals.reduce((a, b) => a + b, 0) / ygVals.length : null;
+                data = {
+                    beer_name: beerName,
+                    stats: { avg_rating: avg, review_count: ratings.length, avg_yg_value: avgYg },
+                    ratings,
+                    price_history: []
+                };
+            }
+        } else {
+            try {
+                [data, crossRates] = await Promise.all([
+                    DB.getBeerDetail(beerName),
+                    DB.getBeerCrossRates(beerName)
+                ]);
+            } catch (err) {
+                console.error('Beer detail error:', err);
+            }
+        }
+
+        if (!data) {
+            body.innerHTML = '<p class="empty-state">Beer not found.</p>';
+            return;
+        }
+
+        const stats = data.stats || {};
+        const avgRating = (stats.avg_rating != null) ? Number(stats.avg_rating).toFixed(1) : (data.ratings && data.ratings.length ? (data.ratings.reduce((s, r) => s + (Number(r.rating) || 0), 0) / data.ratings.length).toFixed(1) : '—');
+        const reviewCount = (stats.review_count != null) ? stats.review_count : (data.ratings ? data.ratings.length : 0);
+        const avgYg = (stats.avg_yg_value != null) ? Number(stats.avg_yg_value).toFixed(1) : (data.ratings && data.ratings.length ? (() => {
+            const yg = data.ratings.map((r) => r.yg_value).filter((v) => v != null);
+            return yg.length ? (yg.reduce((a, b) => a + b, 0) / yg.length).toFixed(1) : '—';
+        })() : '—');
+        const firstRating = data.ratings && data.ratings[0] ? data.ratings[0] : {};
+        const displayBrewery = brewery || firstRating.brewery || '';
+        const displayStyle = style || firstRating.style || '';
+        const abv = firstRating.abv != null ? firstRating.abv : '';
+
+        let ygContext = '';
+        if (avgYg !== '—' && parseFloat(avgYg) > 0) {
+            const ygNum = parseFloat(avgYg);
+            const baseline = 'Yuengling Golden Pilsner';
+            if (beerName.toLowerCase().includes('yuengling') && beerName.toLowerCase().includes('golden')) {
+                ygContext = 'This IS the baseline. 1.0 YG. The standard.';
+            } else if (crossRates && crossRates.cross_rates && crossRates.cross_rates.length) {
+                const parts = crossRates.cross_rates.slice(0, 2).filter((cr) => cr.cross_rate != null).map((cr) => `${(ygNum / cr.cross_rate).toFixed(1)} ${cr.beer_name || ''}`);
+                ygContext = parts.length ? `Worth ${avgYg} YGs. That's equivalent to ${parts.join(' or ')}.` : `Worth ${avgYg} YGs.`;
+            } else {
+                ygContext = `Worth ${avgYg} YGs.`;
+            }
+        }
+
+        const priceHistory = data.price_history || [];
+        const cheapest = priceHistory.length ? priceHistory.reduce((min, p) => (p.price_cents < min.price_cents ? p : min), priceHistory[0]) : null;
+
+        body.innerHTML = `
+            <div class="beer-detail-inner">
+                <h2 class="beer-detail-name">${Utils.escapeHtml(beerName)}</h2>
+                <p class="beer-detail-meta">${Utils.escapeHtml(displayBrewery)}${displayBrewery && displayStyle ? ' · ' : ''}${Utils.escapeHtml(displayStyle)}${abv ? ' · ' + abv + '% ABV' : ''}</p>
+                <div class="beer-detail-stats-row">
+                    <span>⭐ ${avgRating} avg</span>
+                    <span>${avgYg !== '—' ? avgYg + ' YG' : '—'}</span>
+                    <span>${reviewCount} ratings</span>
+                </div>
+                ${ygContext ? `<div class="beer-detail-yg-context">📈 YG Context<br>${Utils.escapeHtml(ygContext)}</div>` : ''}
+                ${cheapest ? `<div class="beer-detail-price">💰 Cheapest: $${(cheapest.price_cents / 100).toFixed(2)}${cheapest.venue_name ? ' at ' + Utils.escapeHtml(cheapest.venue_name) : ''}</div>` : ''}
+                <section class="beer-detail-ratings">
+                    <h3>All Ratings</h3>
+                    <div id="beer-detail-ratings-list"></div>
+                </section>
+                <button type="button" class="btn btn-primary btn-full" id="beer-detail-rate-btn">🍺 Rate This Beer</button>
+            </div>
+        `;
+
+        const listEl = document.getElementById('beer-detail-ratings-list');
+        if (listEl && data.ratings && data.ratings.length) {
+            listEl.innerHTML = data.ratings.map((r) => `
+                <div class="beer-detail-rating-card">
+                    <div class="beer-detail-rating-header">
+                        <span class="username-link" data-user-id="${Utils.escapeHtml(r.user_id || '')}" data-user-name="${Utils.escapeHtml(r.user_name || 'Anonymous')}">${Utils.escapeHtml(r.user_name || 'Anonymous')}</span>
+                        <span>${Utils.stars(r.rating || 0)}</span>
+                        ${r.yg_value != null ? `<span>${r.yg_value} YG</span>` : ''}
+                        ${!DB.currentUser || DB.isDemo ? '' : `<button type="button" class="cheers-btn cheers-btn-inline" data-rating-id="${r.id}">🍻 <span class="cheers-count">0</span></button>`}
+                    </div>
+                    ${r.notes ? `<p class="beer-detail-rating-notes">${Utils.escapeHtml(Utils.truncate(r.notes, 120))}</p>` : ''}
+                    <div class="beer-detail-rating-meta">${Utils.timeAgo(r.created_at)}${r.location_name ? ' at ' + Utils.escapeHtml(r.location_name) : ''}</div>
+                </div>
+            `).join('');
+        if (!DB.isDemo && data.ratings.length) {
+            data.ratings.forEach((r) => {
+                DB.getRatingCheers(r.id).then((c) => {
+                    const el = listEl.querySelector(`.cheers-btn[data-rating-id="${r.id}"]`);
+                    if (el) {
+                        const countEl = el.querySelector('.cheers-count');
+                        if (countEl) countEl.textContent = c.count || 0;
+                        el.classList.toggle('cheered', !!(c.users && DB.currentUser && c.users.includes(DB.currentUser.id)));
+                    }
+                }).catch(() => {});
+            });
+        }
+        } else if (listEl) {
+            listEl.innerHTML = '<p class="empty-state">No ratings yet.</p>';
+        }
+
+        document.getElementById('beer-detail-rate-btn')?.addEventListener('click', () => {
+            document.getElementById('beer-name').value = beerName;
+            document.getElementById('beer-brewery').value = displayBrewery;
+            document.getElementById('beer-style').value = displayStyle;
+            if (abv) document.getElementById('beer-abv').value = abv;
+            this.closeBeerDetail();
+            this.navigate('rate');
+        });
     },
 
     bindBeerAutocomplete() {
@@ -647,6 +941,7 @@ const App = {
         }
 
         await this.loadAllData();
+        this.setupInfiniteScroll();
         this.navigate('dashboard');
     },
 
@@ -683,6 +978,8 @@ const App = {
             this.activityItems = (activityRes && activityRes.data) ? activityRes.data : [];
             this.renderActivityFeed(this.activityItems, 10);
             this.activityPage = 1;
+            const hasYg = (this.allRatings || []).some((r) => r.yg_value != null);
+            document.querySelectorAll('.filter-yg').forEach((el) => { el.style.display = hasYg ? '' : 'none'; });
         } catch (err) {
             console.error('Failed to load data:', err);
             App.toast('Failed to load data', 'error');
@@ -691,15 +988,16 @@ const App = {
 
     // ========== NAVIGATION ==========
     navigate(viewId) {
+        const view = document.getElementById(`view-${viewId}`);
+        if (!view) return;
+        this._previousView = this.currentView;
         this.currentView = viewId;
         document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
         document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
-
-        const view = document.getElementById(`view-${viewId}`);
         const btn = document.querySelector(`.nav-btn[data-view="${viewId}"]`);
         const mobileBtn = document.querySelector(`.mobile-nav-item[data-view="${viewId}"]`);
 
-        if (view) { view.classList.add('active'); view.style.animation = 'none'; view.offsetHeight; view.style.animation = ''; }
+        view.classList.add('active'); view.style.animation = 'none'; view.offsetHeight; view.style.animation = '';
         if (btn) btn.classList.add('active');
         document.querySelectorAll('.mobile-nav-item[data-view]').forEach(b => b.classList.remove('active'));
         if (mobileBtn) mobileBtn.classList.add('active');
@@ -721,18 +1019,36 @@ const App = {
         }
         container.innerHTML = recent.map(r => {
             const canDelete = currentUserId && r.user_id === currentUserId;
+            const cheersCount = (r.cheers_count != null) ? r.cheers_count : 0;
             return `<div class="review-card" data-rating-id="${r.id}">
                 <div class="review-rating">${this.ratingEmoji(r.rating)}</div>
                 <div class="review-content">
-                    <div class="review-beer-name">${Utils.escapeHtml(r.beer_name)}</div>
-                    <div class="review-meta">${Utils.escapeHtml(r.brewery || '')}${r.brewery && r.style ? ' · ' : ''}${Utils.escapeHtml(r.style || '')}${r.abv ? ` · ${r.abv}%` : ''}</div>
+                    <div class="review-beer-name beer-name-link" data-beer-name="${Utils.escapeHtml(r.beer_name)}" data-beer-brewery="${Utils.escapeHtml(r.brewery || '')}" data-beer-style="${Utils.escapeHtml(r.style || '')}">${Utils.escapeHtml(r.beer_name)}</div>
+                    <div class="review-meta">${Utils.escapeHtml(r.brewery || '')}${r.brewery && r.style ? ' · ' : ''}${r.style ? `<span class="style-tooltip" data-style="${Utils.escapeHtml(r.style)}">${Utils.escapeHtml(r.style)}</span>` : ''}${r.abv ? ` · ${r.abv}%` : ''}</div>
                     <div class="review-stars">${Utils.stars(r.rating)}</div>
                     ${r.notes ? `<div class="review-notes">${Utils.escapeHtml(Utils.truncate(r.notes, 150))}</div>` : ''}
-                    <div class="review-user">— ${Utils.escapeHtml(r.user_name || 'Anonymous')} · ${Utils.timeAgo(r.created_at)}</div>
+                    <div class="review-user">— <span class="username-link" data-user-id="${Utils.escapeHtml(r.user_id || '')}" data-user-name="${Utils.escapeHtml(r.user_name || 'Anonymous')}">${Utils.escapeHtml(r.user_name || 'Anonymous')}</span> · ${Utils.timeAgo(r.created_at)}</div>
                 </div>
-                ${canDelete ? `<button type="button" class="review-delete" aria-label="Delete rating" data-rating-id="${r.id}">🗑️</button>` : ''}
+                <div class="review-actions">
+                    ${!DB.currentUser || DB.isDemo ? `<button type="button" class="cheers-btn cheers-btn-ghost" disabled title="Sign in to cheers">🍻 <span class="cheers-count">0</span></button>` : `<button type="button" class="cheers-btn" data-rating-id="${r.id}" title="Cheers">🍻 <span class="cheers-count">${cheersCount}</span></button>`}
+                    ${canDelete ? `<button type="button" class="review-delete" aria-label="Delete rating" data-rating-id="${r.id}">🗑️</button>` : ''}
+                </div>
             </div>`;
         }).join('');
+        if (!DB.isDemo && recent.length) {
+            recent.forEach((r) => {
+                DB.getRatingCheers(r.id).then((c) => {
+                    const el = container.querySelector(`.cheers-btn[data-rating-id="${r.id}"]`);
+                    if (el) {
+                        const countEl = el.querySelector('.cheers-count');
+                        if (countEl) countEl.textContent = c.count || 0;
+                        el.classList.toggle('cheered', !!(c.users && DB.currentUser && c.users.includes(DB.currentUser.id)));
+                    }
+                    this.cheersCache = this.cheersCache || {};
+                    this.cheersCache[r.id] = c.count || 0;
+                }).catch(() => {});
+            });
+        }
         container.querySelectorAll('.review-delete').forEach(btn => {
             btn.addEventListener('click', () => {
                 this._deleteRatingId = btn.dataset.ratingId;
@@ -746,6 +1062,10 @@ const App = {
         const container = document.getElementById('beer-grid');
         const search = (document.getElementById('search-input')?.value || '').toLowerCase();
         const styleFilter = document.getElementById('filter-style')?.value || '';
+        const minRating = document.getElementById('filter-min-rating')?.value;
+        const ygMin = document.getElementById('filter-yg-min')?.value;
+        const ygMax = document.getElementById('filter-yg-max')?.value;
+        const userFilter = document.getElementById('filter-user')?.value || '';
         const sortBy = document.getElementById('sort-by')?.value || 'recent';
 
         let filtered = [...this.allRatings];
@@ -753,13 +1073,23 @@ const App = {
             r.beer_name.toLowerCase().includes(search) || (r.brewery || '').toLowerCase().includes(search) ||
             (r.style || '').toLowerCase().includes(search) || (r.notes || '').toLowerCase().includes(search));
         if (styleFilter) filtered = filtered.filter(r => r.style === styleFilter);
+        if (minRating) filtered = filtered.filter(r => (Number(r.rating) || 0) >= parseInt(minRating, 10));
+        if (ygMin !== '' && ygMin != null) filtered = filtered.filter(r => (r.yg_value != null) && Number(r.yg_value) >= parseInt(ygMin, 10));
+        if (ygMax !== '' && ygMax != null) filtered = filtered.filter(r => (r.yg_value != null) && Number(r.yg_value) <= parseInt(ygMax, 10));
+        if (userFilter) filtered = filtered.filter(r => r.user_id === userFilter || r.user_name === userFilter);
 
+        const cheersCache = this.cheersCache || {};
         switch (sortBy) {
-            case 'highest': filtered.sort((a, b) => b.rating - a.rating); break;
-            case 'lowest': filtered.sort((a, b) => a.rating - b.rating); break;
+            case 'highest': filtered.sort((a, b) => (b.rating || 0) - (a.rating || 0)); break;
+            case 'lowest': filtered.sort((a, b) => (a.rating || 0) - (b.rating || 0)); break;
+            case 'yg': filtered.sort((a, b) => (b.yg_value != null ? b.yg_value : -1) - (a.yg_value != null ? a.yg_value : -1)); break;
+            case 'cheers': filtered.sort((a, b) => (cheersCache[b.id] || 0) - (cheersCache[a.id] || 0)); break;
             case 'name': filtered.sort((a, b) => a.beer_name.localeCompare(b.beer_name)); break;
             default: filtered.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
         }
+
+        const browseLimit = Math.min(this.browseShownCount || 24, filtered.length);
+        const toShow = filtered.slice(0, browseLimit);
 
         if (!filtered.length) {
             if (!this.allRatings.length) {
@@ -771,25 +1101,54 @@ const App = {
             return;
         }
 
-        container.innerHTML = filtered.map(r => `
+        container.innerHTML = toShow.map(r => `
             <div class="beer-card">
                 <div class="beer-card-header">
-                    <div class="beer-card-name">${Utils.escapeHtml(r.beer_name)}</div>
+                    <div class="beer-card-name beer-name-link" data-beer-name="${Utils.escapeHtml(r.beer_name)}" data-beer-brewery="${Utils.escapeHtml(r.brewery || '')}" data-beer-style="${Utils.escapeHtml(r.style || '')}">${Utils.escapeHtml(r.beer_name)}</div>
                     <div class="beer-card-rating">${r.rating.toFixed(1)}</div>
                 </div>
                 ${r.brewery ? `<div class="beer-card-brewery">${Utils.escapeHtml(r.brewery)}</div>` : ''}
                 <div class="beer-card-details">
-                    ${r.style ? `<span class="beer-card-tag">${Utils.escapeHtml(r.style)}</span>` : ''}
+                    ${r.style ? `<span class="beer-card-tag style-tooltip" data-style="${Utils.escapeHtml(r.style)}">${Utils.escapeHtml(r.style)}</span>` : ''}
                     ${r.abv ? `<span class="beer-card-tag">${r.abv}% ABV</span>` : ''}
                 </div>
                 <div class="beer-card-stars">${Utils.stars(r.rating)}</div>
                 ${r.notes ? `<div class="beer-card-notes">${Utils.escapeHtml(r.notes)}</div>` : ''}
                 <div class="beer-card-footer">
-                    <span>${Utils.escapeHtml(r.user_name || 'Anonymous')}</span>
+                    <span class="username-link" data-user-id="${Utils.escapeHtml(r.user_id || '')}" data-user-name="${Utils.escapeHtml(r.user_name || 'Anonymous')}">${Utils.escapeHtml(r.user_name || 'Anonymous')}</span>
                     <span>${Utils.timeAgo(r.created_at)}</span>
                 </div>
             </div>
         `).join('');
+
+        const sentinel = document.getElementById('browse-sentinel');
+        const loadingEl = document.getElementById('browse-loading');
+        if (sentinel) sentinel.style.display = browseLimit < filtered.length ? 'block' : 'none';
+        if (loadingEl) loadingEl.style.display = 'none';
+    },
+
+    setupInfiniteScroll() {
+        const browseSentinel = document.getElementById('browse-sentinel');
+        if (browseSentinel && !this._browseObserver) {
+            this._browseObserver = new IntersectionObserver((entries) => {
+                if (!entries[0].isIntersecting) return;
+                this.browseShownCount = (this.browseShownCount || 24) + 24;
+                document.getElementById('browse-loading')?.style.setProperty('display', 'block');
+                this.renderBrowse();
+            }, { rootMargin: '100px', threshold: 0 });
+            this._browseObserver.observe(browseSentinel);
+        }
+        const activitySentinel = document.getElementById('activity-sentinel');
+        if (activitySentinel && !this._activityObserver) {
+            this._activityObserver = new IntersectionObserver((entries) => {
+                if (!entries[0].isIntersecting) return;
+                const items = this.activityItems || [];
+                const shown = (this.activityPage || 1) * 10;
+                if (items.length <= shown) return;
+                this.loadMoreActivity();
+            }, { rootMargin: '100px', threshold: 0 });
+            this._activityObserver.observe(activitySentinel);
+        }
     },
 
     renderLeaderboard(period = 'alltime') {
@@ -804,8 +1163,9 @@ const App = {
 
         const userCounts = Utils.countBy(ratings, 'user_name');
         const topReviewers = Object.entries(userCounts).sort((a, b) => b[1] - a[1]).slice(0, 10);
+        const reviewerUserIds = this.allRatings && topReviewers.length ? (() => { const m = {}; this.allRatings.forEach(r => { if (!m[r.user_name]) m[r.user_name] = r.user_id; }); return m; })() : {};
         document.getElementById('lb-reviewers').innerHTML = topReviewers.length
-            ? topReviewers.map(([name, count], i) => `<div class="lb-row"><span class="lb-rank">${i < 3 ? ['🥇','🥈','🥉'][i] : (i+1)}</span><span class="lb-name">${Utils.escapeHtml(name)}</span><span class="lb-value">${count} reviews</span></div>`).join('')
+            ? topReviewers.map(([name, count], i) => `<div class="lb-row"><span class="lb-rank">${i < 3 ? ['🥇','🥈','🥉'][i] : (i+1)}</span><span class="lb-name username-link" data-user-id="${Utils.escapeHtml(reviewerUserIds[name] || '')}" data-user-name="${Utils.escapeHtml(name)}">${Utils.escapeHtml(name)}</span><span class="lb-value">${count} reviews</span></div>`).join('')
             : '<p class="empty-state">No data yet</p>';
 
         const beerMap = {};
@@ -826,6 +1186,16 @@ const App = {
         document.getElementById('lb-popular').innerHTML = mostReviewed.length
             ? mostReviewed.map(([name, { count }], i) => `<div class="lb-row"><span class="lb-rank">${i < 3 ? ['🥇','🥈','🥉'][i] : (i+1)}</span><span class="lb-name">${Utils.escapeHtml(name)}</span><span class="lb-value">${count} reviews</span></div>`).join('')
             : '<p class="empty-state">No data yet</p>';
+
+        const cheersCache = this.cheersCache || {};
+        const cheeredRows = (this.allRatings || []).filter((r) => r.id && (cheersCache[r.id] || 0) > 0).map((r) => ({ id: r.id, beer_name: r.beer_name, count: cheersCache[r.id] }));
+        cheeredRows.sort((a, b) => b.count - a.count);
+        const lbCheersEl = document.getElementById('lb-cheers');
+        if (lbCheersEl) {
+            lbCheersEl.innerHTML = cheeredRows.length
+                ? cheeredRows.slice(0, 10).map((row, i) => `<div class="lb-row"><span class="lb-rank">${i < 3 ? ['🥇','🥈','🥉'][i] : (i+1)}</span><span class="lb-name">${Utils.escapeHtml(row.beer_name || '')}</span><span class="lb-value">🍻 ${row.count}</span></div>`).join('')
+                : '<p class="empty-state">Cheers on ratings to see most cheered.</p>';
+        }
     },
 
     renderActivityFeed(items, showCount = 10) {
@@ -855,16 +1225,30 @@ const App = {
             const ygBadge = (item.yg_value != null && item.yg_value > 0) ? ` <span class="activity-yg-badge">(${Number(item.yg_value)} YG)</span>` : '';
             const cheers = (item.cheers_count > 0) ? ` · 🍻 ${item.cheers_count} cheers` : '';
             return `<div class="activity-item">
-                <div class="activity-avatar">${Utils.escapeHtml(initials)}</div>
+                <div class="activity-avatar username-link" data-user-id="${Utils.escapeHtml(item.user_id || '')}" data-user-name="${Utils.escapeHtml(name)}" role="button" tabindex="0">${Utils.escapeHtml(initials)}</div>
                 <div class="activity-body">
-                    <div class="activity-text">${Utils.escapeHtml(name)} rated ${Utils.escapeHtml(item.beer_name || '')} ${Utils.stars(item.rating || 0)}${ygBadge}${item.location_name ? ' at ' + Utils.escapeHtml(item.location_name) : ''}</div>
+                    <div class="activity-text"><span class="username-link" data-user-id="${Utils.escapeHtml(item.user_id || '')}" data-user-name="${Utils.escapeHtml(name)}">${Utils.escapeHtml(name)}</span> rated <span class="beer-name-link" data-beer-name="${Utils.escapeHtml(item.beer_name || '')}" data-beer-brewery="${Utils.escapeHtml(item.brewery || '')}" data-beer-style="${Utils.escapeHtml(item.style || '')}">${Utils.escapeHtml(item.beer_name || '')}</span> ${Utils.stars(item.rating || 0)}${ygBadge}${item.location_name ? ' at ' + Utils.escapeHtml(item.location_name) : ''}</div>
                     ${item.notes ? `<div class="activity-notes">"${Utils.escapeHtml(Utils.truncate(item.notes, 80))}"</div>` : ''}
-                    <div class="activity-meta">${Utils.timeAgo(item.created_at)}${cheers}</div>
+                    <div class="activity-meta">${Utils.timeAgo(item.created_at)}${!DB.currentUser || DB.isDemo ? ` · <span class="cheers-inline" title="Sign in to cheers">🍻 <span class="cheers-count">0</span></span>` : ` · <button type="button" class="cheers-btn cheers-btn-inline" data-rating-id="${item.id}">🍻 <span class="cheers-count">${item.cheers_count ?? 0}</span></button>`}</div>
                 </div>
             </div>`;
         }).join('');
         const hasMore = (items.length || 0) > showCount;
         if (loadMoreBtn) loadMoreBtn.style.display = hasMore ? 'block' : 'none';
+        if (!DB.isDemo && container) {
+            list.filter((i) => i.type === 'rating' && i.id).slice(0, 20).forEach((item) => {
+                DB.getRatingCheers(item.id).then((c) => {
+                    const el = container.querySelector(`.cheers-btn[data-rating-id="${item.id}"]`);
+                    if (el) {
+                        const countEl = el.querySelector('.cheers-count');
+                        if (countEl) countEl.textContent = c.count || 0;
+                        el.classList.toggle('cheered', !!(c.users && DB.currentUser && c.users.includes(DB.currentUser.id)));
+                    }
+                    this.cheersCache = this.cheersCache || {};
+                    this.cheersCache[item.id] = c.count || 0;
+                }).catch(() => {});
+            });
+        }
     },
 
     async renderProfile() {
@@ -895,15 +1279,32 @@ const App = {
             <div class="review-card" data-rating-id="${r.id}">
                 <div class="review-rating">${this.ratingEmoji(r.rating)}</div>
                 <div class="review-content">
-                    <div class="review-beer-name">${Utils.escapeHtml(r.beer_name)}</div>
+                    <div class="review-beer-name beer-name-link" data-beer-name="${Utils.escapeHtml(r.beer_name)}" data-beer-brewery="${Utils.escapeHtml(r.brewery || '')}" data-beer-style="${Utils.escapeHtml(r.style || '')}">${Utils.escapeHtml(r.beer_name)}</div>
                     <div class="review-meta">${Utils.escapeHtml(r.brewery || '')}${r.brewery && r.style ? ' · ' : ''}${Utils.escapeHtml(r.style || '')}</div>
                     <div class="review-stars">${Utils.stars(r.rating)}</div>
                     ${r.notes ? `<div class="review-notes">${Utils.escapeHtml(r.notes)}</div>` : ''}
                     <div class="review-user">${Utils.timeAgo(r.created_at)}</div>
                 </div>
-                <button type="button" class="review-delete" aria-label="Delete rating" data-rating-id="${r.id}">🗑️</button>
+                <div class="review-actions">
+                    ${!DB.currentUser || DB.isDemo ? '<span class="cheers-inline">🍻 <span class="cheers-count">0</span></span>' : `<button type="button" class="cheers-btn" data-rating-id="${r.id}">🍻 <span class="cheers-count">0</span></button>`}
+                    <button type="button" class="review-delete" aria-label="Delete rating" data-rating-id="${r.id}">🗑️</button>
+                </div>
             </div>
         `).join('');
+        if (!DB.isDemo) {
+            myRatings.forEach((r) => {
+                DB.getRatingCheers(r.id).then((c) => {
+                    const el = container.querySelector(`.cheers-btn[data-rating-id="${r.id}"]`);
+                    if (el) {
+                        const countEl = el.querySelector('.cheers-count');
+                        if (countEl) countEl.textContent = c.count || 0;
+                        el.classList.toggle('cheered', !!(c.users && DB.currentUser && c.users.includes(DB.currentUser.id)));
+                    }
+                    this.cheersCache = this.cheersCache || {};
+                    this.cheersCache[r.id] = c.count || 0;
+                }).catch(() => {});
+            });
+        }
         container.querySelectorAll('.review-delete').forEach(btn => {
             btn.addEventListener('click', () => {
                 this._deleteRatingId = btn.dataset.ratingId;
@@ -922,6 +1323,20 @@ const App = {
         const current = select.value;
         select.innerHTML = '<option value="">All Styles</option>' +
             styles.map(s => `<option value="${s}" ${s === current ? 'selected' : ''}>${s}</option>`).join('');
+
+        const userSelect = document.getElementById('filter-user');
+        if (userSelect) {
+            const users = [];
+            const seen = new Set();
+            (this.allRatings || []).forEach((r) => {
+                const id = r.user_id || r.user_name;
+                if (id && !seen.has(id)) { seen.add(id); users.push({ id, name: r.user_name || r.user_id || 'Anonymous' }); }
+            });
+            users.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+            const curUser = userSelect.value;
+            userSelect.innerHTML = '<option value="">All users</option>' +
+                users.map((u) => `<option value="${Utils.escapeHtml(u.id)}" ${u.id === curUser ? 'selected' : ''}>${Utils.escapeHtml(u.name)}</option>`).join('');
+        }
     },
 
     ratingEmoji(rating) {

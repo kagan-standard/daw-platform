@@ -5,6 +5,37 @@
    Demo: localStorage fallback
    ============================================ */
 
+// In-memory cache for GET responses (key -> { data, time })
+const _cache = new Map();
+const CACHE_TTL = {
+    stats: 60 * 1000,
+    leaderboard: 60 * 1000,
+    exchange: 60 * 1000,
+    beerSearch: 30 * 1000,
+    userProfile: 120 * 1000,
+    map: 120 * 1000,
+    activity: 60 * 1000,
+};
+
+function cachedFetch(key, ttlMs, fetchFn) {
+    const cached = _cache.get(key);
+    if (cached && Date.now() - cached.time < ttlMs) return Promise.resolve(cached.data);
+    return fetchFn().then((data) => {
+        _cache.set(key, { data, time: Date.now() });
+        return data;
+    });
+}
+
+function invalidateCache(prefix) {
+    if (!prefix) {
+        _cache.clear();
+        return;
+    }
+    for (const k of _cache.keys()) {
+        if (k.startsWith(prefix)) _cache.delete(k);
+    }
+}
+
 const DB = {
     client: null,
     isDemo: false,
@@ -355,7 +386,12 @@ const DB = {
             photo_url: record.photo_url,
         };
         const data = await this._api('POST', '/api/ratings', { body: JSON.stringify(body) });
+        invalidateCache('');
         return data;
+    },
+
+    cacheInvalidate(prefix) {
+        invalidateCache(prefix || '');
     },
 
     async getAllRatings() {
@@ -377,6 +413,7 @@ const DB = {
             return true;
         }
         await this._api('DELETE', `/api/ratings/${encodeURIComponent(id)}`);
+        invalidateCache('');
         return true;
     },
 
@@ -392,19 +429,21 @@ const DB = {
                 ratings
             };
         }
-        const [statsRes, ratingsRes] = await Promise.all([
-            this._api('GET', '/api/stats?limit=100'),
-            this._api('GET', '/api/ratings?limit=100&order=desc')
-        ]);
-        const ratings = (ratingsRes && ratingsRes.data) ? ratingsRes.data : [];
-        const summary = (statsRes && statsRes.summary) ? statsRes.summary : {};
-        return {
-            totalBeers: summary.totalBeers ?? new Set(ratings.map(r => r.beer_name?.toLowerCase())).size,
-            totalReviews: summary.totalReviews ?? ratings.length,
-            totalUsers: summary.totalUsers ?? new Set(ratings.map(r => r.user_id)).size,
-            avgRating: summary.avgRating ?? (ratings.length ? (ratings.reduce((s, r) => s + r.rating, 0) / ratings.length).toFixed(1) : '0.0'),
-            ratings
-        };
+        return cachedFetch('stats', CACHE_TTL.stats, async () => {
+            const [statsRes, ratingsRes] = await Promise.all([
+                this._api('GET', '/api/stats?limit=100'),
+                this._api('GET', '/api/ratings?limit=100&order=desc')
+            ]);
+            const ratings = (ratingsRes && ratingsRes.data) ? ratingsRes.data : [];
+            const summary = (statsRes && statsRes.summary) ? statsRes.summary : {};
+            return {
+                totalBeers: summary.totalBeers ?? new Set(ratings.map(r => r.beer_name?.toLowerCase())).size,
+                totalReviews: summary.totalReviews ?? ratings.length,
+                totalUsers: summary.totalUsers ?? new Set(ratings.map(r => r.user_id)).size,
+                avgRating: summary.avgRating ?? (ratings.length ? (ratings.reduce((s, r) => s + r.rating, 0) / ratings.length).toFixed(1) : '0.0'),
+                ratings
+            };
+        });
     },
 
     subscribeToRatings(callback) {
@@ -436,8 +475,11 @@ const DB = {
     async searchBeers(q) {
         if (this.isDemo) return [];
         if (!q || q.length < 2) return [];
-        const out = await this._api('GET', `/api/beers/search?q=${encodeURIComponent(q)}`);
-        return (out && out.data) ? out.data : [];
+        const cacheKey = `beerSearch:${q.toLowerCase().trim()}`;
+        return cachedFetch(cacheKey, CACHE_TTL.beerSearch, async () => {
+            const out = await this._api('GET', `/api/beers/search?q=${encodeURIComponent(q)}`);
+            return (out && out.data) ? out.data : [];
+        });
     },
 
     async getVenuesCount() {
@@ -452,16 +494,18 @@ const DB = {
     async getActivity() {
         if (this.isDemo) return { data: [] };
         try {
-            return await this._api('GET', '/api/activity');
+            return await cachedFetch('activity', CACHE_TTL.activity, () => this._api('GET', '/api/activity'));
         } catch { return { data: [] }; }
     },
 
     async getLeaderboard(period = 'alltime') {
-        if (this.isDemo) return { reviewers: [], beers: [], styles: [], popular: [] };
+        if (this.isDemo) return { top_reviewers: [], top_beers: [], top_yg_values: [], most_venues: [] };
         try {
-            const out = await this._api('GET', `/api/leaderboard?period=${encodeURIComponent(period)}`);
-            return out || { reviewers: [], beers: [], styles: [], popular: [] };
-        } catch { return { reviewers: [], beers: [], styles: [], popular: [] }; }
+            return await cachedFetch(`leaderboard:${period}`, CACHE_TTL.leaderboard, async () => {
+                const out = await this._api('GET', `/api/leaderboard?period=${encodeURIComponent(period)}`);
+                return out || { top_reviewers: [], top_beers: [], top_yg_values: [], most_venues: [] };
+            });
+        } catch { return { top_reviewers: [], top_beers: [], top_yg_values: [], most_venues: [] }; }
     },
 
     async getBeerOfTheWeek() {
@@ -498,5 +542,78 @@ const DB = {
         if (this.isDemo) return {};
         await this._api('POST', `/api/venues/${encodeURIComponent(venueId)}/prices`, { body: JSON.stringify(payload) });
         return {};
+    },
+
+    async getUserProfile(userId) {
+        if (this.isDemo) return null;
+        try {
+            return await cachedFetch(`user:${userId}`, CACHE_TTL.userProfile, () => this._api('GET', `/api/users/${encodeURIComponent(userId)}`));
+        } catch { return null; }
+    },
+
+    async getUserStats(userId) {
+        if (this.isDemo) return null;
+        try {
+            return await cachedFetch(`userStats:${userId}`, CACHE_TTL.userProfile, () => this._api('GET', `/api/users/${encodeURIComponent(userId)}/stats`));
+        } catch { return null; }
+    },
+
+    async getBeerDetail(beerName) {
+        if (this.isDemo) return null;
+        try {
+            const key = `beer:${encodeURIComponent(beerName)}`;
+            return await cachedFetch(key, CACHE_TTL.beerSearch, () => this._api('GET', `/api/beers/${encodeURIComponent(beerName)}`));
+        } catch { return null; }
+    },
+
+    async getBeerCrossRates(beerName) {
+        if (this.isDemo) return null;
+        try {
+            const out = await this._api('GET', `/api/exchange/${encodeURIComponent(beerName)}`);
+            return out;
+        } catch { return null; }
+    },
+
+    async getExchangeRates() {
+        if (this.isDemo) return { data: [] };
+        try {
+            return await cachedFetch('exchange:rates', CACHE_TTL.exchange, () => this._api('GET', '/api/exchange?limit=50'));
+        } catch { return { data: [] }; }
+    },
+
+    async getRatingCheers(ratingId) {
+        if (this.isDemo) return { count: 0, users: [] };
+        try {
+            const out = await this._api('GET', `/api/ratings/${encodeURIComponent(ratingId)}/cheers`);
+            return { count: out.count ?? 0, users: out.users ?? [] };
+        } catch { return { count: 0, users: [] }; }
+    },
+
+    async toggleCheers(ratingId) {
+        if (this.isDemo) return { action: 'added', count: 0 };
+        const out = await this._api('POST', `/api/ratings/${encodeURIComponent(ratingId)}/cheers`);
+        invalidateCache('activity');
+        invalidateCache('leaderboard');
+        return out;
+    },
+
+    async getMapUser(userId) {
+        if (this.isDemo) return [];
+        try {
+            return await cachedFetch(`map:${userId}`, CACHE_TTL.map, async () => {
+                const out = await this._api('GET', `/api/map/user/${encodeURIComponent(userId)}`);
+                return (out && out.data) ? out.data : [];
+            });
+        } catch { return []; }
+    },
+
+    async getExchangePortfolio(userId) {
+        if (this.isDemo) return { ratings: [], total_portfolio_value: 0 };
+        try {
+            return await cachedFetch(`portfolio:${userId}`, CACHE_TTL.exchange, async () => {
+                const out = await this._api('GET', `/api/exchange/portfolio/${encodeURIComponent(userId)}`);
+                return { ratings: (out && out.ratings) ? out.ratings : [], total_portfolio_value: out && out.total_portfolio_value != null ? out.total_portfolio_value : 0 };
+            });
+        } catch { return { ratings: [], total_portfolio_value: 0 }; }
     }
 };

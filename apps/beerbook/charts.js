@@ -400,4 +400,140 @@ const Charts = {
         this.renderActivity(ratings);
         this.renderYgDistribution(ratings);
     },
+
+    // ========== PROFILE MODAL CHARTS (scoped to user ratings) ==========
+
+    renderProfileDistribution(ratings, canvasId) {
+        this.destroy('profileDist');
+        const canvas = document.getElementById(canvasId);
+        if (!canvas || !ratings || ratings.length < 3) return;
+        const dist = [0, 0, 0, 0, 0];
+        ratings.forEach((r) => {
+            if (r.rating >= 1 && r.rating <= 5) dist[Math.round(r.rating) - 1]++;
+        });
+        this.instances['profileDist'] = new Chart(canvas, {
+            type: 'bar',
+            data: {
+                labels: ['1 ★', '2 ★', '3 ★', '4 ★', '5 ★'],
+                datasets: [{
+                    label: 'Reviews',
+                    data: dist,
+                    backgroundColor: ['rgba(239,83,80,0.7)', 'rgba(255,167,38,0.7)', 'rgba(255,238,88,0.7)', 'rgba(124,179,66,0.7)', 'rgba(230,168,23,0.9)'],
+                    borderRadius: 6,
+                    borderSkipped: false,
+                    maxBarThickness: 40
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    y: { beginAtZero: true, ticks: { stepSize: 1 }, grid: { color: 'rgba(61,42,20,0.3)' } },
+                    x: { grid: { display: false } }
+                }
+            }
+        });
+    },
+
+    renderProfileStyleDoughnut(ratings, canvasId) {
+        this.destroy('profileStyle');
+        const canvas = document.getElementById(canvasId);
+        if (!canvas || !ratings || ratings.length < 3) return;
+        const styleCounts = Utils.countBy(ratings, 'style');
+        const sorted = Object.entries(styleCounts).sort((a, b) => b[1] - a[1]).slice(0, 8);
+        this.instances['profileStyle'] = new Chart(canvas, {
+            type: 'doughnut',
+            data: {
+                labels: sorted.map((s) => s[0]),
+                datasets: [{
+                    data: sorted.map((s) => s[1]),
+                    backgroundColor: this.palette.slice(0, sorted.length),
+                    borderColor: '#2a1c0d',
+                    borderWidth: 2,
+                    hoverOffset: 8
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: '55%',
+                plugins: { legend: { position: 'right', labels: { padding: 8, font: { size: 10 } } } }
+            }
+        });
+    },
+
+    renderProfileMonthly(ratings, canvasId) {
+        this.destroy('profileMonthly');
+        const canvas = document.getElementById(canvasId);
+        if (!canvas || !ratings || ratings.length < 2) return;
+        const byMonth = {};
+        ratings.forEach((r) => {
+            if (!r.created_at) return;
+            const key = r.created_at.slice(0, 7);
+            byMonth[key] = (byMonth[key] || 0) + 1;
+        });
+        const sorted = Object.entries(byMonth).sort((a, b) => a[0].localeCompare(b[0]));
+        this.instances['profileMonthly'] = new Chart(canvas, {
+            type: 'line',
+            data: {
+                labels: sorted.map((s) => s[0]),
+                datasets: [{
+                    label: 'Ratings',
+                    data: sorted.map((s) => s[1]),
+                    borderColor: '#e6a817',
+                    backgroundColor: 'rgba(230,168,23,0.1)',
+                    fill: true,
+                    tension: 0.4,
+                    pointRadius: 3,
+                    pointHoverRadius: 6
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    y: { beginAtZero: true, ticks: { stepSize: 1 }, grid: { color: 'rgba(61,42,20,0.3)' } },
+                    x: { grid: { display: false }, ticks: { maxTicksLimit: 8 } }
+                }
+            }
+        });
+    },
+
+    renderProfileFlavorRadar(ratings, canvasId) {
+        this.destroy('profileFlavor');
+        const canvas = document.getElementById(canvasId);
+        if (!canvas || !ratings || ratings.length < 1) return;
+        const labels = ['Hoppy', 'Malty', 'Bitter', 'Sweet', 'Fruity'];
+        const keys = ['flavor_hoppy', 'flavor_malty', 'flavor_bitter', 'flavor_sweet', 'flavor_fruity'];
+        const sums = [0, 0, 0, 0, 0];
+        ratings.forEach((r) => {
+            keys.forEach((k, i) => { sums[i] += (Number(r[k]) || 0); });
+        });
+        const data = sums.map((s) => (ratings.length ? Math.round((s / ratings.length) * 100) / 100 : 0));
+        this.instances['profileFlavor'] = new Chart(canvas, {
+            type: 'radar',
+            data: {
+                labels,
+                datasets: [{
+                    label: 'Avg flavor',
+                    data,
+                    borderColor: '#e6a817',
+                    backgroundColor: 'rgba(230,168,23,0.2)',
+                    pointBackgroundColor: '#e6a817',
+                    pointBorderColor: '#1a1006',
+                    pointBorderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    r: { min: 0, max: 5, ticks: { stepSize: 1 } }
+                },
+                plugins: { legend: { display: false } }
+            }
+        });
+    },
 };
