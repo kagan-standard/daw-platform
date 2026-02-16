@@ -275,7 +275,9 @@ const App = {
                 const priceHappy = document.getElementById('price-happy-hour').checked;
                 if (priceAmount && locationName && !DB.isDemo) {
                     const cents = Math.round(parseFloat(priceAmount.replace(/[^0-9.]/g, '')) * 100);
-                    if (cents > 0) {
+                    if (isNaN(cents) || cents < 1) {
+                        App.toast('Please enter a valid price (e.g. 6.50)', 'error');
+                    } else if (cents >= 1) {
                         try {
                             if (!venueId) {
                                 const venue = await DB.createVenue({ name: locationName, latitude: lat, longitude: lng });
@@ -1005,6 +1007,8 @@ const App = {
         if (viewId === 'dashboard' || viewId === 'profile') {
             setTimeout(() => { Object.values(Charts.instances).forEach(c => c.resize()); }, 100);
         }
+        if (viewId === 'exchange' && typeof Exchange !== 'undefined') Exchange.onShow();
+        if (viewId === 'map' && typeof MapView !== 'undefined') MapView.onShow();
     },
 
     // ========== RENDERS ==========

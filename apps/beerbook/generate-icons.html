@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Generate PWA Icons</title></head>
+<body>
+<p>Click to generate and download BeerBook PWA icons (192x192 and 512x512). Save them to the <code>icons/</code> folder.</p>
+<button id="gen">Generate &amp; Download</button>
+<script>
+document.getElementById('gen').onclick = function() {
+  function drawIcon(size) {
+    const c = document.createElement('canvas');
+    c.width = size;
+    c.height = size;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#1a1006';
+    ctx.fillRect(0, 0, size, size);
+    ctx.fillStyle = '#e6a817';
+    ctx.beginPath();
+    ctx.arc(size/2, size/2, size/2.5, 0, Math.PI*2);
+    ctx.fill();
+    ctx.font = (size/2) + 'px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#1a1006';
+    ctx.fillStyle = '#1a1006';
+    ctx.font = 'bold ' + (size/2.2) + 'px sans-serif';
+    ctx.fillText('B', size/2, size/2);
+    return c.toDataURL('image/png');
+  }
+  function download(dataUrl, name) {
+    const a = document.createElement('a');
+    a.href = dataUrl;
+    a.download = name;
+    a.click();
+  }
+  download(drawIcon(192), 'icon-192.png');
+  setTimeout(function() { download(drawIcon(512), 'icon-512.png'); }, 300);
+};
+</script>
+</body></html>
