@@ -311,6 +311,12 @@ const DB = {
             rating: rating.rating,
             flavors: rating.flavors || {},
             notes: rating.notes || '',
+            yg_value: rating.yg_value ?? null,
+            latitude: rating.latitude ?? null,
+            longitude: rating.longitude ?? null,
+            location_name: rating.location_name ?? null,
+            venue_id: rating.venue_id ?? null,
+            photo_url: rating.photo_url ?? null,
         };
         if (this.isDemo) {
             const rev = {
@@ -320,14 +326,35 @@ const DB = {
                 flavor_hoppy: record.flavors?.hoppy || 0, flavor_malty: record.flavors?.malty || 0,
                 flavor_bitter: record.flavors?.bitter || 0, flavor_sweet: record.flavors?.sweet || 0,
                 flavor_fruity: record.flavors?.fruity || 0,
-                notes: record.notes || '', created_at: new Date().toISOString()
+                notes: record.notes || '', created_at: new Date().toISOString(),
+                yg_value: record.yg_value, latitude: record.latitude, longitude: record.longitude,
+                location_name: record.location_name, venue_id: record.venue_id, photo_url: record.photo_url
             };
             const reviews = Utils.storage.get('reviews', []);
             reviews.unshift(rev);
             Utils.storage.set('reviews', reviews);
             return rev;
         }
-        const data = await this._api('POST', '/api/ratings', { body: JSON.stringify(record) });
+        const body = {
+            beer_name: record.beerName,
+            brewery: record.brewery,
+            style: record.style,
+            abv: record.abv,
+            rating: record.rating,
+            flavor_hoppy: record.flavor_hoppy ?? record.flavors?.hoppy ?? 0,
+            flavor_malty: record.flavor_malty ?? record.flavors?.malty ?? 0,
+            flavor_bitter: record.flavor_bitter ?? record.flavors?.bitter ?? 0,
+            flavor_sweet: record.flavor_sweet ?? record.flavors?.sweet ?? 0,
+            flavor_fruity: record.flavor_fruity ?? record.flavors?.fruity ?? 0,
+            notes: record.notes,
+            yg_value: record.yg_value,
+            latitude: record.latitude,
+            longitude: record.longitude,
+            location_name: record.location_name,
+            venue_id: record.venue_id,
+            photo_url: record.photo_url,
+        };
+        const data = await this._api('POST', '/api/ratings', { body: JSON.stringify(body) });
         return data;
     },
 
@@ -404,5 +431,72 @@ const DB = {
             m[r.user_id].review_count++;
         });
         return Object.values(m);
+    },
+
+    async searchBeers(q) {
+        if (this.isDemo) return [];
+        if (!q || q.length < 2) return [];
+        const out = await this._api('GET', `/api/beers/search?q=${encodeURIComponent(q)}`);
+        return (out && out.data) ? out.data : [];
+    },
+
+    async getVenuesCount() {
+        if (this.isDemo) return 0;
+        try {
+            const out = await this._api('GET', '/api/venues?limit=1&offset=0');
+            const total = (out && out.pagination && out.pagination.total != null) ? out.pagination.total : ((out && out.data) ? out.data.length : 0);
+            return total;
+        } catch { return 0; }
+    },
+
+    async getActivity() {
+        if (this.isDemo) return { data: [] };
+        try {
+            return await this._api('GET', '/api/activity');
+        } catch { return { data: [] }; }
+    },
+
+    async getLeaderboard(period = 'alltime') {
+        if (this.isDemo) return { reviewers: [], beers: [], styles: [], popular: [] };
+        try {
+            const out = await this._api('GET', `/api/leaderboard?period=${encodeURIComponent(period)}`);
+            return out || { reviewers: [], beers: [], styles: [], popular: [] };
+        } catch { return { reviewers: [], beers: [], styles: [], popular: [] }; }
+    },
+
+    async getBeerOfTheWeek() {
+        if (this.isDemo) return null;
+        try {
+            const out = await this._api('GET', '/api/highlights/beer-of-the-week');
+            return (out && out.beer_name) ? out : null;
+        } catch { return null; }
+    },
+
+    async uploadPhoto(file) {
+        if (this.isDemo) return { url: null };
+        const formData = new FormData();
+        formData.append('file', file);
+        const url = `${this.apiBaseUrl}/api/upload`;
+        const headers = {};
+        const token = this._getAccessToken();
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        const res = await fetch(url, { method: 'POST', headers, body: formData });
+        const text = await res.text();
+        let body;
+        try { body = text ? JSON.parse(text) : null; } catch { body = null; }
+        if (!res.ok) throw new Error(body?.error || body?.message || `Upload failed: ${res.status}`);
+        return body;
+    },
+
+    async createVenue(venue) {
+        if (this.isDemo) return { id: 'demo_venue_' + Utils.uid(), name: venue.name };
+        const out = await this._api('POST', '/api/venues', { body: JSON.stringify(venue) });
+        return out;
+    },
+
+    async addVenuePrice(venueId, payload) {
+        if (this.isDemo) return {};
+        await this._api('POST', `/api/venues/${encodeURIComponent(venueId)}/prices`, { body: JSON.stringify(payload) });
+        return {};
     }
 };

@@ -142,12 +142,22 @@ const Charts = {
     renderDistribution(ratings) {
         this.destroy('distribution');
         const canvas = document.getElementById('chart-distribution');
+        const wrapper = canvas && canvas.closest('.chart-wrapper');
+        const emptyEl = document.getElementById('chart-distribution-empty');
         if (!canvas) return;
 
         const dist = [0, 0, 0, 0, 0];
-        ratings.forEach(r => {
+        (ratings || []).forEach(r => {
             if (r.rating >= 1 && r.rating <= 5) dist[r.rating - 1]++;
         });
+        const hasAny = dist.some(d => d > 0);
+        if (!hasAny && wrapper && emptyEl) {
+            wrapper.classList.add('empty');
+            emptyEl.style.display = 'flex';
+            return;
+        }
+        if (wrapper) wrapper.classList.remove('empty');
+        if (emptyEl) emptyEl.style.display = 'none';
 
         this.instances['distribution'] = new Chart(canvas, {
             type: 'bar',
@@ -288,12 +298,107 @@ const Charts = {
         });
     },
 
+    renderMonthly(ratings) {
+        this.destroy('monthly');
+        const canvas = document.getElementById('chart-monthly');
+        const wrapper = canvas && canvas.closest('.chart-wrapper');
+        const emptyEl = document.getElementById('chart-monthly-empty');
+        if (!canvas) return;
+        const byMonth = {};
+        (ratings || []).forEach(r => {
+            if (!r.created_at) return;
+            const key = r.created_at.slice(0, 7);
+            byMonth[key] = (byMonth[key] || 0) + 1;
+        });
+        const sorted = Object.entries(byMonth).sort((a, b) => a[0].localeCompare(b[0]));
+        if (sorted.length < 2) {
+            if (wrapper) wrapper.classList.add('empty');
+            if (emptyEl) emptyEl.style.display = 'flex';
+            return;
+        }
+        if (wrapper) wrapper.classList.remove('empty');
+        if (emptyEl) emptyEl.style.display = 'none';
+        this.instances['monthly'] = new Chart(canvas, {
+            type: 'line',
+            data: {
+                labels: sorted.map(s => s[0]),
+                datasets: [{
+                    label: 'Ratings',
+                    data: sorted.map(s => s[1]),
+                    borderColor: '#e6a817',
+                    backgroundColor: 'rgba(230,168,23,0.1)',
+                    fill: true,
+                    tension: 0.4,
+                    pointRadius: 3,
+                    pointHoverRadius: 6,
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    y: { beginAtZero: true, ticks: { stepSize: 1 }, grid: { color: 'rgba(61,42,20,0.3)' } },
+                    x: { grid: { display: false }, ticks: { maxTicksLimit: 8 } }
+                }
+            }
+        });
+    },
+
+    renderYgDistribution(ratings) {
+        this.destroy('ygDist');
+        const canvas = document.getElementById('chart-yg');
+        const wrapper = canvas && canvas.closest('.chart-wrapper');
+        const emptyEl = document.getElementById('chart-yg-empty');
+        if (!canvas) return;
+        const ygValues = (ratings || []).map(r => r.yg_value).filter(v => v != null && Number.isFinite(v));
+        if (ygValues.length === 0) {
+            if (wrapper) wrapper.classList.add('empty');
+            if (emptyEl) emptyEl.style.display = 'flex';
+            return;
+        }
+        const buckets = [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5];
+        const counts = buckets.map(() => 0);
+        ygValues.forEach(v => {
+            const i = buckets.findIndex(b => v <= b);
+            if (i >= 0) counts[i]++;
+            else counts[counts.length - 1]++;
+        });
+        if (wrapper) wrapper.classList.remove('empty');
+        if (emptyEl) emptyEl.style.display = 'none';
+        this.instances['ygDist'] = new Chart(canvas, {
+            type: 'bar',
+            data: {
+                labels: buckets.map(b => b + ' YG'),
+                datasets: [{
+                    label: 'Ratings',
+                    data: counts,
+                    backgroundColor: this.palette.slice(0, counts.length),
+                    borderRadius: 6,
+                    borderSkipped: false,
+                    maxBarThickness: 36
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    y: { beginAtZero: true, ticks: { stepSize: 1 }, grid: { color: 'rgba(61,42,20,0.3)' } },
+                    x: { grid: { display: false } }
+                }
+            }
+        });
+    },
+
     // ========== RENDER ALL DASHBOARD CHARTS ==========
 
     renderDashboard(ratings) {
         this.renderTopBeers(ratings);
         this.renderStylesChart(ratings);
         this.renderDistribution(ratings);
+        this.renderMonthly(ratings);
         this.renderActivity(ratings);
-    }
+        this.renderYgDistribution(ratings);
+    },
 };

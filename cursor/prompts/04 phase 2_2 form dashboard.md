@@ -238,12 +238,55 @@ Add tab buttons above the leaderboard grid: **This Week** | **This Month** | **A
 ## Required Output
 
 1. Plan (max 12 bullets)
-2. All modified files: `index.html`, `app.js`, `supabase.js`, `styles.css`, `charts.js`
+2. All modified files: `index.html`, `app.js`, `supabase.js`, `styles.css`, `charts.js`, `utils.js`
 3. Validation commands
 4. Rollback steps
+
+---
+
+## Delivered (Phase 2.2)
+
+### Plan executed
+1. Toast system (App.toast, 3s, stack)
+2. Star rating polish (pulse, keyboard, 44px, colors)
+3. Beer autocomplete (GET /api/beers/search, debounce 300ms)
+4. YG slider (0–5, optional; context hints; default empty)
+5. Geotag + Nominatim reverse geocode + location chip + manual fallback
+6. Photo upload (resize >1200px, POST /api/upload, 5MB limit)
+7. Price logging (collapsible when location set; venue create + POST prices)
+8. Dashboard stats (venues count, Community Avg YG, Beer of the Week)
+9. Charts: monthly activity line, YG distribution histogram; empty states
+10. Activity feed (GET /api/activity, load more)
+11. Empty states (no ratings, no activity, no YG, no venues, no chart data)
+12. Delete own reviews (modal, DELETE /api/ratings/:id)
+13. Leaderboard tabs (This Week | This Month | All Time)
+
+### Modified files
+- `apps/beerbook/index.html` — form sections (autocomplete, YG, location, price, photo), dashboard stats/activity/charts, leaderboard tabs, delete modal
+- `apps/beerbook/app.js` — bindings, autocomplete, location, photo, price, form payload, loadAllData (venues/BOTW/activity), renderLeaderboard(period), renderActivityFeed, delete modal, empty states
+- `apps/beerbook/supabase.js` — addRating (yg_value, lat, lng, location_name, venue_id, photo_url), searchBeers, getVenuesCount, getActivity, getLeaderboard, getBeerOfTheWeek, uploadPhoto, createVenue, addVenuePrice
+- `apps/beerbook/styles.css` — skeleton, autocomplete, YG slider, location, price, photo, modal, chart empty, activity feed, leaderboard tabs, review-delete, fadeOut
+- `apps/beerbook/charts.js` — renderMonthly, renderYgDistribution, distribution empty state
+- `apps/beerbook/utils.js` — toast duration 3000
+
+### Validation commands (VPS)
+```bash
+# After deploying frontend to beerbook.drinksafterwork.net
+curl -sI https://beerbook.drinksafterwork.net/ | head -5
+# In browser: Sign in → Rate a Beer → star rating, YG slider, Add Location, Add Photo, submit. Dashboard: stats, activity feed, leaderboard tabs, delete own review.
+```
+
+### Rollback steps
+- Restore previous versions of `apps/beerbook/index.html`, `app.js`, `supabase.js`, `styles.css`, `charts.js`, `utils.js` from git or backup.
+- Redeploy static assets to beerbook host.
 
 ## Agent Assumption Log
 
 | Date | Task | Assumption | Rationale |
 |------|------|------------|-----------|
-| | | | |
+| 2025-02-15 | 2.2 | GET /api/beers/search returns `{ data: [{ beer_name, brewery, style }] }` | Matches beers route |
+| 2025-02-15 | 2.2 | GET /api/activity returns `{ data: items }` with type 'rating' or 'venue' | Matches activity route |
+| 2025-02-15 | 2.2 | POST /api/venues expects name, latitude, longitude | Matches venues route |
+| 2025-02-15 | 2.2 | POST /api/venues/:id/prices expects beer_name, price_cents, is_happy_hour | Matches venues route |
+| 2025-02-15 | 2.2 | Community Avg YG computed client-side from ratings (API stats not modified) | server.js locked |
+| 2025-02-15 | 2.2 | Leaderboard period filtering done client-side from allRatings | server.js locked |

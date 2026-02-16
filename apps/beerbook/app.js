@@ -6,6 +6,10 @@ const App = {
     currentView: 'dashboard',
     allRatings: [],
 
+    toast(message, type = 'info') {
+        Utils.toast(message, type, 3000);
+    },
+
     // ========== INIT ==========
     async init() {
         Charts.init();
@@ -35,7 +39,7 @@ const App = {
             const kcClientId = document.getElementById('kc-client-id').value.trim() || 'beerbook';
 
             if (!kcAuthority) {
-                Utils.toast('Keycloak Realm URL is required', 'error');
+                App.toast('Keycloak Realm URL is required', 'error');
                 return;
             }
 
@@ -44,7 +48,7 @@ const App = {
 
             document.getElementById('setup-config').style.display = 'none';
             document.getElementById('login-card').style.display = 'block';
-            Utils.toast('Configuration saved!', 'success');
+            App.toast('Configuration saved!', 'success');
         });
 
         document.getElementById('skip-config')?.addEventListener('click', () => {
@@ -70,7 +74,7 @@ const App = {
         // Demo login
         document.getElementById('demo-login')?.addEventListener('click', () => {
             DB.enterDemoMode();
-            Utils.toast('Welcome to Demo Mode! Data saved locally.', 'info');
+            App.toast('Welcome to Demo Mode! Data saved locally.', 'info');
             this.enterApp();
         });
 
@@ -87,17 +91,26 @@ const App = {
             btn.addEventListener('click', () => this.navigate(btn.dataset.view));
         });
 
-        // Star rating
+        // Star rating (Task 1: pulse, keyboard)
         const starContainer = document.getElementById('star-rating');
         if (starContainer) {
+            const setStarValue = (val) => {
+                const v = Math.max(1, Math.min(5, val));
+                document.getElementById('beer-rating').value = v;
+                document.getElementById('rating-label').textContent = Utils.ratingLabel(v);
+                starContainer.querySelectorAll('.star').forEach(s => {
+                    const active = parseInt(s.dataset.value) <= v;
+                    s.classList.toggle('active', active);
+                    if (active) {
+                        s.classList.add('pulse');
+                        setTimeout(() => s.classList.remove('pulse'), 150);
+                    }
+                });
+            };
             starContainer.querySelectorAll('.star').forEach(star => {
                 star.addEventListener('click', () => {
                     const val = parseInt(star.dataset.value);
-                    document.getElementById('beer-rating').value = val;
-                    document.getElementById('rating-label').textContent = Utils.ratingLabel(val);
-                    starContainer.querySelectorAll('.star').forEach(s => {
-                        s.classList.toggle('active', parseInt(s.dataset.value) <= val);
-                    });
+                    setStarValue(val);
                 });
                 star.addEventListener('mouseenter', () => {
                     const val = parseInt(star.dataset.value);
@@ -108,6 +121,17 @@ const App = {
                 star.addEventListener('mouseleave', () => {
                     starContainer.querySelectorAll('.star').forEach(s => s.classList.remove('hover'));
                 });
+            });
+            starContainer.setAttribute('tabindex', '0');
+            starContainer.addEventListener('keydown', (e) => {
+                const current = parseInt(document.getElementById('beer-rating').value) || 0;
+                if (e.key === 'ArrowRight' || e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    setStarValue(current + 1);
+                } else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    setStarValue(current - 1);
+                }
             });
         }
 
@@ -124,7 +148,28 @@ const App = {
         document.getElementById('rating-form')?.addEventListener('submit', async (e) => {
             e.preventDefault();
             const ratingVal = parseInt(document.getElementById('beer-rating').value);
-            if (!ratingVal) { Utils.toast('Please select a star rating', 'error'); return; }
+            if (!ratingVal) { App.toast('Please select a star rating', 'error'); return; }
+
+            const ygRaw = document.getElementById('yg-slider').value;
+            const ygVal = (ygRaw && parseFloat(ygRaw) > 0) ? parseFloat(ygRaw) : null;
+            const lat = document.getElementById('rating-lat').value ? parseFloat(document.getElementById('rating-lat').value) : null;
+            const lng = document.getElementById('rating-lng').value ? parseFloat(document.getElementById('rating-lng').value) : null;
+            const locationName = document.getElementById('rating-location-name').value.trim() || null;
+            let venueId = document.getElementById('rating-venue-id').value || null;
+
+            let photoUrl = null;
+            const previewImg = document.querySelector('#photo-preview img');
+            if (previewImg && previewImg.src && previewImg.src.startsWith('data:')) {
+                try {
+                    this.setLoading(e.target, true);
+                    const blob = await this.dataUrlToBlob(previewImg.src);
+                    const file = new File([blob], 'photo.jpg', { type: blob.type || 'image/jpeg' });
+                    const up = await DB.uploadPhoto(file);
+                    photoUrl = (up && up.url) ? up.url : null;
+                } catch (err) {
+                    App.toast('Photo upload failed: ' + err.message, 'error');
+                }
+            }
 
             const rating = {
                 beerName: document.getElementById('beer-name').value.trim(),
@@ -133,29 +178,50 @@ const App = {
                 abv: parseFloat(document.getElementById('beer-abv').value) || null,
                 rating: ratingVal,
                 flavors: {
-                    hoppy: parseInt(document.getElementById('flavor-hoppy').value),
-                    malty: parseInt(document.getElementById('flavor-malty').value),
-                    bitter: parseInt(document.getElementById('flavor-bitter').value),
-                    sweet: parseInt(document.getElementById('flavor-sweet').value),
-                    fruity: parseInt(document.getElementById('flavor-fruity').value),
+                    hoppy: parseInt(document.getElementById('flavor-hoppy').value) || 0,
+                    malty: parseInt(document.getElementById('flavor-malty').value) || 0,
+                    bitter: parseInt(document.getElementById('flavor-bitter').value) || 0,
+                    sweet: parseInt(document.getElementById('flavor-sweet').value) || 0,
+                    fruity: parseInt(document.getElementById('flavor-fruity').value) || 0,
                 },
-                notes: document.getElementById('beer-notes').value.trim()
+                notes: document.getElementById('beer-notes').value.trim(),
+                yg_value: ygVal,
+                latitude: lat,
+                longitude: lng,
+                location_name: locationName,
+                venue_id: venueId,
+                photo_url: photoUrl
             };
 
             try {
                 this.setLoading(e.target, true);
                 await DB.addRating(rating);
-                Utils.toast(`Rated "${rating.beerName}" ${Utils.stars(ratingVal)}`, 'success');
-                e.target.reset();
-                document.getElementById('beer-rating').value = '';
-                document.getElementById('rating-label').textContent = 'Select a rating';
-                document.querySelectorAll('#star-rating .star').forEach(s => s.classList.remove('active'));
-                ['hoppy', 'malty', 'bitter', 'sweet', 'fruity'].forEach(f => {
-                    document.getElementById(`val-${f}`).textContent = '0';
-                });
+                App.toast(`Rated "${rating.beerName}" ${Utils.stars(ratingVal)}`, 'success');
+
+                const priceAmount = document.getElementById('price-amount').value.trim();
+                const priceHappy = document.getElementById('price-happy-hour').checked;
+                if (priceAmount && locationName && !DB.isDemo) {
+                    const cents = Math.round(parseFloat(priceAmount.replace(/[^0-9.]/g, '')) * 100);
+                    if (cents > 0) {
+                        try {
+                            if (!venueId) {
+                                const venue = await DB.createVenue({ name: locationName, latitude: lat, longitude: lng });
+                                venueId = venue && venue.id ? venue.id : null;
+                            }
+                            if (venueId) {
+                                await DB.addVenuePrice(venueId, { beer_name: rating.beerName, style: rating.style, price_cents: cents, is_happy_hour: priceHappy });
+                                App.toast('Price logged', 'success');
+                            }
+                        } catch (err) {
+                            App.toast('Price log failed: ' + err.message, 'error');
+                        }
+                    }
+                }
+
+                this.resetRatingForm(e.target);
                 this.loadAllData();
             } catch (err) {
-                Utils.toast('Failed to save: ' + err.message, 'error');
+                App.toast('Failed to save: ' + err.message, 'error');
             } finally {
                 this.setLoading(e.target, false);
             }
@@ -167,8 +233,236 @@ const App = {
         document.getElementById('filter-style')?.addEventListener('change', () => this.renderBrowse());
         document.getElementById('sort-by')?.addEventListener('change', () => this.renderBrowse());
 
+        // Beer autocomplete (Task 2)
+        this.bindBeerAutocomplete();
+
+        // YG slider (Task 3)
+        const ygSlider = document.getElementById('yg-slider');
+        const ygDisplay = document.getElementById('yg-display');
+        const ygContext = document.getElementById('yg-context');
+        if (ygSlider && ygDisplay && ygContext) {
+            const ygHints = {
+                0.5: 'Barely worth half a YG 😬',
+                1: 'Equal to a YG — the baseline',
+                2: 'Worth 2 YGs — solid beer 👍',
+                3: 'Premium territory 🍺',
+                5: 'Elite. This beer is special 🏆'
+            };
+            const getHint = (v) => {
+                if (v <= 0) return '';
+                if (v <= 0.5) return ygHints[0.5];
+                if (v <= 1) return ygHints[1];
+                if (v <= 2) return ygHints[2];
+                if (v <= 5) return ygHints[3];
+                return ygHints[5];
+            };
+            ygSlider.addEventListener('input', () => {
+                const val = parseFloat(ygSlider.value);
+                if (val <= 0) {
+                    ygDisplay.textContent = '— YG';
+                    ygContext.textContent = '';
+                } else {
+                    ygDisplay.textContent = val + ' YG';
+                    ygContext.textContent = getHint(val);
+                }
+            });
+        }
+
+        // Location (Task 4)
+        document.getElementById('btn-add-location')?.addEventListener('click', () => this.captureLocation());
+        document.getElementById('location-chip-remove')?.addEventListener('click', () => this.clearLocation());
+        document.getElementById('location-manual')?.addEventListener('blur', () => {
+            const v = document.getElementById('location-manual').value.trim();
+            if (v) {
+                document.getElementById('rating-location-name').value = v;
+                document.getElementById('location-chip-text').textContent = '📍 ' + v;
+                document.getElementById('location-chip').style.display = 'inline-flex';
+                this.togglePriceSection();
+            }
+        });
+
+        // Price log (Task 6)
+        document.getElementById('price-log-toggle')?.addEventListener('click', () => {
+            const fields = document.getElementById('price-log-fields');
+            const expanded = document.getElementById('price-log-toggle').getAttribute('aria-expanded') === 'true';
+            fields.style.display = expanded ? 'none' : 'block';
+            document.getElementById('price-log-toggle').setAttribute('aria-expanded', !expanded);
+        });
+
+        // Photo (Task 5)
+        document.getElementById('btn-add-photo')?.addEventListener('click', () => document.getElementById('photo-input').click());
+        document.getElementById('photo-input')?.addEventListener('change', (e) => this.handlePhotoSelect(e));
+
+        // Delete modal (Task 12)
+        document.getElementById('delete-modal-cancel')?.addEventListener('click', () => this.closeDeleteModal());
+        document.getElementById('delete-modal-confirm')?.addEventListener('click', () => this.confirmDeleteRating());
+
+        // Leaderboard tabs (Task 13)
+        document.querySelectorAll('.lb-tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.lb-tab').forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                this.renderLeaderboard(tab.dataset.period);
+            });
+        });
+
+        // Activity load more (Task 10)
+        document.getElementById('activity-load-more')?.addEventListener('click', () => this.loadMoreActivity());
+
         // Real-time
         DB.subscribeToRatings(() => this.loadAllData());
+    },
+
+    bindBeerAutocomplete() {
+        const input = document.getElementById('beer-name');
+        const dropdown = document.getElementById('beer-autocomplete');
+        if (!input || !dropdown) return;
+        let debounceTimer;
+        input.addEventListener('input', () => {
+            clearTimeout(debounceTimer);
+            const q = input.value.trim();
+            dropdown.setAttribute('aria-hidden', 'true');
+            dropdown.innerHTML = '';
+            if (q.length < 2) return;
+            debounceTimer = setTimeout(async () => {
+                const list = await DB.searchBeers(q);
+                dropdown.innerHTML = (list.slice(0, 10) || []).map(b => {
+                    const label = `${Utils.escapeHtml(b.beer_name || b.name || '')} — ${Utils.escapeHtml(b.brewery || '')} (${Utils.escapeHtml(b.style || '')})`;
+                    return `<div class="autocomplete-item" data-name="${Utils.escapeHtml(b.beer_name || b.name || '')}" data-brewery="${Utils.escapeHtml(b.brewery || '')}" data-style="${Utils.escapeHtml(b.style || '')}">${label}</div>`;
+                }).join('');
+                if (dropdown.children.length) {
+                    dropdown.setAttribute('aria-hidden', 'false');
+                    dropdown.querySelectorAll('.autocomplete-item').forEach((el, i) => {
+                        el.addEventListener('click', () => {
+                            document.getElementById('beer-name').value = el.dataset.name;
+                            document.getElementById('beer-brewery').value = el.dataset.brewery || '';
+                            document.getElementById('beer-style').value = el.dataset.style || '';
+                            dropdown.innerHTML = '';
+                            dropdown.setAttribute('aria-hidden', 'true');
+                        });
+                    });
+                }
+            }, 300);
+        });
+        input.addEventListener('blur', () => { setTimeout(() => { dropdown.innerHTML = ''; dropdown.setAttribute('aria-hidden', 'true'); }, 150); });
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') { dropdown.innerHTML = ''; dropdown.setAttribute('aria-hidden', 'true'); }
+        });
+    },
+
+    async captureLocation() {
+        if (!navigator.geolocation) {
+            App.toast('Geolocation not supported', 'error');
+            return;
+        }
+        document.getElementById('btn-add-location').disabled = true;
+        navigator.geolocation.getCurrentPosition(
+            async (pos) => {
+                const lat = pos.coords.latitude;
+                const lng = pos.coords.longitude;
+                document.getElementById('rating-lat').value = lat;
+                document.getElementById('rating-lng').value = lng;
+                try {
+                    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`, {
+                        headers: { 'User-Agent': 'BeerBook/1.0' }
+                    });
+                    const data = await res.json();
+                    const name = (data && data.display_name) ? data.display_name : `Location ${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+                    document.getElementById('rating-location-name').value = name;
+                    document.getElementById('location-chip-text').textContent = '📍 ' + name;
+                    document.getElementById('location-chip').style.display = 'inline-flex';
+                    document.getElementById('location-manual').value = name;
+                    App.toast('Location captured', 'success');
+                } catch {
+                    document.getElementById('rating-location-name').value = `Location ${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+                    document.getElementById('location-chip-text').textContent = '📍 Location (lat, lng)';
+                    document.getElementById('location-chip').style.display = 'inline-flex';
+                }
+                this.togglePriceSection();
+                document.getElementById('btn-add-location').disabled = false;
+            },
+            () => {
+                document.getElementById('btn-add-location').disabled = false;
+                document.getElementById('location-manual').focus();
+            }
+        );
+    },
+
+    clearLocation() {
+        document.getElementById('rating-lat').value = '';
+        document.getElementById('rating-lng').value = '';
+        document.getElementById('rating-location-name').value = '';
+        document.getElementById('rating-venue-id').value = '';
+        document.getElementById('location-manual').value = '';
+        document.getElementById('location-chip').style.display = 'none';
+        this.togglePriceSection();
+    },
+
+    togglePriceSection() {
+        const hasLocation = !!document.getElementById('rating-location-name').value;
+        document.getElementById('price-log-section').style.display = hasLocation ? 'block' : 'none';
+    },
+
+    handlePhotoSelect(e) {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+        if (file.size > 5 * 1024 * 1024) {
+            App.toast('Photo must be under 5MB', 'error');
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            const img = new Image();
+            img.onload = () => {
+                let w = img.width, h = img.height;
+                if (w > 1200) {
+                    const c = document.createElement('canvas');
+                    c.width = 1200;
+                    c.height = Math.round(1200 * h / w);
+                    const ctx = c.getContext('2d');
+                    ctx.drawImage(img, 0, 0, c.width, c.height);
+                    const dataUrl = c.toDataURL(file.type || 'image/jpeg', 0.9);
+                    document.getElementById('photo-preview').innerHTML = `<img src="${dataUrl}" alt="Preview"><button type="button" class="photo-remove" data-dataurl="${dataUrl.replace(/^data:[^;]+;base64,/, '')}" data-type="${file.type}">Remove photo</button>`;
+                } else {
+                    document.getElementById('photo-preview').innerHTML = `<img src="${ev.target.result}" alt="Preview"><button type="button" class="photo-remove" data-url="${ev.target.result}">Remove photo</button>`;
+                }
+                document.getElementById('photo-preview').querySelector('.photo-remove').addEventListener('click', () => {
+                    document.getElementById('photo-preview').innerHTML = '';
+                    document.getElementById('photo-input').value = '';
+                });
+            };
+            img.src = ev.target.result;
+        };
+        reader.readAsDataURL(file);
+    },
+
+    closeDeleteModal() {
+        document.getElementById('delete-modal').style.display = 'none';
+        this._deleteRatingId = null;
+    },
+
+    confirmDeleteRating() {
+        const id = this._deleteRatingId;
+        this.closeDeleteModal();
+        if (!id) return;
+        DB.deleteRating(id).then(() => {
+            App.toast('Rating deleted', 'success');
+            this.allRatings = this.allRatings.filter(r => r.id !== id);
+            this.renderRecentReviews();
+            this.renderBrowse();
+            this.renderLeaderboard();
+            this.renderProfile();
+            const card = document.querySelector(`[data-rating-id="${id}"]`);
+            if (card) {
+                card.style.animation = 'fadeOut 0.3s ease-out forwards';
+                setTimeout(() => card.remove(), 300);
+            }
+        }).catch(err => App.toast('Delete failed: ' + err.message, 'error'));
+    },
+
+    loadMoreActivity() {
+        this.activityPage = (this.activityPage || 1) + 1;
+        this.renderActivityFeed(this.activityItems, this.activityPage * 10);
     },
 
     // ========== APP ENTRY ==========
@@ -187,24 +481,40 @@ const App = {
 
     // ========== DATA LOADING ==========
     async loadAllData() {
+        this.activityPage = 0;
+        this.activityItems = [];
+        const period = document.querySelector('.lb-tab.active')?.dataset.period || 'alltime';
         try {
             const stats = await DB.getStats();
-            this.allRatings = stats.ratings;
+            this.allRatings = stats.ratings || [];
 
-            document.getElementById('stat-beers').textContent = stats.totalBeers;
-            document.getElementById('stat-avg').textContent = stats.avgRating;
-            document.getElementById('stat-users').textContent = stats.totalUsers;
-            document.getElementById('stat-reviews').textContent = stats.totalReviews;
+            document.getElementById('stat-beers').textContent = stats.totalBeers ?? 0;
+            document.getElementById('stat-avg').textContent = stats.avgRating ?? '0.0';
+            document.getElementById('stat-users').textContent = stats.totalUsers ?? 0;
+            document.getElementById('stat-reviews').textContent = stats.totalReviews ?? 0;
+
+            const ygValues = (this.allRatings || []).map(r => r.yg_value).filter(v => v != null && Number.isFinite(v));
+            document.getElementById('stat-avg-yg').textContent = ygValues.length ? (ygValues.reduce((a, b) => a + b, 0) / ygValues.length).toFixed(1) : '—';
+
+            const [venuesCount, botw] = await Promise.all([DB.getVenuesCount(), DB.getBeerOfTheWeek()]);
+            document.getElementById('stat-venues').textContent = venuesCount ?? 0;
+            const botwEl = document.getElementById('stat-botw');
+            if (botwEl) botwEl.textContent = (botw && (botw.beer_name || botw.name)) ? (botw.beer_name || botw.name) : '—';
 
             Charts.renderDashboard(this.allRatings);
             this.renderRecentReviews();
             this.renderBrowse();
-            this.renderLeaderboard();
+            this.renderLeaderboard(period);
             this.renderProfile();
             this.populateStyleFilter();
+
+            const activityRes = await DB.getActivity();
+            this.activityItems = (activityRes && activityRes.data) ? activityRes.data : [];
+            this.renderActivityFeed(this.activityItems, 10);
+            this.activityPage = 1;
         } catch (err) {
             console.error('Failed to load data:', err);
-            Utils.toast('Failed to load data', 'error');
+            App.toast('Failed to load data', 'error');
         }
     },
 
@@ -229,12 +539,15 @@ const App = {
     renderRecentReviews() {
         const container = document.getElementById('recent-reviews');
         const recent = this.allRatings.slice(0, 5);
+        const currentUserId = DB.currentUser && DB.currentUser.id;
         if (!recent.length) {
-            container.innerHTML = '<p class="empty-state">No reviews yet. Be the first to rate a beer!</p>';
+            container.innerHTML = '<p class="empty-state cta-empty">🍺 No beers rated yet. Be the first to crack one open!</p><button type="button" class="btn btn-primary" data-view="rate">Rate a Beer</button>';
+            container.querySelector('.btn')?.addEventListener('click', () => this.navigate('rate'));
             return;
         }
-        container.innerHTML = recent.map(r => `
-            <div class="review-card">
+        container.innerHTML = recent.map(r => {
+            const canDelete = currentUserId && r.user_id === currentUserId;
+            return `<div class="review-card" data-rating-id="${r.id}">
                 <div class="review-rating">${this.ratingEmoji(r.rating)}</div>
                 <div class="review-content">
                     <div class="review-beer-name">${Utils.escapeHtml(r.beer_name)}</div>
@@ -243,8 +556,16 @@ const App = {
                     ${r.notes ? `<div class="review-notes">${Utils.escapeHtml(Utils.truncate(r.notes, 150))}</div>` : ''}
                     <div class="review-user">— ${Utils.escapeHtml(r.user_name || 'Anonymous')} · ${Utils.timeAgo(r.created_at)}</div>
                 </div>
-            </div>
-        `).join('');
+                ${canDelete ? `<button type="button" class="review-delete" aria-label="Delete rating" data-rating-id="${r.id}">🗑️</button>` : ''}
+            </div>`;
+        }).join('');
+        container.querySelectorAll('.review-delete').forEach(btn => {
+            btn.addEventListener('click', () => {
+                this._deleteRatingId = btn.dataset.ratingId;
+                document.getElementById('delete-modal-message').textContent = `Delete your rating of ${Utils.escapeHtml(this.allRatings.find(x => x.id === btn.dataset.ratingId)?.beer_name || 'this beer')}? This can't be undone.`;
+                document.getElementById('delete-modal').style.display = 'flex';
+            });
+        });
     },
 
     renderBrowse() {
@@ -266,7 +587,15 @@ const App = {
             default: filtered.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
         }
 
-        if (!filtered.length) { container.innerHTML = '<p class="empty-state">No beers match your search.</p>'; return; }
+        if (!filtered.length) {
+            if (!this.allRatings.length) {
+                container.innerHTML = '<p class="empty-state cta-empty">🍺 No beers rated yet. Be the first to crack one open!</p><button type="button" class="btn btn-primary" data-view="rate">Rate a Beer</button>';
+                container.querySelector('.btn')?.addEventListener('click', () => this.navigate('rate'));
+            } else {
+                container.innerHTML = '<p class="empty-state">No beers match your search.</p>';
+            }
+            return;
+        }
 
         container.innerHTML = filtered.map(r => `
             <div class="beer-card">
@@ -289,23 +618,31 @@ const App = {
         `).join('');
     },
 
-    renderLeaderboard() {
-        const userCounts = Utils.countBy(this.allRatings, 'user_name');
+    renderLeaderboard(period = 'alltime') {
+        let ratings = this.allRatings || [];
+        if (period === 'weekly') {
+            const since = Date.now() - 7 * 24 * 60 * 60 * 1000;
+            ratings = ratings.filter(r => new Date(r.created_at).getTime() >= since);
+        } else if (period === 'monthly') {
+            const since = Date.now() - 30 * 24 * 60 * 60 * 1000;
+            ratings = ratings.filter(r => new Date(r.created_at).getTime() >= since);
+        }
+
+        const userCounts = Utils.countBy(ratings, 'user_name');
         const topReviewers = Object.entries(userCounts).sort((a, b) => b[1] - a[1]).slice(0, 10);
         document.getElementById('lb-reviewers').innerHTML = topReviewers.length
             ? topReviewers.map(([name, count], i) => `<div class="lb-row"><span class="lb-rank">${i < 3 ? ['🥇','🥈','🥉'][i] : (i+1)}</span><span class="lb-name">${Utils.escapeHtml(name)}</span><span class="lb-value">${count} reviews</span></div>`).join('')
             : '<p class="empty-state">No data yet</p>';
 
         const beerMap = {};
-        this.allRatings.forEach(r => { const k = r.beer_name; if (!beerMap[k]) beerMap[k] = { sum: 0, count: 0 }; beerMap[k].sum += r.rating; beerMap[k].count++; });
-
+        ratings.forEach(r => { const k = r.beer_name; if (!beerMap[k]) beerMap[k] = { sum: 0, count: 0 }; beerMap[k].sum += r.rating; beerMap[k].count++; });
         const topBeers = Object.entries(beerMap).map(([name, { sum, count }]) => ({ name, avg: sum / count, count })).sort((a, b) => b.avg - a.avg || b.count - a.count).slice(0, 10);
         document.getElementById('lb-beers').innerHTML = topBeers.length
             ? topBeers.map((b, i) => `<div class="lb-row"><span class="lb-rank">${i < 3 ? ['🥇','🥈','🥉'][i] : (i+1)}</span><span class="lb-name">${Utils.escapeHtml(b.name)}</span><span class="lb-value">${b.avg.toFixed(1)} ★</span></div>`).join('')
             : '<p class="empty-state">No data yet</p>';
 
         const styleMap = {};
-        this.allRatings.forEach(r => { if (!r.style) return; if (!styleMap[r.style]) styleMap[r.style] = { sum: 0, count: 0 }; styleMap[r.style].sum += r.rating; styleMap[r.style].count++; });
+        ratings.forEach(r => { if (!r.style) return; if (!styleMap[r.style]) styleMap[r.style] = { sum: 0, count: 0 }; styleMap[r.style].sum += r.rating; styleMap[r.style].count++; });
         const topStyles = Object.entries(styleMap).map(([style, { sum, count }]) => ({ style, avg: sum / count, count })).sort((a, b) => b.avg - a.avg).slice(0, 10);
         document.getElementById('lb-styles').innerHTML = topStyles.length
             ? topStyles.map((s, i) => `<div class="lb-row"><span class="lb-rank">${i < 3 ? ['🥇','🥈','🥉'][i] : (i+1)}</span><span class="lb-name">${Utils.escapeHtml(s.style)}</span><span class="lb-value">${s.avg.toFixed(1)} ★ (${s.count})</span></div>`).join('')
@@ -315,6 +652,45 @@ const App = {
         document.getElementById('lb-popular').innerHTML = mostReviewed.length
             ? mostReviewed.map(([name, { count }], i) => `<div class="lb-row"><span class="lb-rank">${i < 3 ? ['🥇','🥈','🥉'][i] : (i+1)}</span><span class="lb-name">${Utils.escapeHtml(name)}</span><span class="lb-value">${count} reviews</span></div>`).join('')
             : '<p class="empty-state">No data yet</p>';
+    },
+
+    renderActivityFeed(items, showCount = 10) {
+        const container = document.getElementById('activity-feed');
+        const skeleton = document.getElementById('activity-skeleton');
+        const loadMoreBtn = document.getElementById('activity-load-more');
+        if (!container) return;
+        if (skeleton) skeleton.innerHTML = '';
+        const list = (items || []).slice(0, showCount);
+        if (!items || items.length === 0) {
+            container.innerHTML = '<p class="empty-state">📋 No activity yet. Rate a beer to get things started!</p>';
+            if (loadMoreBtn) loadMoreBtn.style.display = 'none';
+            return;
+        }
+        container.innerHTML = list.map(item => {
+            if (item.type === 'venue') {
+                return `<div class="activity-item">
+                    <div class="activity-avatar">📍</div>
+                    <div class="activity-body">
+                        <div class="activity-text">${Utils.escapeHtml(item.name || 'Venue')} discovered</div>
+                        <div class="activity-meta">${Utils.timeAgo(item.created_at)}</div>
+                    </div>
+                </div>`;
+            }
+            const name = item.user_name || 'Someone';
+            const initials = Utils.initials(name) || '🍺';
+            const ygBadge = (item.yg_value != null && item.yg_value > 0) ? ` <span class="activity-yg-badge">(${Number(item.yg_value)} YG)</span>` : '';
+            const cheers = (item.cheers_count > 0) ? ` · 🍻 ${item.cheers_count} cheers` : '';
+            return `<div class="activity-item">
+                <div class="activity-avatar">${Utils.escapeHtml(initials)}</div>
+                <div class="activity-body">
+                    <div class="activity-text">${Utils.escapeHtml(name)} rated ${Utils.escapeHtml(item.beer_name || '')} ${Utils.stars(item.rating || 0)}${ygBadge}${item.location_name ? ' at ' + Utils.escapeHtml(item.location_name) : ''}</div>
+                    ${item.notes ? `<div class="activity-notes">"${Utils.escapeHtml(Utils.truncate(item.notes, 80))}"</div>` : ''}
+                    <div class="activity-meta">${Utils.timeAgo(item.created_at)}${cheers}</div>
+                </div>
+            </div>`;
+        }).join('');
+        const hasMore = (items.length || 0) > showCount;
+        if (loadMoreBtn) loadMoreBtn.style.display = hasMore ? 'block' : 'none';
     },
 
     async renderProfile() {
@@ -337,11 +713,12 @@ const App = {
 
         const container = document.getElementById('my-reviews');
         if (!myRatings.length) {
-            container.innerHTML = '<p class="empty-state">You haven\'t rated any beers yet!</p>';
+            container.innerHTML = '<p class="empty-state cta-empty">🍺 No beers rated yet. Be the first to crack one open!</p><button type="button" class="btn btn-primary" data-view="rate">Rate a Beer</button>';
+            container.querySelector('.btn')?.addEventListener('click', () => this.navigate('rate'));
             return;
         }
         container.innerHTML = myRatings.map(r => `
-            <div class="review-card">
+            <div class="review-card" data-rating-id="${r.id}">
                 <div class="review-rating">${this.ratingEmoji(r.rating)}</div>
                 <div class="review-content">
                     <div class="review-beer-name">${Utils.escapeHtml(r.beer_name)}</div>
@@ -350,8 +727,17 @@ const App = {
                     ${r.notes ? `<div class="review-notes">${Utils.escapeHtml(r.notes)}</div>` : ''}
                     <div class="review-user">${Utils.timeAgo(r.created_at)}</div>
                 </div>
+                <button type="button" class="review-delete" aria-label="Delete rating" data-rating-id="${r.id}">🗑️</button>
             </div>
         `).join('');
+        container.querySelectorAll('.review-delete').forEach(btn => {
+            btn.addEventListener('click', () => {
+                this._deleteRatingId = btn.dataset.ratingId;
+                const beerName = this.allRatings.find(x => x.id === btn.dataset.ratingId)?.beer_name || 'this beer';
+                document.getElementById('delete-modal-message').textContent = `Delete your rating of ${Utils.escapeHtml(beerName)}? This can't be undone.`;
+                document.getElementById('delete-modal').style.display = 'flex';
+            });
+        });
     },
 
     // ========== HELPERS ==========
@@ -380,8 +766,33 @@ const App = {
         if (text) text.style.display = loading ? 'none' : '';
         if (loader) loader.style.display = loading ? '' : 'none';
         btn.disabled = loading;
-    }
-};
+    },
+
+    dataUrlToBlob(dataUrl) {
+        return fetch(dataUrl).then(r => r.blob());
+    },
+
+    resetRatingForm(form) {
+        form.reset();
+        document.getElementById('beer-rating').value = '';
+        document.getElementById('rating-label').textContent = 'Select a rating';
+        document.querySelectorAll('#star-rating .star').forEach(s => s.classList.remove('active'));
+        ['hoppy', 'malty', 'bitter', 'sweet', 'fruity'].forEach(f => {
+            const el = document.getElementById(`val-${f}`);
+            if (el) el.textContent = '0';
+        });
+        const ygSlider = document.getElementById('yg-slider');
+        if (ygSlider) { ygSlider.value = '0'; }
+        document.getElementById('yg-display').textContent = '— YG';
+        document.getElementById('yg-context').textContent = '';
+        this.clearLocation();
+        document.getElementById('price-amount').value = '';
+        document.getElementById('price-happy-hour').checked = false;
+        document.getElementById('price-log-fields').style.display = 'none';
+        document.getElementById('price-log-toggle').setAttribute('aria-expanded', 'false');
+        document.getElementById('photo-preview').innerHTML = '';
+        document.getElementById('photo-input').value = '';
+    },
 
 // ========== BOOT ==========
 document.addEventListener('DOMContentLoaded', () => App.init());

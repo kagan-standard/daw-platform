@@ -123,7 +123,7 @@
                 <p class="view-desc">Your community's beer journey at a glance</p>
             </div>
 
-            <div class="stats-grid">
+            <div class="stats-grid" id="stats-grid">
                 <div class="stat-card">
                     <div class="stat-icon">🍺</div>
                     <div class="stat-info">
@@ -152,6 +152,27 @@
                         <span class="stat-label">Total Reviews</span>
                     </div>
                 </div>
+                <div class="stat-card">
+                    <div class="stat-icon">📍</div>
+                    <div class="stat-info">
+                        <span class="stat-value" id="stat-venues">0</span>
+                        <span class="stat-label">Venues Discovered</span>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">🍻</div>
+                    <div class="stat-info">
+                        <span class="stat-value" id="stat-avg-yg">—</span>
+                        <span class="stat-label">Community Avg YG</span>
+                    </div>
+                </div>
+                <div class="stat-card stat-botw">
+                    <div class="stat-icon">🏆</div>
+                    <div class="stat-info">
+                        <span class="stat-value stat-botw-name" id="stat-botw">—</span>
+                        <span class="stat-label">Beer of the Week</span>
+                    </div>
+                </div>
             </div>
 
             <div class="charts-grid">
@@ -165,12 +186,41 @@
                 </div>
                 <div class="chart-card">
                     <h3>Rating Distribution</h3>
-                    <canvas id="chart-distribution"></canvas>
+                    <div class="chart-wrapper">
+                        <canvas id="chart-distribution"></canvas>
+                        <div class="chart-empty" id="chart-distribution-empty">📊 Not enough data for this chart yet.</div>
+                    </div>
                 </div>
                 <div class="chart-card">
-                    <h3>Recent Activity</h3>
+                    <h3>Monthly Activity</h3>
+                    <div class="chart-wrapper">
+                        <canvas id="chart-monthly"></canvas>
+                        <div class="chart-empty" id="chart-monthly-empty">📊 Not enough data for this chart yet.</div>
+                    </div>
+                </div>
+                <div class="chart-card">
+                    <h3>Recent Activity (14 days)</h3>
                     <canvas id="chart-activity"></canvas>
                 </div>
+                <div class="chart-card">
+                    <h3>YG Distribution</h3>
+                    <div class="chart-wrapper">
+                        <canvas id="chart-yg"></canvas>
+                        <div class="chart-empty" id="chart-yg-empty">📈 No YG values yet. Start rating beers with YG values to see the exchange!</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="activity-feed-section">
+                <h3>Recent Activity</h3>
+                <div id="activity-feed" class="activity-feed">
+                    <div class="activity-skeleton" id="activity-skeleton">
+                        <div class="skeleton" style="height:48px;margin-bottom:8px;"></div>
+                        <div class="skeleton" style="height:48px;margin-bottom:8px;"></div>
+                        <div class="skeleton" style="height:48px;"></div>
+                    </div>
+                </div>
+                <button type="button" id="activity-load-more" class="btn btn-ghost btn-load-more" style="display:none;">Load more</button>
             </div>
 
             <div class="recent-section">
@@ -190,9 +240,10 @@
 
             <form id="rating-form" class="rating-form">
                 <div class="form-row">
-                    <div class="form-group flex-2">
+                    <div class="form-group flex-2 beer-autocomplete-wrap">
                         <label for="beer-name">Beer Name *</label>
-                        <input type="text" id="beer-name" placeholder="e.g. Pliny the Elder" required>
+                        <input type="text" id="beer-name" placeholder="e.g. Pliny the Elder" required autocomplete="off">
+                        <div id="beer-autocomplete" class="autocomplete-dropdown" aria-hidden="true"></div>
                     </div>
                     <div class="form-group flex-1">
                         <label for="beer-brewery">Brewery</label>
@@ -254,6 +305,15 @@
                     <input type="hidden" id="beer-rating" required>
                 </div>
 
+                <div class="form-group yg-slider-group">
+                    <label>YG Value <span class="label-hint">How many Yuengling Golden Pilsners is this worth?</span></label>
+                    <div class="yg-slider-row">
+                        <input type="range" min="0" max="5" step="0.5" id="yg-slider" value="0" aria-label="YG value">
+                        <span class="yg-display" id="yg-display">— YG</span>
+                    </div>
+                    <div class="yg-context" id="yg-context"></div>
+                </div>
+
                 <div class="flavor-sliders">
                     <label>Flavor Profile</label>
                     <div class="slider-group">
@@ -283,6 +343,46 @@
                             <span class="slider-val" id="val-fruity">0</span>
                         </div>
                     </div>
+                </div>
+
+                <div class="form-group location-group">
+                    <label>Location</label>
+                    <div class="location-row">
+                        <button type="button" id="btn-add-location" class="btn btn-ghost">📍 Add Location</button>
+                        <input type="text" id="location-manual" class="location-manual" placeholder="Or type location manually" autocomplete="off">
+                    </div>
+                    <div id="location-chip" class="location-chip" style="display:none;">
+                        <span id="location-chip-text"></span>
+                        <button type="button" id="location-chip-remove" class="location-chip-remove" aria-label="Remove location">✕</button>
+                    </div>
+                    <input type="hidden" id="rating-lat">
+                    <input type="hidden" id="rating-lng">
+                    <input type="hidden" id="rating-location-name">
+                    <input type="hidden" id="rating-venue-id">
+                </div>
+
+                <div id="price-log-section" class="price-log-section" style="display:none;">
+                    <button type="button" class="price-log-toggle" id="price-log-toggle" aria-expanded="false">💰 Log a Price</button>
+                    <div class="price-log-fields" id="price-log-fields">
+                        <div class="form-row">
+                            <div class="form-group flex-1">
+                                <label for="price-amount">Price ($)</label>
+                                <input type="text" id="price-amount" placeholder="e.g. 6.50" inputmode="decimal">
+                            </div>
+                            <div class="form-group flex-1 price-happy">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="price-happy-hour"> Happy Hour?
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-group photo-group">
+                    <label>Photo</label>
+                    <input type="file" id="photo-input" accept="image/jpeg,image/png,image/webp" capture="environment" style="display:none">
+                    <button type="button" id="btn-add-photo" class="btn btn-ghost">📷 Add Photo</button>
+                    <div id="photo-preview" class="photo-preview"></div>
                 </div>
 
                 <div class="form-group">
@@ -330,6 +430,12 @@
             <div class="view-header">
                 <h2>Leaderboard</h2>
                 <p class="view-desc">Who's the biggest beer connoisseur?</p>
+            </div>
+
+            <div class="leaderboard-tabs" role="tablist">
+                <button type="button" class="lb-tab active" data-period="alltime" role="tab">All Time</button>
+                <button type="button" class="lb-tab" data-period="monthly" role="tab">This Month</button>
+                <button type="button" class="lb-tab" data-period="weekly" role="tab">This Week</button>
             </div>
 
             <div class="leaderboard-grid">
@@ -400,6 +506,18 @@
 
     <!-- Toast container -->
     <div id="toast-container" class="toast-container"></div>
+
+    <!-- Delete rating modal -->
+    <div id="delete-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="delete-modal-title" style="display:none;">
+        <div class="modal-content">
+            <h3 id="delete-modal-title">Delete rating?</h3>
+            <p id="delete-modal-message">This can't be undone.</p>
+            <div class="modal-actions">
+                <button type="button" id="delete-modal-cancel" class="btn btn-ghost">Cancel</button>
+                <button type="button" id="delete-modal-confirm" class="btn btn-primary">Delete</button>
+            </div>
+        </div>
+    </div>
 
     <!-- Scripts -->
     <script src="utils.js"></script>
