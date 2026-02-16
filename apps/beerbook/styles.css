@@ -933,6 +933,7 @@ input, select, textarea, button {
     width: 100%;
     min-width: 0;
     min-height: 48px;
+    flex-wrap: nowrap;
 }
 
 .yg-glass {
@@ -1019,6 +1020,25 @@ input, select, textarea, button {
     .yg-track-wrap { min-height: 48px; }
     .yg-glass { font-size: 22px; }
     .yg-context { font-size: 1.1rem; }
+}
+
+@media (max-width: 520px) {
+    .yg-glass {
+        font-size: 20px;
+        min-width: 0;
+        padding: 8px 2px;
+        min-height: 44px;
+    }
+    .yg-glasses { min-height: 44px; }
+    .yg-track-wrap { min-height: 44px; }
+    .yg-track { min-height: 44px; }
+}
+
+@media (max-width: 400px) {
+    .yg-glass {
+        font-size: 18px;
+        padding: 8px 1px;
+    }
 }
 
 /* Location */
