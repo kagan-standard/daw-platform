@@ -91,26 +91,6 @@ const App = {
             btn.addEventListener('click', () => this.navigate(btn.dataset.view));
         });
 
-        // Mobile menu: scroll lock and close on nav
-        const mobileMenuCheckbox = document.getElementById('mobile-menu-open');
-        if (mobileMenuCheckbox) {
-            mobileMenuCheckbox.addEventListener('change', () => {
-                document.body.style.overflow = mobileMenuCheckbox.checked ? 'hidden' : '';
-            });
-        }
-        document.querySelectorAll('.mobile-nav-item[data-view]').forEach(btn => {
-            btn.addEventListener('click', () => {
-                this.navigate(btn.dataset.view);
-                if (mobileMenuCheckbox) mobileMenuCheckbox.checked = false;
-            });
-        });
-        document.getElementById('mobile-logout-btn')?.addEventListener('click', async () => {
-            if (mobileMenuCheckbox) mobileMenuCheckbox.checked = false;
-            await DB.signOut();
-            document.getElementById('app').style.display = 'none';
-            document.getElementById('auth-screen').style.display = 'flex';
-        });
-
         // Star rating (Task 1: pulse, keyboard)
         const starContainer = document.getElementById('star-rating');
         if (starContainer) {
@@ -622,10 +602,9 @@ const App = {
         document.getElementById('app').style.display = 'block';
 
         const greeting = document.getElementById('user-greeting');
-        const greetingText = DB.currentUser ? `Hey, ${DB.currentUser.display_name}!` : '';
-        if (greeting) greeting.textContent = greetingText;
-        const mobileGreeting = document.getElementById('mobile-menu-greeting');
-        if (mobileGreeting) mobileGreeting.textContent = greetingText || 'Hey, Beer Tester!';
+        if (greeting && DB.currentUser) {
+            greeting.textContent = `Hey, ${DB.currentUser.display_name}!`;
+        }
 
         await this.loadAllData();
         this.navigate('dashboard');
@@ -675,15 +654,12 @@ const App = {
         this.currentView = viewId;
         document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
         document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
-        document.querySelectorAll('.mobile-nav-item').forEach(b => b.classList.remove('active'));
 
         const view = document.getElementById(`view-${viewId}`);
         const btn = document.querySelector(`.nav-btn[data-view="${viewId}"]`);
-        const mobileBtn = document.querySelector(`.mobile-nav-item[data-view="${viewId}"]`);
 
         if (view) { view.classList.add('active'); view.style.animation = 'none'; view.offsetHeight; view.style.animation = ''; }
         if (btn) btn.classList.add('active');
-        if (mobileBtn) mobileBtn.classList.add('active');
 
         if (viewId === 'dashboard' || viewId === 'profile') {
             setTimeout(() => { Object.values(Charts.instances).forEach(c => c.resize()); }, 100);
