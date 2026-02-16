@@ -7,15 +7,13 @@ const Exchange = {
     sortCol: 'yg_rate',
     sortDir: 'desc',
     YUG_BEER_NAME: 'Yuengling Golden Pilsner',
+    isLoading: false,
 
     async init() {
         document.querySelectorAll('.nav-btn, .mobile-nav-item').forEach(btn => {
             if (btn.dataset.view === 'exchange') {
                 btn.addEventListener('click', () => this.load());
             }
-        });
-        document.getElementById('view-exchange')?.addEventListener('animationend', () => {
-            if (App.currentView === 'exchange') this.load();
         });
         document.querySelectorAll('#exchange-table th[data-sort]').forEach(th => {
             th.addEventListener('click', () => this.sort(th.dataset.sort));
@@ -25,12 +23,18 @@ const Exchange = {
     },
 
     async load() {
+        if (this.isLoading) return;
+        this.isLoading = true;
+
         const wrap = document.getElementById('exchange-table-wrap');
         const skeleton = document.getElementById('exchange-skeleton');
         const emptyEl = document.getElementById('exchange-empty');
         const table = document.getElementById('exchange-table');
         const tbody = document.getElementById('exchange-tbody');
-        if (!wrap || !tbody) return;
+        if (!wrap || !tbody) {
+            this.isLoading = false;
+            return;
+        }
 
         if (skeleton) skeleton.style.display = '';
         if (emptyEl) emptyEl.style.display = 'none';
@@ -67,6 +71,8 @@ const Exchange = {
                 emptyEl.innerHTML = '<p>Failed to load exchange data.</p>';
                 emptyEl.style.display = 'block';
             }
+        } finally {
+            this.isLoading = false;
         }
     },
 

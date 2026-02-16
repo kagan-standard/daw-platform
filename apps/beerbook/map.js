@@ -13,6 +13,7 @@ const MapView = {
     styles: [],
     initDone: false,
     trailMarkers: [],
+    eventsBound: false,
 
     async onShow() {
         const container = document.getElementById('beer-map');
@@ -32,6 +33,8 @@ const MapView = {
     },
 
     bindEvents() {
+        if (this.eventsBound) return;
+        this.eventsBound = true;
         document.getElementById('btn-near-me')?.addEventListener('click', () => this.bestNearMe());
         document.getElementById('btn-my-trail')?.addEventListener('click', () => this.showMyTrail());
         document.getElementById('map-filter-style')?.addEventListener('change', () => this.applyStyleFilter());
@@ -204,7 +207,7 @@ const MapView = {
             sidebar.innerHTML = '<p class="map-sidebar-empty">No beer deals found nearby. Try expanding your radius or logging some prices!</p>';
             return;
         }
-        const formatDist = (m) => m < 1000 ? `${m} m` : `${(m / 1000).toFixed(1)} mi`;
+        const formatDist = (m) => m < 1000 ? `${m} m` : `${(m / 1609.34).toFixed(1)} mi`;
         sidebar.innerHTML = '<h3 class="map-sidebar-title">🍺 Best Beer Near Me</h3>' + deals.slice(0, 15).map((d, i) => {
             const dist = d.venue && d.venue.distance_m != null ? formatDist(d.venue.distance_m) : '';
             const price = d.price_cents ? `$${(d.price_cents / 100).toFixed(2)}` : '';
@@ -251,11 +254,19 @@ const MapView = {
     },
 
     async showMyTrail() {
+        if (this.trailLayer && this.map) {
+            this.map.removeLayer(this.trailLayer);
+            this.trailLayer = null;
+        }
+        this.trailMarkers.forEach((m) => {
+            if (this.map && m && this.map.hasLayer(m)) this.map.removeLayer(m);
+        });
+        this.trailMarkers = [];
+
         if (!DB.currentUser || !DB.currentUser.id) return;
         try {
             const res = await DB.getMapUser(DB.currentUser.id);
             const list = (res && res.data) ? res.data : [];
-            if (this.trailLayer) this.map.removeLayer(this.trailLayer);
             if (!list.length) {
                 App.toast('No geotagged ratings for your trail.', 'info');
                 return;
@@ -267,8 +278,6 @@ const MapView = {
             }
             this.trailLayer = L.polyline(latlngs, { color: '#e6a817', weight: 4 }).addTo(this.map);
             this.map.fitBounds(this.trailLayer.getBounds(), { padding: [24, 24] });
-            this.trailMarkers.forEach(m => { if (this.map.hasLayer(m)) this.map.removeLayer(m); });
-            this.trailMarkers = [];
             list.forEach((r) => {
                 const m = L.circleMarker([r.latitude, r.longitude], {
                     radius: 10,
