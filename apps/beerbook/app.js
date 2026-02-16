@@ -150,7 +150,7 @@ const App = {
             const ratingVal = parseInt(document.getElementById('beer-rating').value);
             if (!ratingVal) { App.toast('Please select a star rating', 'error'); return; }
 
-            const ygRaw = document.getElementById('yg-slider').value;
+            const ygRaw = document.getElementById('yg-value')?.value;
             const ygInt = Math.max(0, Math.min(12, Math.round(parseFloat(ygRaw) || 0)));
             const ygVal = ygInt > 0 ? ygInt : null;
             const lat = document.getElementById('rating-lat').value ? parseFloat(document.getElementById('rating-lat').value) : null;
@@ -334,13 +334,15 @@ const App = {
     },
 
     bindYgSlider() {
-        const ygSlider = document.getElementById('yg-slider');
+        const ygValueInput = document.getElementById('yg-value');
+        const ygTrack = document.getElementById('yg-track');
         const ygDisplay = document.getElementById('yg-display');
         const ygContext = document.getElementById('yg-context');
         const ygGlasses = document.getElementById('yg-glasses');
-        if (!ygSlider || !ygDisplay || !ygContext || !ygGlasses) return;
+        const ygClearBtn = document.getElementById('yg-clear');
+        if (!ygValueInput || !ygTrack || !ygDisplay || !ygContext || !ygGlasses) return;
         const hints = {
-            0: 'Slide to rate in YGs',
+            0: 'Tap a glass to rate in YGs',
             1: 'Barely worth a YG 😬',
             2: 'Equal to a couple YGs',
             '3-4': 'Solid beer 👍',
@@ -359,45 +361,97 @@ const App = {
             if (v <= 10) return hints['9-10'];
             return hints['11-12'];
         };
-        let prevVal = -1;
-        const ensureTwelveGlasses = () => {
-            if (ygGlasses.children.length === 12) return;
-            ygGlasses.innerHTML = '';
-            for (let i = 0; i < 12; i++) {
-                const span = document.createElement('span');
-                span.className = 'yg-glass dimmed';
-                span.setAttribute('aria-hidden', 'true');
-                span.textContent = '🍺';
-                span.dataset.index = String(i);
-                ygGlasses.appendChild(span);
-            }
-        };
-        const update = () => {
-            const raw = Number(ygSlider.value);
-            const val = Math.max(0, Math.min(12, Math.round(isNaN(raw) ? 0 : raw)));
-            ygSlider.value = String(val);
-            ygDisplay.textContent = val + ' YG';
-            ygContext.textContent = getHint(val);
-            ensureTwelveGlasses();
+        let dragging = false;
+        const setValue = (val) => {
+            const v = Math.max(0, Math.min(12, Math.round(Number(val)) || 0));
+            ygValueInput.value = String(v);
+            ygTrack.setAttribute('aria-valuenow', String(v));
+            ygDisplay.textContent = v + ' YG';
+            ygContext.textContent = getHint(v);
+            if (ygClearBtn) ygClearBtn.style.display = v > 0 ? 'inline-flex' : 'none';
             const glassEls = ygGlasses.querySelectorAll('.yg-glass');
             glassEls.forEach((el, i) => {
-                const revealed = i < val;
+                const revealed = i < v;
                 const wasRevealed = el.classList.contains('revealed');
                 el.classList.toggle('dimmed', !revealed);
                 el.classList.toggle('revealed', revealed);
                 if (revealed && !wasRevealed) {
                     el.classList.add('yg-glass-pop');
-                    el.style.animationDelay = '0ms';
-                    const t = setTimeout(() => {
-                        el.classList.remove('yg-glass-pop');
-                        clearTimeout(t);
-                    }, 250);
+                    const t = setTimeout(() => el.classList.remove('yg-glass-pop'), 250);
                 }
             });
-            prevVal = val;
         };
-        ygSlider.addEventListener('input', update);
-        update();
+        const getValueFromElement = (el) => {
+            const glass = el?.closest?.('.yg-glass');
+            if (!glass || !glass.dataset.value) return null;
+            return parseInt(glass.dataset.value, 10);
+        };
+        const ensureTwelveGlasses = () => {
+            if (ygGlasses.children.length === 12) return;
+            ygGlasses.innerHTML = '';
+            for (let i = 1; i <= 12; i++) {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'yg-glass dimmed';
+                btn.textContent = '🍺';
+                btn.dataset.value = String(i);
+                btn.setAttribute('aria-label', `${i} YG`);
+                ygGlasses.appendChild(btn);
+            }
+        };
+        ensureTwelveGlasses();
+        setValue(ygValueInput.value || 0);
+
+        ygGlasses.addEventListener('click', (e) => {
+            const val = getValueFromElement(e.target);
+            if (val != null) setValue(val);
+        });
+        ygGlasses.addEventListener('mousedown', (e) => {
+            if (e.button !== 0) return;
+            const val = getValueFromElement(e.target);
+            if (val != null) { dragging = true; setValue(val); }
+        });
+        document.addEventListener('mousemove', (e) => {
+            if (!dragging) return;
+            const el = document.elementFromPoint(e.clientX, e.clientY);
+            const val = getValueFromElement(el);
+            if (val != null) setValue(val);
+        });
+        document.addEventListener('mouseup', () => { dragging = false; });
+
+        ygGlasses.addEventListener('touchstart', (e) => {
+            const val = getValueFromElement(e.target);
+            if (val != null) { dragging = true; setValue(val); }
+        }, { passive: true });
+        document.addEventListener('touchmove', (e) => {
+            if (!dragging || !e.changedTouches?.[0]) return;
+            const touch = e.changedTouches[0];
+            const el = document.elementFromPoint(touch.clientX, touch.clientY);
+            const val = getValueFromElement(el);
+            if (val != null) { e.preventDefault(); setValue(val); }
+        }, { passive: false });
+        document.addEventListener('touchend', () => { dragging = false; }, { passive: true });
+
+        ygGlasses.querySelectorAll('.yg-glass').forEach((glass) => {
+            glass.addEventListener('mouseenter', () => glass.classList.add('yg-glass-hover'));
+            glass.addEventListener('mouseleave', () => glass.classList.remove('yg-glass-hover'));
+        });
+        ygGlasses.addEventListener('mouseleave', () => ygGlasses.querySelectorAll('.yg-glass').forEach(g => g.classList.remove('yg-glass-hover')));
+
+        ygTrack.addEventListener('keydown', (e) => {
+            const v = parseInt(ygValueInput.value, 10) || 0;
+            if (e.key === 'ArrowRight' || e.key === 'ArrowUp') {
+                e.preventDefault();
+                setValue(v + 1);
+            } else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') {
+                e.preventDefault();
+                setValue(v - 1);
+            }
+        });
+
+        if (ygClearBtn) ygClearBtn.addEventListener('click', (e) => { e.preventDefault(); setValue(0); });
+
+        App._ygSetValue = setValue;
     },
 
     async captureLocation() {
@@ -836,14 +890,7 @@ const App = {
             const el = document.getElementById(`val-${f}`);
             if (el) el.textContent = '0';
         });
-        const ygSlider = document.getElementById('yg-slider');
-        const ygDisplay = document.getElementById('yg-display');
-        const ygContext = document.getElementById('yg-context');
-        const ygGlasses = document.getElementById('yg-glasses');
-        if (ygSlider) ygSlider.value = '0';
-        if (ygDisplay) ygDisplay.textContent = '0 YG';
-        if (ygContext) ygContext.textContent = 'Slide to rate in YGs';
-        if (ygGlasses) ygGlasses.innerHTML = '';
+        if (typeof App._ygSetValue === 'function') App._ygSetValue(0);
         this.clearLocation();
         document.getElementById('price-amount').value = '';
         document.getElementById('price-happy-hour').checked = false;

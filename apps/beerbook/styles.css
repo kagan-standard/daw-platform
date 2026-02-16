@@ -896,7 +896,7 @@ input, select, textarea, button {
 
 .autocomplete-item:last-child { border-bottom: none; }
 
-/* YG slider — beer glasses inside track, 0–12 */
+/* YG slider — clickable beer glasses 0–12, no range input */
 .yg-slider-group .label-hint {
     font-weight: 400;
     text-transform: none;
@@ -920,11 +920,14 @@ input, select, textarea, button {
     border-radius: var(--radius-md);
     overflow: hidden;
     display: flex;
+    outline: none;
+}
+
+.yg-track:focus-visible {
+    box-shadow: 0 0 0 2px var(--amber-400);
 }
 
 .yg-glasses {
-    position: relative;
-    z-index: 1;
     display: flex;
     flex: 1;
     width: 100%;
@@ -934,20 +937,35 @@ input, select, textarea, button {
 
 .yg-glass {
     flex: 1;
+    min-width: 40px;
+    min-height: 48px;
     display: flex;
     align-items: center;
     justify-content: center;
     font-size: 28px;
     line-height: 1;
-    min-width: 0;
+    padding: 0;
+    border: none;
+    background: transparent;
+    cursor: pointer;
     transition: opacity 0.15s var(--ease-out);
 }
 
 .yg-glass.dimmed {
-    opacity: 0.15;
+    opacity: 0.25;
 }
 
 .yg-glass.revealed {
+    opacity: 1;
+}
+
+.yg-glass:hover,
+.yg-glass.yg-glass-hover {
+    opacity: 0.6;
+}
+
+.yg-glass.revealed:hover,
+.yg-glass.revealed.yg-glass-hover {
     opacity: 1;
 }
 
@@ -958,67 +976,6 @@ input, select, textarea, button {
 
 @keyframes ygGlassPop {
     to { transform: scale(1); }
-}
-
-/* Overlay range input: inside .yg-track, full width, no padding so thumb is flush 0–12 */
-.yg-slider-overlay {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 100%;
-    height: 100%;
-    margin: 0;
-    padding: 0;
-    -webkit-appearance: none;
-    appearance: none;
-    background: transparent !important;
-    background-color: transparent !important;
-    outline: none;
-    box-sizing: border-box;
-}
-
-.yg-slider-overlay::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    width: 4px;
-    height: 48px;
-    border-radius: 2px;
-    background: var(--amber-300);
-    cursor: grab;
-    box-shadow: 0 0 8px rgba(230, 168, 23, 0.4);
-    position: relative;
-    z-index: 2;
-}
-
-.yg-slider-overlay::-webkit-slider-runnable-track {
-    -webkit-appearance: none;
-    background: transparent !important;
-    background-color: transparent !important;
-    border: none;
-    margin: 0;
-    padding: 0;
-    height: 48px;
-}
-
-.yg-slider-overlay::-moz-range-thumb {
-    width: 4px;
-    height: 48px;
-    border-radius: 2px;
-    background: var(--amber-300);
-    cursor: grab;
-    cursor: ew-resize;
-    border: none;
-    box-shadow: 0 0 8px rgba(230, 168, 23, 0.4);
-    position: relative;
-    z-index: 2;
-}
-
-.yg-slider-overlay::-moz-range-track {
-    background: transparent !important;
-    background-color: transparent !important;
-    border: none;
-    margin: 0;
-    padding: 0;
-    height: 48px;
 }
 
 .yg-hint-row {
@@ -1036,11 +993,21 @@ input, select, textarea, button {
     text-shadow: 0 0 20px rgba(230, 168, 23, 0.25), 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
+.yg-display-wrap {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    flex-shrink: 0;
+}
+
 .yg-display {
     font-family: var(--font-mono);
     font-size: 1.25rem;
     font-weight: 700;
     color: var(--amber-300);
+}
+
+.yg-clear {
     flex-shrink: 0;
 }
 
