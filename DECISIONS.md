@@ -121,3 +121,9 @@ Log all assumptions in the **Agent Assumption Log** table at the bottom of the p
 - Do not rewrite working code "for cleanliness" unless the phase prompt requires it
 - Do not add TypeScript, ESLint, Prettier, or other tooling unless explicitly requested
 - Do not create README files unless the phase prompt asks for documentation
+
+---
+
+## BeerBook / YG Value
+
+- **YG value range:** 0–12, step 1, integer. The `yg_value` column and API validation accept integer values 0–12. Client-side validation and UI (beer glass slider) use this range; 0 means “not set” (submit as null).

@@ -307,11 +307,14 @@
 
                 <div class="form-group yg-slider-group">
                     <label>YG Value <span class="label-hint">How many Yuengling Golden Pilsners is this worth?</span></label>
-                    <div class="yg-slider-row">
-                        <input type="range" min="0" max="5" step="0.5" id="yg-slider" value="0" aria-label="YG value">
-                        <span class="yg-display" id="yg-display">— YG</span>
+                    <div class="yg-glasses-row">
+                        <div class="yg-glasses" id="yg-glasses" aria-live="polite"></div>
+                        <span class="yg-display" id="yg-display">0 YG</span>
                     </div>
-                    <div class="yg-context" id="yg-context"></div>
+                    <div class="yg-slider-row">
+                        <input type="range" min="0" max="12" step="1" id="yg-slider" value="0" aria-label="YG value">
+                    </div>
+                    <div class="yg-context" id="yg-context">Slide to rate in YGs</div>
                 </div>
 
                 <div class="flavor-sliders">
@@ -380,8 +383,8 @@
 
                 <div class="form-group photo-group">
                     <label>Photo</label>
-                    <input type="file" id="photo-input" accept="image/jpeg,image/png,image/webp" capture="environment" class="photo-input-hidden">
-                    <label for="photo-input" class="btn btn-ghost" id="btn-add-photo" role="button">📷 Add Photo</label>
+                    <input type="file" id="photo-input" accept="image/jpeg,image/png,image/webp" capture="environment" class="photo-input-hidden" tabindex="-1" aria-hidden="true">
+                    <button type="button" class="btn btn-ghost" id="btn-add-photo">📷 Add Photo</button>
                     <div id="photo-preview" class="photo-preview"></div>
                 </div>
 

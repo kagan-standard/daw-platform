@@ -357,12 +357,11 @@ const Charts = {
             if (emptyEl) emptyEl.style.display = 'flex';
             return;
         }
-        const buckets = [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5];
+        const buckets = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
         const counts = buckets.map(() => 0);
         ygValues.forEach(v => {
-            const i = buckets.findIndex(b => v <= b);
-            if (i >= 0) counts[i]++;
-            else counts[counts.length - 1]++;
+            const i = Math.max(0, Math.min(12, Math.round(Number(v))));
+            counts[i]++;
         });
         if (wrapper) wrapper.classList.remove('empty');
         if (emptyEl) emptyEl.style.display = 'none';

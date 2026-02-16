@@ -151,7 +151,8 @@ const App = {
             if (!ratingVal) { App.toast('Please select a star rating', 'error'); return; }
 
             const ygRaw = document.getElementById('yg-slider').value;
-            const ygVal = (ygRaw && parseFloat(ygRaw) > 0) ? parseFloat(ygRaw) : null;
+            const ygInt = Math.max(0, Math.min(12, parseInt(ygRaw, 10) || 0));
+            const ygVal = ygInt > 0 ? ygInt : null;
             const lat = document.getElementById('rating-lat').value ? parseFloat(document.getElementById('rating-lat').value) : null;
             const lng = document.getElementById('rating-lng').value ? parseFloat(document.getElementById('rating-lng').value) : null;
             const locationName = document.getElementById('rating-location-name').value.trim() || null;
@@ -236,40 +237,12 @@ const App = {
         // Beer autocomplete (Task 2)
         this.bindBeerAutocomplete();
 
-        // YG slider (Task 3)
-        const ygSlider = document.getElementById('yg-slider');
-        const ygDisplay = document.getElementById('yg-display');
-        const ygContext = document.getElementById('yg-context');
-        if (ygSlider && ygDisplay && ygContext) {
-            const ygHints = {
-                0.5: 'Barely worth half a YG 😬',
-                1: 'Equal to a YG — the baseline',
-                2: 'Worth 2 YGs — solid beer 👍',
-                3: 'Premium territory 🍺',
-                5: 'Elite. This beer is special 🏆'
-            };
-            const getHint = (v) => {
-                if (v <= 0) return '';
-                if (v <= 0.5) return ygHints[0.5];
-                if (v <= 1) return ygHints[1];
-                if (v <= 2) return ygHints[2];
-                if (v <= 5) return ygHints[3];
-                return ygHints[5];
-            };
-            ygSlider.addEventListener('input', () => {
-                const val = parseFloat(ygSlider.value);
-                if (val <= 0) {
-                    ygDisplay.textContent = '— YG';
-                    ygContext.textContent = '';
-                } else {
-                    ygDisplay.textContent = val + ' YG';
-                    ygContext.textContent = getHint(val);
-                }
-            });
-        }
+        // YG slider (Task 3) — beer glass system 0–12
+        this.bindYgSlider();
 
-        // Location (Task 4) — preventDefault so form/other handlers don't consume the click
-        document.getElementById('btn-add-location')?.addEventListener('click', (e) => {
+        // Location (Task 4) — event delegation so click is always handled (e.g. when Rate view was hidden at init)
+        document.getElementById('app')?.addEventListener('click', (e) => {
+            if (!e.target.closest('#btn-add-location')) return;
             e.preventDefault();
             e.stopPropagation();
             this.captureLocation();
@@ -293,9 +266,15 @@ const App = {
             document.getElementById('price-log-toggle').setAttribute('aria-expanded', !expanded);
         });
 
-        // Photo (Task 5) — label triggers file input natively; we still need change handler
+        // Photo (Task 5) — styled button triggers hidden file input
         const photoInput = document.getElementById('photo-input');
         if (photoInput) photoInput.addEventListener('change', (e) => this.handlePhotoSelect(e));
+        document.getElementById('app')?.addEventListener('click', (e) => {
+            if (e.target.id === 'btn-add-photo' || e.target.closest('#btn-add-photo')) {
+                e.preventDefault();
+                if (photoInput) photoInput.click();
+            }
+        });
 
         // Delete modal (Task 12)
         document.getElementById('delete-modal-cancel')?.addEventListener('click', () => this.closeDeleteModal());
@@ -352,6 +331,55 @@ const App = {
         input.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') { dropdown.innerHTML = ''; dropdown.setAttribute('aria-hidden', 'true'); }
         });
+    },
+
+    bindYgSlider() {
+        const ygSlider = document.getElementById('yg-slider');
+        const ygDisplay = document.getElementById('yg-display');
+        const ygContext = document.getElementById('yg-context');
+        const ygGlasses = document.getElementById('yg-glasses');
+        if (!ygSlider || !ygDisplay || !ygContext || !ygGlasses) return;
+        const hints = {
+            0: 'Slide to rate in YGs',
+            1: 'Barely worth a YG 😬',
+            2: 'Equal to a couple YGs',
+            '3-4': 'Solid beer 👍',
+            '5-6': 'Above average 🍺',
+            '7-8': 'Premium territory 🔥',
+            '9-10': 'Elite. This beer is special 🏆',
+            '11-12': 'God tier. 🐐'
+        };
+        const getHint = (v) => {
+            if (v <= 0) return hints[0];
+            if (v === 1) return hints[1];
+            if (v === 2) return hints[2];
+            if (v <= 4) return hints['3-4'];
+            if (v <= 6) return hints['5-6'];
+            if (v <= 8) return hints['7-8'];
+            if (v <= 10) return hints['9-10'];
+            return hints['11-12'];
+        };
+        const renderGlasses = (n) => {
+            const count = Math.max(0, Math.min(12, parseInt(n, 10) || 0));
+            ygGlasses.innerHTML = '';
+            for (let i = 0; i < count; i++) {
+                const span = document.createElement('span');
+                span.className = 'yg-glass';
+                span.setAttribute('aria-hidden', 'true');
+                span.textContent = '🍺';
+                span.style.animationDelay = `${i * 100}ms`;
+                ygGlasses.appendChild(span);
+            }
+        };
+        const update = () => {
+            const val = Math.max(0, Math.min(12, parseInt(ygSlider.value, 10) || 0));
+            ygSlider.value = String(val);
+            ygDisplay.textContent = val + ' YG';
+            ygContext.textContent = getHint(val);
+            renderGlasses(val);
+        };
+        ygSlider.addEventListener('input', update);
+        update();
     },
 
     async captureLocation() {
@@ -791,9 +819,13 @@ const App = {
             if (el) el.textContent = '0';
         });
         const ygSlider = document.getElementById('yg-slider');
-        if (ygSlider) { ygSlider.value = '0'; }
-        document.getElementById('yg-display').textContent = '— YG';
-        document.getElementById('yg-context').textContent = '';
+        const ygDisplay = document.getElementById('yg-display');
+        const ygContext = document.getElementById('yg-context');
+        const ygGlasses = document.getElementById('yg-glasses');
+        if (ygSlider) ygSlider.value = '0';
+        if (ygDisplay) ygDisplay.textContent = '0 YG';
+        if (ygContext) ygContext.textContent = 'Slide to rate in YGs';
+        if (ygGlasses) ygGlasses.innerHTML = '';
         this.clearLocation();
         document.getElementById('price-amount').value = '';
         document.getElementById('price-happy-hour').checked = false;
