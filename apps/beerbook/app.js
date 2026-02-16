@@ -833,7 +833,8 @@ const App = {
         document.getElementById('price-log-toggle').setAttribute('aria-expanded', 'false');
         document.getElementById('photo-preview').innerHTML = '';
         document.getElementById('photo-input').value = '';
-    },
+    }
+};
 
 // ========== BOOT ==========
 document.addEventListener('DOMContentLoaded', () => App.init());
