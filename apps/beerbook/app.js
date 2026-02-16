@@ -359,15 +359,16 @@ const App = {
             if (v <= 10) return hints['9-10'];
             return hints['11-12'];
         };
-        const renderGlasses = (n) => {
-            const count = Math.max(0, Math.min(12, parseInt(n, 10) || 0));
+        let prevVal = -1;
+        const ensureTwelveGlasses = () => {
+            if (ygGlasses.children.length === 12) return;
             ygGlasses.innerHTML = '';
-            for (let i = 0; i < count; i++) {
+            for (let i = 0; i < 12; i++) {
                 const span = document.createElement('span');
-                span.className = 'yg-glass';
+                span.className = 'yg-glass dimmed';
                 span.setAttribute('aria-hidden', 'true');
                 span.textContent = '🍺';
-                span.style.animationDelay = `${i * 100}ms`;
+                span.dataset.index = String(i);
                 ygGlasses.appendChild(span);
             }
         };
@@ -376,7 +377,23 @@ const App = {
             ygSlider.value = String(val);
             ygDisplay.textContent = val + ' YG';
             ygContext.textContent = getHint(val);
-            renderGlasses(val);
+            ensureTwelveGlasses();
+            const glassEls = ygGlasses.querySelectorAll('.yg-glass');
+            glassEls.forEach((el, i) => {
+                const revealed = i < val;
+                const wasRevealed = el.classList.contains('revealed');
+                el.classList.toggle('dimmed', !revealed);
+                el.classList.toggle('revealed', revealed);
+                if (revealed && !wasRevealed) {
+                    el.classList.add('yg-glass-pop');
+                    el.style.animationDelay = '0ms';
+                    const t = setTimeout(() => {
+                        el.classList.remove('yg-glass-pop');
+                        clearTimeout(t);
+                    }, 250);
+                }
+            });
+            prevVal = val;
         };
         ygSlider.addEventListener('input', update);
         update();

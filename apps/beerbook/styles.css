@@ -896,7 +896,7 @@ input, select, textarea, button {
 
 .autocomplete-item:last-child { border-bottom: none; }
 
-/* YG slider — beer glass system 0–12 */
+/* YG slider — beer glasses inside track, 0–12 */
 .yg-slider-group .label-hint {
     font-weight: 400;
     text-transform: none;
@@ -905,26 +905,55 @@ input, select, textarea, button {
     font-size: 0.8rem;
 }
 
-.yg-glasses-row {
+.yg-track-wrap {
+    position: relative;
     display: flex;
     align-items: center;
-    gap: var(--space-lg);
-    margin-bottom: var(--space-md);
-    flex-wrap: wrap;
+    gap: var(--space-md);
+    min-height: 48px;
+    width: 100%;
+    margin-bottom: var(--space-sm);
+}
+
+.yg-track {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    min-height: 48px;
+    background: var(--dark-600);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    display: flex;
 }
 
 .yg-glasses {
     display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-sm);
-    align-items: center;
-    min-height: 32px;
+    flex: 1;
+    width: 100%;
+    min-width: 0;
+    min-height: 48px;
 }
 
 .yg-glass {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     font-size: 28px;
     line-height: 1;
-    display: inline-block;
+    min-width: 0;
+    transition: opacity 0.15s var(--ease-out);
+}
+
+.yg-glass.dimmed {
+    opacity: 0.15;
+}
+
+.yg-glass.revealed {
+    opacity: 1;
+}
+
+.yg-glass.yg-glass-pop {
     animation: ygGlassPop 0.2s var(--ease-spring) forwards;
     transform: scale(0);
 }
@@ -933,53 +962,75 @@ input, select, textarea, button {
     to { transform: scale(1); }
 }
 
+/* Overlay range input: transparent track, thumb on top */
+.yg-slider-overlay {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    -webkit-appearance: none;
+    appearance: none;
+    background: transparent;
+    outline: none;
+}
+
+.yg-slider-overlay::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 32px;
+    height: 40px;
+    border-radius: 6px;
+    background: var(--amber-400);
+    cursor: grab;
+    box-shadow: var(--shadow-md);
+    position: relative;
+    z-index: 2;
+}
+
+.yg-slider-overlay::-webkit-slider-runnable-track {
+    background: transparent;
+    height: 48px;
+}
+
+.yg-slider-overlay::-moz-range-thumb {
+    width: 32px;
+    height: 40px;
+    border-radius: 6px;
+    background: var(--amber-400);
+    cursor: grab;
+    border: none;
+    box-shadow: var(--shadow-md);
+    position: relative;
+    z-index: 2;
+}
+
+.yg-slider-overlay::-moz-range-track {
+    background: transparent;
+    height: 48px;
+}
+
 .yg-display {
     font-family: var(--font-mono);
     font-size: 1.25rem;
     font-weight: 700;
     color: var(--amber-300);
     min-width: 4rem;
-}
-
-.yg-slider-row {
-    margin-bottom: var(--space-sm);
-}
-
-.yg-slider-row input[type="range"] {
-    width: 100%;
-    height: 10px;
-    min-height: 28px;
-    -webkit-appearance: none;
-    appearance: none;
-    background: var(--dark-600);
-    border-radius: 5px;
-    outline: none;
-}
-
-.yg-slider-row input[type="range"]::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    width: 28px;
-    height: 28px;
-    border-radius: 50%;
-    background: var(--amber-400);
-    cursor: pointer;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.3);
-}
-
-.yg-slider-row input[type="range"]::-moz-range-thumb {
-    width: 28px;
-    height: 28px;
-    border-radius: 50%;
-    background: var(--amber-400);
-    cursor: pointer;
-    border: none;
+    flex-shrink: 0;
 }
 
 .yg-context {
-    font-size: 0.85rem;
-    color: var(--amber-600);
-    margin-top: var(--space-xs);
-    font-style: italic;
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--amber-300);
+    margin-top: var(--space-sm);
+    text-shadow: 0 0 20px rgba(230, 168, 23, 0.25), 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+@media (max-width: 768px) {
+    .yg-track-wrap { min-height: 48px; }
+    .yg-glass { font-size: 22px; }
+    .yg-context { font-size: 1.1rem; }
 }
 
 /* Location */

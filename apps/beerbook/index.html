@@ -307,12 +307,12 @@
 
                 <div class="form-group yg-slider-group">
                     <label>YG Value <span class="label-hint">How many Yuengling Golden Pilsners is this worth?</span></label>
-                    <div class="yg-glasses-row">
-                        <div class="yg-glasses" id="yg-glasses" aria-live="polite"></div>
+                    <div class="yg-track-wrap">
+                        <div class="yg-track" id="yg-track" aria-hidden="true">
+                            <div class="yg-glasses" id="yg-glasses" aria-live="polite"></div>
+                        </div>
+                        <input type="range" min="0" max="12" step="1" id="yg-slider" value="0" class="yg-slider-overlay" aria-label="YG value">
                         <span class="yg-display" id="yg-display">0 YG</span>
-                    </div>
-                    <div class="yg-slider-row">
-                        <input type="range" min="0" max="12" step="1" id="yg-slider" value="0" aria-label="YG value">
                     </div>
                     <div class="yg-context" id="yg-context">Slide to rate in YGs</div>
                 </div>
