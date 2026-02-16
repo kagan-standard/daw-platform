@@ -73,6 +73,15 @@ Expect `Type: "volume"` and names containing `keycloak_db_data`, `supabase_db_da
   Add the audience mapper in Keycloak (see `runbooks/deploy.md`).
 - Check `KEYCLOAK_JWKS_URI` in .env and that beerbook-api can reach it (e.g. from inside container: `curl -s KEYCLOAK_JWKS_URI`).
 
+### 404 from API (all endpoints including /api/health)
+
+- **Cause:** Often the API container is crash-looping because the image was built without the `routes/` directory (Phase 2.1 split routes into `server.js` + `routes/*.js`). The Dockerfile must `COPY routes ./routes`.
+- **Check:** `docker ps` — if `beerbook-api` is restarting or missing, check `docker logs beerbook-api`. Look for `Cannot find module './routes/...'`.
+- **Fix:** Rebuild the image so it includes `routes/`:  
+  `docker compose -f /opt/daw-platform/infra/compose/docker-compose.yml --env-file /opt/daw-platform/infra/compose/.env build beerbook-api`  
+  then `docker compose ... up -d beerbook-api`.
+- **Traefik:** If the container is not on the `traefik` network or Traefik cannot reach it, you may see 404 or 502. Run `docker network inspect traefik` and confirm `beerbook-api` is listed.
+
 ### 502 from beerbook-api when calling PostgREST
 
 - Ensure supabase-rest is up: `docker ps | grep supabase-rest`.

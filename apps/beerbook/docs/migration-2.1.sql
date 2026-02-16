@@ -1,6 +1,6 @@
 -- ============================================
 -- Phase 2.1 — Schema expansion (idempotent)
--- Run once: docker exec -i supabase-db psql -U postgres < migration-2.1.sql
+-- Run once from repo root on VPS: docker exec -i supabase-db psql -U postgres -d postgres < apps/beerbook/docs/migration-2.1.sql
 -- ============================================
 
 -- 1A: Add columns to ratings
