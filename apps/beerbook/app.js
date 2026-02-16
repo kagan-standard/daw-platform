@@ -151,7 +151,7 @@ const App = {
             if (!ratingVal) { App.toast('Please select a star rating', 'error'); return; }
 
             const ygRaw = document.getElementById('yg-slider').value;
-            const ygInt = Math.max(0, Math.min(12, parseInt(ygRaw, 10) || 0));
+            const ygInt = Math.max(0, Math.min(12, Math.round(parseFloat(ygRaw) || 0)));
             const ygVal = ygInt > 0 ? ygInt : null;
             const lat = document.getElementById('rating-lat').value ? parseFloat(document.getElementById('rating-lat').value) : null;
             const lng = document.getElementById('rating-lng').value ? parseFloat(document.getElementById('rating-lng').value) : null;
@@ -373,7 +373,8 @@ const App = {
             }
         };
         const update = () => {
-            const val = Math.max(0, Math.min(12, parseInt(ygSlider.value, 10) || 0));
+            const raw = Number(ygSlider.value);
+            const val = Math.max(0, Math.min(12, Math.round(isNaN(raw) ? 0 : raw)));
             ygSlider.value = String(val);
             ygDisplay.textContent = val + ' YG';
             ygContext.textContent = getHint(val);
