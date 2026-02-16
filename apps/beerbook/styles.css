@@ -1041,6 +1041,7 @@ input, select, textarea, button {
         font-size: 18px;
         padding: 8px 1px;
     }
+    .yg-context { font-size: 0.85rem; }
 }
 
 /* Location */
