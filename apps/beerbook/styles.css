@@ -927,6 +927,8 @@ input, select, textarea, button {
 }
 
 .yg-glasses {
+    position: relative;
+    z-index: 1;
     display: flex;
     flex: 1;
     width: 100%;
@@ -962,7 +964,7 @@ input, select, textarea, button {
     to { transform: scale(1); }
 }
 
-/* Overlay range input: transparent track, thumb on top */
+/* Overlay range input: fully transparent track so glasses show through, thumb on top */
 .yg-slider-overlay {
     position: absolute;
     left: 0;
@@ -972,7 +974,8 @@ input, select, textarea, button {
     margin: 0;
     -webkit-appearance: none;
     appearance: none;
-    background: transparent;
+    background: transparent !important;
+    background-color: transparent !important;
     outline: none;
 }
 
@@ -989,7 +992,10 @@ input, select, textarea, button {
 }
 
 .yg-slider-overlay::-webkit-slider-runnable-track {
-    background: transparent;
+    -webkit-appearance: none;
+    background: transparent !important;
+    background-color: transparent !important;
+    border: none;
     height: 48px;
 }
 
@@ -1006,7 +1012,9 @@ input, select, textarea, button {
 }
 
 .yg-slider-overlay::-moz-range-track {
-    background: transparent;
+    background: transparent !important;
+    background-color: transparent !important;
+    border: none;
     height: 48px;
 }
 
