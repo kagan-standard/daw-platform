@@ -498,5 +498,50 @@ const DB = {
         if (this.isDemo) return {};
         await this._api('POST', `/api/venues/${encodeURIComponent(venueId)}/prices`, { body: JSON.stringify(payload) });
         return {};
+    },
+
+    async getExchange() {
+        if (this.isDemo) return { data: [], pagination: { limit: 50, offset: 0, total: 0 } };
+        return await this._api('GET', '/api/exchange?limit=100&offset=0');
+    },
+
+    async getMap() {
+        if (this.isDemo) return { data: [] };
+        return await this._api('GET', '/api/map');
+    },
+
+    async getMapUser(userId) {
+        if (this.isDemo) return { data: [] };
+        return await this._api('GET', `/api/map/user/${encodeURIComponent(userId)}`);
+    },
+
+    async getDeals(lat, lng, radius = 5000) {
+        if (this.isDemo) return { data: [] };
+        return await this._api('GET', `/api/deals?lat=${lat}&lng=${lng}&radius=${radius}`);
+    },
+
+    async getVenue(venueId) {
+        if (this.isDemo) return null;
+        return await this._api('GET', `/api/venues/${encodeURIComponent(venueId)}`);
+    },
+
+    async getVenuePrices(venueId) {
+        if (this.isDemo) return { data: [] };
+        return await this._api('GET', `/api/venues/${encodeURIComponent(venueId)}/prices?limit=100`);
+    },
+
+    async confirmVenuePrice(venueId, priceId) {
+        if (this.isDemo) return { ok: true };
+        return await this._api('POST', `/api/venues/${encodeURIComponent(venueId)}/prices/${encodeURIComponent(priceId)}/confirm`);
+    },
+
+    async confirmVenueHappyHour(venueId, hhId) {
+        if (this.isDemo) return { ok: true };
+        return await this._api('POST', `/api/venues/${encodeURIComponent(venueId)}/happy-hours/${encodeURIComponent(hhId)}/confirm`);
+    },
+
+    async addVenueHappyHour(venueId, payload) {
+        if (this.isDemo) return {};
+        return await this._api('POST', `/api/venues/${encodeURIComponent(venueId)}/happy-hours`, { body: JSON.stringify(payload) });
     }
 };

@@ -320,4 +320,33 @@ Keep consistent with existing theme: dark backgrounds, amber accents, rounded co
 
 | Date | Task | Assumption | Rationale |
 |------|------|------------|-----------|
-| | | | |
+| 2025-02-15 | 3 | GET /api/exchange returns `{ data, pagination }`; rows have beer_name, yg_rate, avg_stars, rating_count. Trend shown as "—" (no historical rate in API). | API uses yg_exchange view; trend would need 30-day-ago data not in current response. |
+| 2025-02-15 | 4 | Map pins built from geotagged ratings grouped by venue_id or lat/lng; GET /api/map returns ratings with venue embedded. | map.js groups by venue; deals use venue id for sidebar. |
+| 2025-02-15 | 5 | Venue detail uses GET /api/venues/:id plus GET /api/venues/:id/prices to get price log ids for Confirm. | Confirm requires price_log id; main venue response uses venue_menus (no id). |
+| 2025-02-15 | 5 | day_of_week 0–6 (Sun–Sat) for happy hours; start_time/end_time as strings (e.g. "16:00"). | Matches API and phase description. |
+| 2025-02-15 | 6 | YG badge shown only when yg_value is not null and > 0. | DECISIONS: 0 means not set (submit as null). |
+
+---
+
+## Validation commands (VPS)
+
+From project root (or where apps/beerbook is served):
+
+1. **Exchange**: Open app → click "📈 Exchange". Expect table (or empty state), cross-rate dropdowns, parity message. No console errors.
+2. **Map**: Click "🗺️ Map". Expect Leaflet map, pins if data exists, "Best Beer Near Me" and style filter. No console errors.
+3. **Venue**: From map popup or deal card click "View Venue Detail". Expect modal with menu, happy hours, ratings. Log price / Add happy hour require auth.
+4. **YG badges**: Dashboard recent reviews, Browse cards, Profile reviews show "X YG" pill when rating has yg_value.
+
+Browser (no deploy): Open `apps/beerbook/index.html` via local server or file; test in demo mode (no API).
+
+---
+
+## Rollback steps
+
+1. **Revert frontend only**: Restore from git (or remove added files and revert changes):
+   - Remove `apps/beerbook/exchange.js`, `map.js`, `venues.js`.
+   - Revert `apps/beerbook/index.html` (Leaflet scripts, nav buttons, view-exchange/view-map, venue modal, script tags).
+   - Revert `apps/beerbook/app.js` (navigate exchange/map, YG badges in review cards).
+   - Revert `apps/beerbook/supabase.js` (getExchange, getMap, getDeals, getVenue, confirm*, addVenueHappyHour, getVenuePrices).
+   - Revert `apps/beerbook/styles.css` (exchange, map, venue, deal, YG pill styles).
+2. **No schema or server.js changes** were made; no DB or API rollback needed.

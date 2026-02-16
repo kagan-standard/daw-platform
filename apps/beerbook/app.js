@@ -707,6 +707,12 @@ const App = {
         if (viewId === 'dashboard' || viewId === 'profile') {
             setTimeout(() => { Object.values(Charts.instances).forEach(c => c.resize()); }, 100);
         }
+        if (viewId === 'exchange' && typeof Exchange !== 'undefined' && typeof Exchange.load === 'function') {
+            setTimeout(() => Exchange.load(), 50);
+        }
+        if (viewId === 'map' && typeof MapView !== 'undefined' && typeof MapView.onShow === 'function') {
+            setTimeout(() => MapView.onShow(), 100);
+        }
     },
 
     // ========== RENDERS ==========
@@ -721,12 +727,13 @@ const App = {
         }
         container.innerHTML = recent.map(r => {
             const canDelete = currentUserId && r.user_id === currentUserId;
+            const ygBadge = (r.yg_value != null && r.yg_value > 0) ? ` <span class="yg-badge-pill">${r.yg_value} YG</span>` : '';
             return `<div class="review-card" data-rating-id="${r.id}">
                 <div class="review-rating">${this.ratingEmoji(r.rating)}</div>
                 <div class="review-content">
                     <div class="review-beer-name">${Utils.escapeHtml(r.beer_name)}</div>
                     <div class="review-meta">${Utils.escapeHtml(r.brewery || '')}${r.brewery && r.style ? ' · ' : ''}${Utils.escapeHtml(r.style || '')}${r.abv ? ` · ${r.abv}%` : ''}</div>
-                    <div class="review-stars">${Utils.stars(r.rating)}</div>
+                    <div class="review-stars">${Utils.stars(r.rating)}${ygBadge}</div>
                     ${r.notes ? `<div class="review-notes">${Utils.escapeHtml(Utils.truncate(r.notes, 150))}</div>` : ''}
                     <div class="review-user">— ${Utils.escapeHtml(r.user_name || 'Anonymous')} · ${Utils.timeAgo(r.created_at)}</div>
                 </div>
@@ -782,7 +789,7 @@ const App = {
                     ${r.style ? `<span class="beer-card-tag">${Utils.escapeHtml(r.style)}</span>` : ''}
                     ${r.abv ? `<span class="beer-card-tag">${r.abv}% ABV</span>` : ''}
                 </div>
-                <div class="beer-card-stars">${Utils.stars(r.rating)}</div>
+                <div class="beer-card-stars">${Utils.stars(r.rating)}${(r.yg_value != null && r.yg_value > 0) ? ` <span class="yg-badge-pill">${r.yg_value} YG</span>` : ''}</div>
                 ${r.notes ? `<div class="beer-card-notes">${Utils.escapeHtml(r.notes)}</div>` : ''}
                 <div class="beer-card-footer">
                     <span>${Utils.escapeHtml(r.user_name || 'Anonymous')}</span>
@@ -852,7 +859,7 @@ const App = {
             }
             const name = item.user_name || 'Someone';
             const initials = Utils.initials(name) || '🍺';
-            const ygBadge = (item.yg_value != null && item.yg_value > 0) ? ` <span class="activity-yg-badge">(${Number(item.yg_value)} YG)</span>` : '';
+            const ygBadge = (item.yg_value != null && item.yg_value > 0) ? ` <span class="yg-badge-pill">${Number(item.yg_value)} YG</span>` : '';
             const cheers = (item.cheers_count > 0) ? ` · 🍻 ${item.cheers_count} cheers` : '';
             return `<div class="activity-item">
                 <div class="activity-avatar">${Utils.escapeHtml(initials)}</div>
@@ -891,19 +898,20 @@ const App = {
             container.querySelector('.btn')?.addEventListener('click', () => this.navigate('rate'));
             return;
         }
-        container.innerHTML = myRatings.map(r => `
-            <div class="review-card" data-rating-id="${r.id}">
+        container.innerHTML = myRatings.map(r => {
+            const ygBadge = (r.yg_value != null && r.yg_value > 0) ? ` <span class="yg-badge-pill">${r.yg_value} YG</span>` : '';
+            return `<div class="review-card" data-rating-id="${r.id}">
                 <div class="review-rating">${this.ratingEmoji(r.rating)}</div>
                 <div class="review-content">
                     <div class="review-beer-name">${Utils.escapeHtml(r.beer_name)}</div>
                     <div class="review-meta">${Utils.escapeHtml(r.brewery || '')}${r.brewery && r.style ? ' · ' : ''}${Utils.escapeHtml(r.style || '')}</div>
-                    <div class="review-stars">${Utils.stars(r.rating)}</div>
+                    <div class="review-stars">${Utils.stars(r.rating)}${ygBadge}</div>
                     ${r.notes ? `<div class="review-notes">${Utils.escapeHtml(r.notes)}</div>` : ''}
                     <div class="review-user">${Utils.timeAgo(r.created_at)}</div>
                 </div>
                 <button type="button" class="review-delete" aria-label="Delete rating" data-rating-id="${r.id}">🗑️</button>
-            </div>
-        `).join('');
+            </div>`;
+        }).join('');
         container.querySelectorAll('.review-delete').forEach(btn => {
             btn.addEventListener('click', () => {
                 this._deleteRatingId = btn.dataset.ratingId;
