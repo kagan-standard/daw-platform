@@ -87,8 +87,9 @@ RETURNS SETOF venues AS $$
     ) <= radius_m;
 $$ LANGUAGE sql STABLE;
 
--- 1G: Views
-CREATE OR REPLACE VIEW beer_averages AS
+-- 1G: Views (DROP then CREATE so column names/order can change; safe for read-only view)
+DROP VIEW IF EXISTS beer_averages;
+CREATE VIEW beer_averages AS
 SELECT
     beer_name, brewery, style,
     COUNT(*) as review_count,
