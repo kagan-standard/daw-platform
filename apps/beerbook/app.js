@@ -2,9 +2,38 @@
    BeerBook — Main Application (Keycloak SSO)
    ============================================ */
 
+const STYLE_GUIDE = {
+    'IPA': { desc: 'American-style India Pale Ale, hop-forward with citrus and pine.', abv: '5.5–7.5%' },
+    'Double IPA': { desc: 'Stronger, more intense IPA with bold hop character.', abv: '7.5–10%' },
+    'DIPA': { desc: 'Double IPA — bigger body and bitterness.', abv: '7.5–10%' },
+    'Hazy IPA': { desc: 'Unfiltered, juicy IPA with low bitterness.', abv: '6–7%' },
+    'NEIPA': { desc: 'New England IPA — hazy, soft, fruity.', abv: '6–7%' },
+    'Pale Ale': { desc: 'Balanced ale with moderate hop and malt.', abv: '4.5–5.5%' },
+    'Stout': { desc: 'Dark, roasty ale with coffee and chocolate notes.', abv: '4–6%' },
+    'Imperial Stout': { desc: 'Strong, full-bodied dark ale.', abv: '8–12%' },
+    'Porter': { desc: 'Dark malt-forward ale, less roasty than stout.', abv: '4.5–6%' },
+    'Pilsner': { desc: 'Crisp, clean lager with subtle hop bitterness.', abv: '4.5–5.5%' },
+    'Lager': { desc: 'Bottom-fermented, clean and refreshing.', abv: '4–5%' },
+    'Wheat Beer': { desc: 'Light, often cloudy, with bready and fruity notes.', abv: '4–5.5%' },
+    'Belgian': { desc: 'Yeast-driven, often fruity and spicy.', abv: '5–9%' },
+    'Saison': { desc: 'Farmhouse-style, dry and refreshing.', abv: '5–7%' },
+    'Sour': { desc: 'Tart, acidic beer styles.', abv: '4–6%' },
+    'Amber Ale': { desc: 'Malty, caramel-forward American ale.', abv: '4.5–5.5%' },
+    'Brown Ale': { desc: 'Nutty, toasty malt character.', abv: '4–5.5%' },
+    'Red Ale': { desc: 'Copper-red, balanced malt and hops.', abv: '4.5–5.5%' },
+    'Barleywine': { desc: 'Strong, sipping ale with rich malt.', abv: '8–12%' },
+    'Kölsch': { desc: 'Crisp, clean hybrid ale from Cologne.', abv: '4.5–5%' },
+    'Hefeweizen': { desc: 'German wheat beer with banana and clove.', abv: '4.5–5.5%' },
+    'Bock': { desc: 'Strong German lager, malty and smooth.', abv: '6–7%' },
+    'Gose': { desc: 'Tart, slightly salty German wheat beer.', abv: '4–5%' },
+    'Other': { desc: 'Other or unspecified beer style.', abv: '—' }
+};
+
 const App = {
     currentView: 'dashboard',
     allRatings: [],
+    cheersCache: {},
+    _demoCheersKey: 'beerbook_demo_cheers',
 
     toast(message, type = 'info') {
         Utils.toast(message, type, 3000);
@@ -28,6 +57,164 @@ const App = {
         }
 
         this.bindEvents();
+        this.setupInfiniteScroll();
+        this.bindStyleTooltip();
+        this.bindKeyboardShortcuts();
+    },
+
+    bindKeyboardShortcuts() {
+        document.addEventListener('keydown', (e) => {
+            const tag = document.activeElement?.tagName?.toLowerCase();
+            if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+
+            switch (e.key) {
+                case 'n':
+                case 'N':
+                    e.preventDefault();
+                    this.navigate('rate');
+                    break;
+                case 'Escape':
+                    e.preventDefault();
+                    if (document.getElementById('beer-detail-modal')?.style.display === 'flex') {
+                        this.closeBeerDetail();
+                    } else if (document.getElementById('venue-modal')?.style.display === 'flex') {
+                        typeof Venues !== 'undefined' && Venues.close && Venues.close();
+                    } else if (document.getElementById('delete-modal')?.style.display === 'flex') {
+                        this.closeDeleteModal();
+                    } else if (document.getElementById('shortcuts-modal')?.style.display === 'flex') {
+                        document.getElementById('shortcuts-modal').style.display = 'none';
+                    } else if (this._previousView) {
+                        this.navigate(this._previousView);
+                    }
+                    break;
+                case '/':
+                    e.preventDefault();
+                    this.navigate('browse');
+                    setTimeout(() => document.getElementById('search-input')?.focus(), 100);
+                    break;
+                case 'm':
+                case 'M':
+                    e.preventDefault();
+                    this.navigate('map');
+                    break;
+                case 'e':
+                case 'E':
+                    e.preventDefault();
+                    this.navigate('exchange');
+                    break;
+                case 'b':
+                case 'B':
+                    e.preventDefault();
+                    this.navigate('browse');
+                    break;
+                case 'd':
+                case 'D':
+                    e.preventDefault();
+                    this.navigate('dashboard');
+                    break;
+                case 'l':
+                case 'L':
+                    e.preventDefault();
+                    this.navigate('leaderboard');
+                    break;
+                case '?':
+                    e.preventDefault();
+                    const sm = document.getElementById('shortcuts-modal');
+                    if (sm) sm.style.display = sm.style.display === 'flex' ? 'none' : 'flex';
+                    break;
+                default:
+                    break;
+            }
+        });
+        document.getElementById('shortcuts-modal-close')?.addEventListener('click', () => {
+            document.getElementById('shortcuts-modal').style.display = 'none';
+        });
+        document.getElementById('shortcuts-modal')?.addEventListener('click', (e) => {
+            if (e.target.id === 'shortcuts-modal') e.target.style.display = 'none';
+        });
+    },
+
+    bindStyleTooltip() {
+        const popup = document.getElementById('style-tooltip');
+        let hideTimer = null;
+        let showTimer = null;
+        const show = (el) => {
+            const style = el?.dataset?.style;
+            if (!style || !popup) return;
+            const guide = STYLE_GUIDE[style] || { desc: 'Beer style.', abv: '—' };
+            popup.innerHTML = `<strong>${Utils.escapeHtml(style)}</strong><br>${Utils.escapeHtml(guide.desc)}<br>ABV: ${Utils.escapeHtml(guide.abv)}`;
+            popup.setAttribute('aria-hidden', 'false');
+            popup.classList.add('visible');
+            const rect = el.getBoundingClientRect();
+            popup.style.left = `${rect.left + rect.width / 2}px`;
+            popup.style.top = `${rect.top}px`;
+            popup.style.transform = 'translate(-50%, -100%) translateY(-8px)';
+        };
+        const hide = () => {
+            if (hideTimer) clearTimeout(hideTimer);
+            if (showTimer) clearTimeout(showTimer);
+            showTimer = null;
+            hideTimer = null;
+            if (popup) {
+                popup.classList.remove('visible');
+                popup.setAttribute('aria-hidden', 'true');
+            }
+        };
+        document.body.addEventListener('mouseenter', (e) => {
+            const el = e.target.closest('.style-tooltip[data-style]');
+            if (!el) return;
+            if (showTimer) clearTimeout(showTimer);
+            showTimer = setTimeout(() => show(el), 200);
+        }, true);
+        document.body.addEventListener('mouseleave', (e) => {
+            const el = e.target.closest('.style-tooltip[data-style]');
+            const left = e.relatedTarget?.closest?.('.style-tooltip[data-style], #style-tooltip');
+            if (el && !left) {
+                if (hideTimer) clearTimeout(hideTimer);
+                hideTimer = setTimeout(hide, 100);
+            }
+        }, true);
+        document.body.addEventListener('mouseenter', (e) => {
+            if (e.target.id === 'style-tooltip' || e.target.closest('#style-tooltip')) {
+                if (hideTimer) clearTimeout(hideTimer);
+                hideTimer = null;
+            }
+        }, true);
+        document.body.addEventListener('mouseleave', (e) => {
+            if (e.target.id === 'style-tooltip' || e.target.closest('#style-tooltip')) {
+                const to = e.relatedTarget?.closest?.('.style-tooltip[data-style], #style-tooltip');
+                if (!to) hide();
+            }
+        }, true);
+        document.addEventListener('click', () => hide());
+    },
+
+    setupInfiniteScroll() {
+        this.browseShownCount = 24;
+        const browseSentinel = document.getElementById('browse-sentinel');
+        const activitySentinel = document.getElementById('activity-sentinel');
+        if (browseSentinel) {
+            const browseObs = new IntersectionObserver((entries) => {
+                if (!entries[0]?.isIntersecting) return;
+                const total = this._browseFilteredLength ?? 0;
+                if ((this.browseShownCount || 24) >= total) return;
+                this.browseShownCount = (this.browseShownCount || 24) + 24;
+                this.renderBrowse();
+            }, { rootMargin: '100px', threshold: 0 });
+            browseObs.observe(browseSentinel);
+            this._browseObserver = browseObs;
+        }
+        if (activitySentinel) {
+            const activityObs = new IntersectionObserver((entries) => {
+                if (!entries[0]?.isIntersecting) return;
+                const items = this.activityItems || [];
+                const showCount = (this.activityPage || 1) * 10;
+                if (items.length <= showCount) return;
+                this.loadMoreActivity();
+            }, { rootMargin: '100px', threshold: 0 });
+            activityObs.observe(activitySentinel);
+            this._activityObserver = activityObs;
+        }
     },
 
     // ========== EVENT BINDING ==========
@@ -89,6 +276,36 @@ const App = {
         // Navigation
         document.querySelectorAll('.nav-btn').forEach(btn => {
             btn.addEventListener('click', () => this.navigate(btn.dataset.view));
+        });
+
+        // Beer detail: delegate clicks on beer-name links
+        document.body.addEventListener('click', (e) => {
+            const link = e.target.closest('[data-beer-name]');
+            if (link) {
+                e.preventDefault();
+                this.openBeerDetail(link.dataset.beerName, link.dataset.beerBrewery || '', link.dataset.beerStyle || '');
+            }
+        });
+        document.getElementById('beer-detail-back')?.addEventListener('click', () => this.closeBeerDetail());
+
+        // Cheers button delegation
+        document.body.addEventListener('click', async (e) => {
+            const btn = e.target.closest('.cheers-btn[data-rating-id]');
+            if (!btn || btn.disabled) return;
+            const ratingId = btn.dataset.ratingId;
+            if (!ratingId) return;
+            const loggedIn = !!(DB.currentUser && DB.currentUser.id);
+            if (!loggedIn) return;
+            btn.classList.add('cheers-pop');
+            setTimeout(() => btn.classList.remove('cheers-pop'), 300);
+            try {
+                await DB.toggleCheers(ratingId);
+                this.cheersCache[ratingId] = null;
+                const data = await this.getCheersForRating(ratingId);
+                this.setCheersOnCard(ratingId, data.count, data.youCheered);
+            } catch (err) {
+                this.toast('Cheers update failed', 'error');
+            }
         });
 
         // Mobile menu (below 520px)
@@ -270,11 +487,11 @@ const App = {
             }
         });
 
-        // Search & filters
+        // Search & filters (reset infinite scroll on change)
         document.getElementById('search-input')?.addEventListener('input',
-            Utils.debounce(() => this.renderBrowse(), 200));
-        document.getElementById('filter-style')?.addEventListener('change', () => this.renderBrowse());
-        document.getElementById('sort-by')?.addEventListener('change', () => this.renderBrowse());
+            Utils.debounce(() => { this.browseShownCount = 24; this.renderBrowse(); }, 200));
+        document.getElementById('filter-style')?.addEventListener('change', () => { this.browseShownCount = 24; this.renderBrowse(); });
+        document.getElementById('sort-by')?.addEventListener('change', () => { this.browseShownCount = 24; this.renderBrowse(); });
 
         // Beer autocomplete (Task 2)
         this.bindBeerAutocomplete();
@@ -614,6 +831,152 @@ const App = {
         this._deleteRatingId = null;
     },
 
+    closeBeerDetail() {
+        const modal = document.getElementById('beer-detail-modal');
+        if (modal) modal.style.display = 'none';
+    },
+
+    async getCheersForRating(ratingId) {
+        if (this.cheersCache[ratingId]) return this.cheersCache[ratingId];
+        if (DB.isDemo) {
+            const raw = Utils.storage.get(this._demoCheersKey) || {};
+            const entry = raw[ratingId] || { count: 0, userIds: [] };
+            const youCheered = DB.currentUser && entry.userIds && entry.userIds.includes(DB.currentUser.id);
+            const out = { count: entry.count || 0, youCheered: !!youCheered };
+            this.cheersCache[ratingId] = out;
+            return out;
+        }
+        const data = await DB.getRatingCheers(ratingId);
+        const youCheered = !!(DB.currentUser && data.users && data.users.some(u => (u.id || u) === DB.currentUser.id));
+        const out = { count: data.count || 0, youCheered };
+        this.cheersCache[ratingId] = out;
+        return out;
+    },
+
+    setCheersOnCard(ratingId, count, youCheered) {
+        document.querySelectorAll(`.cheers-btn[data-rating-id="${ratingId}"]`).forEach(btn => {
+            const span = btn.querySelector('.cheers-count');
+            if (span) span.textContent = count;
+            btn.title = youCheered ? `You and ${Math.max(0, count - 1)} others` : `${count} cheers`;
+            btn.classList.toggle('cheered', youCheered);
+        });
+    },
+
+    async fillCheersForCards(ratingIds) {
+        if (!ratingIds.length) return;
+        const loggedIn = !!(DB.currentUser && DB.currentUser.id);
+        for (const id of ratingIds) {
+            try {
+                const data = await this.getCheersForRating(id);
+                this.setCheersOnCard(id, data.count, data.youCheered);
+            } catch (_) {}
+        }
+    },
+
+    cheersButtonHtml(ratingId) {
+        const loggedIn = !!(DB.currentUser && DB.currentUser.id);
+        return `<button type="button" class="cheers-btn" data-rating-id="${Utils.escapeHtml(ratingId)}" ${!loggedIn ? 'disabled title="Sign in to cheers"' : 'title="Cheers"'}><span class="cheers-icon">🍻</span> <span class="cheers-count">0</span></button>`;
+    },
+
+    async openBeerDetail(beerName, brewery, style) {
+        if (!beerName) return;
+        const modal = document.getElementById('beer-detail-modal');
+        const body = document.getElementById('beer-detail-body');
+        if (!modal || !body) return;
+        body.innerHTML = '<p class="loading-state">Loading…</p>';
+        modal.style.display = 'flex';
+
+        let beer = null;
+        let crossRates = null;
+        if (DB.isDemo) {
+            const ratings = (this.allRatings || []).filter(r => (r.beer_name || '').toLowerCase() === (beerName || '').toLowerCase());
+            if (ratings.length) {
+                const r0 = ratings[0];
+                const sum = ratings.reduce((s, r) => s + (r.rating || 0), 0);
+                const ygVals = ratings.map(r => r.yg_value).filter(v => v != null && v > 0);
+                const avgYg = ygVals.length ? (ygVals.reduce((a, b) => a + b, 0) / ygVals.length).toFixed(1) : null;
+                beer = {
+                    beer_name: r0.beer_name,
+                    brewery: r0.brewery || brewery || '',
+                    style: r0.style || style || '',
+                    abv: r0.abv,
+                    avg_rating: (sum / ratings.length).toFixed(1),
+                    review_count: ratings.length,
+                    avg_yg: avgYg,
+                    ratings
+                };
+            }
+        } else {
+            beer = await DB.getBeerDetail(beerName);
+            if (beer && beer.beer_name) crossRates = await DB.getBeerCrossRates(beerName);
+        }
+
+        if (!beer || !beer.beer_name) {
+            body.innerHTML = '<p class="empty-state">Beer not found.</p>';
+            return;
+        }
+
+        const name = Utils.escapeHtml(beer.beer_name);
+        const brew = Utils.escapeHtml(beer.brewery || '');
+        const st = Utils.escapeHtml(beer.style || '');
+        const abv = beer.abv != null ? `${beer.abv}% ABV` : '';
+        const avgRating = beer.avg_rating ?? (beer.ratings && beer.ratings.length ? (beer.ratings.reduce((s, r) => s + (r.rating || 0), 0) / beer.ratings.length).toFixed(1) : '—');
+        const reviewCount = beer.review_count ?? (beer.ratings && beer.ratings.length) || 0;
+        const avgYg = beer.avg_yg ?? (beer.ratings && beer.ratings.length ? (() => {
+            const yg = beer.ratings.map(r => r.yg_value).filter(v => v != null && v > 0);
+            return yg.length ? (yg.reduce((a, b) => a + b, 0) / yg.length).toFixed(1) : null;
+        })() : null);
+
+        const isBaseline = (beer.beer_name || '').toLowerCase().includes('yuengling') && (beer.beer_name || '').toLowerCase().includes('golden');
+        let ygContext = '';
+        if (isBaseline) {
+            ygContext = 'This IS the baseline. 1.0 YG.';
+        } else if (avgYg) {
+            ygContext = `Worth ${avgYg} YGs.`;
+            if (crossRates && crossRates.equivalent) ygContext += ` That's equivalent to ${Utils.escapeHtml(crossRates.equivalent)}.`;
+        }
+
+        const ratingsList = (beer.ratings || []).slice(0, 20).map(r => {
+            const ygBadge = (r.yg_value != null && r.yg_value > 0) ? ` <span class="yg-badge-pill">${r.yg_value} YG</span>` : '';
+            return `<div class="beer-detail-rating" data-rating-id="${Utils.escapeHtml(r.id)}"><span class="beer-detail-rating-stars">${Utils.stars(r.rating)}</span>${ygBadge} — ${Utils.escapeHtml(r.user_name || 'Anonymous')} · ${Utils.timeAgo(r.created_at)}${r.notes ? ` — ${Utils.escapeHtml(Utils.truncate(r.notes, 60))}` : ''} <span class="beer-detail-rating-cheers">${this.cheersButtonHtml(r.id)}</span></div>`;
+        }).join('');
+
+        body.innerHTML = `
+            <h2 class="beer-detail-name">${name}</h2>
+            ${brew ? `<div class="beer-detail-brewery">${brew}</div>` : ''}
+            <div class="beer-detail-meta">
+                ${st ? `<span class="style-tooltip" data-style="${Utils.escapeHtml(beer.style || '')}">${st}</span>` : ''}
+                ${abv ? `<span>${abv}</span>` : ''}
+            </div>
+            <div class="beer-detail-stats">
+                <span>${avgRating} ★ avg</span>
+                <span>${reviewCount} review${reviewCount !== 1 ? 's' : ''}</span>
+                ${avgYg ? `<span>${avgYg} YG avg</span>` : ''}
+            </div>
+            ${ygContext ? `<p class="beer-detail-yg-context">${ygContext}</p>` : ''}
+            <div class="beer-detail-ratings">
+                <h4>Ratings</h4>
+                ${ratingsList || '<p class="empty-state">No ratings yet.</p>'}
+            </div>
+            <button type="button" class="btn btn-primary" id="beer-detail-rate-btn">Rate This Beer</button>
+        `;
+
+        const rateBtn = document.getElementById('beer-detail-rate-btn');
+        if (rateBtn) {
+            rateBtn.addEventListener('click', () => {
+                this.closeBeerDetail();
+                document.getElementById('beer-name').value = beer.beer_name;
+                document.getElementById('beer-brewery').value = beer.brewery || '';
+                document.getElementById('beer-style').value = beer.style || '';
+                this.navigate('rate');
+            });
+        }
+        this.fillCheersForCards((beer.ratings || []).slice(0, 20).map(r => r.id));
+
+        modal.querySelector('.modal-content-beer-detail')?.addEventListener('click', (e) => e.stopPropagation());
+        modal.addEventListener('click', (e) => { if (e.target === modal) this.closeBeerDetail(); });
+    },
+
     confirmDeleteRating() {
         const id = this._deleteRatingId;
         this.closeDeleteModal();
@@ -693,6 +1056,7 @@ const App = {
 
     // ========== NAVIGATION ==========
     navigate(viewId) {
+        this._previousView = this.currentView;
         this.currentView = viewId;
         document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
         document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
@@ -733,15 +1097,19 @@ const App = {
             return `<div class="review-card" data-rating-id="${r.id}">
                 <div class="review-rating">${this.ratingEmoji(r.rating)}</div>
                 <div class="review-content">
-                    <div class="review-beer-name">${Utils.escapeHtml(r.beer_name)}</div>
-                    <div class="review-meta">${Utils.escapeHtml(r.brewery || '')}${r.brewery && r.style ? ' · ' : ''}${Utils.escapeHtml(r.style || '')}${r.abv ? ` · ${r.abv}%` : ''}</div>
+                    <div class="review-beer-name"><span class="beer-name-link" data-beer-name="${Utils.escapeHtml(r.beer_name)}" data-beer-brewery="${Utils.escapeHtml(r.brewery || '')}" data-beer-style="${Utils.escapeHtml(r.style || '')}" role="button" tabindex="0">${Utils.escapeHtml(r.beer_name)}</span></div>
+                    <div class="review-meta">${Utils.escapeHtml(r.brewery || '')}${r.brewery && r.style ? ' · ' : ''}${r.style ? `<span class="style-tooltip" data-style="${Utils.escapeHtml(r.style)}">${Utils.escapeHtml(r.style)}</span>` : ''}${r.abv ? ` · ${r.abv}%` : ''}</div>
                     <div class="review-stars">${Utils.stars(r.rating)}${ygBadge}</div>
                     ${r.notes ? `<div class="review-notes">${Utils.escapeHtml(Utils.truncate(r.notes, 150))}</div>` : ''}
                     <div class="review-user">— ${Utils.escapeHtml(r.user_name || 'Anonymous')} · ${Utils.timeAgo(r.created_at)}</div>
                 </div>
-                ${canDelete ? `<button type="button" class="review-delete" aria-label="Delete rating" data-rating-id="${r.id}">🗑️</button>` : ''}
+                <div class="review-actions">
+                    ${this.cheersButtonHtml(r.id)}
+                    ${canDelete ? `<button type="button" class="review-delete" aria-label="Delete rating" data-rating-id="${r.id}">🗑️</button>` : ''}
+                </div>
             </div>`;
         }).join('');
+        this.fillCheersForCards(recent.map(r => r.id));
         container.querySelectorAll('.review-delete').forEach(btn => {
             btn.addEventListener('click', () => {
                 this._deleteRatingId = btn.dataset.ratingId;
@@ -770,6 +1138,7 @@ const App = {
             default: filtered.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
         }
 
+        this._browseFilteredLength = filtered.length;
         if (!filtered.length) {
             if (!this.allRatings.length) {
                 container.innerHTML = '<p class="empty-state cta-empty">🍺 No beers rated yet. Be the first to crack one open!</p><button type="button" class="btn btn-primary" data-view="rate">Rate a Beer</button>';
@@ -777,18 +1146,21 @@ const App = {
             } else {
                 container.innerHTML = '<p class="empty-state">No beers match your search.</p>';
             }
+            const sentinel = document.getElementById('browse-sentinel');
+            if (sentinel) sentinel.style.display = 'none';
             return;
         }
 
-        container.innerHTML = filtered.map(r => `
+        const showCount = this.browseShownCount || 24;
+        container.innerHTML = filtered.slice(0, showCount).map(r => `
             <div class="beer-card">
                 <div class="beer-card-header">
-                    <div class="beer-card-name">${Utils.escapeHtml(r.beer_name)}</div>
+                    <div class="beer-card-name"><span class="beer-name-link" data-beer-name="${Utils.escapeHtml(r.beer_name)}" data-beer-brewery="${Utils.escapeHtml(r.brewery || '')}" data-beer-style="${Utils.escapeHtml(r.style || '')}" role="button" tabindex="0">${Utils.escapeHtml(r.beer_name)}</span></div>
                     <div class="beer-card-rating">${r.rating.toFixed(1)}</div>
                 </div>
                 ${r.brewery ? `<div class="beer-card-brewery">${Utils.escapeHtml(r.brewery)}</div>` : ''}
                 <div class="beer-card-details">
-                    ${r.style ? `<span class="beer-card-tag">${Utils.escapeHtml(r.style)}</span>` : ''}
+                    ${r.style ? `<span class="beer-card-tag style-tooltip" data-style="${Utils.escapeHtml(r.style)}">${Utils.escapeHtml(r.style)}</span>` : ''}
                     ${r.abv ? `<span class="beer-card-tag">${r.abv}% ABV</span>` : ''}
                 </div>
                 <div class="beer-card-stars">${Utils.stars(r.rating)}${(r.yg_value != null && r.yg_value > 0) ? ` <span class="yg-badge-pill">${r.yg_value} YG</span>` : ''}</div>
@@ -799,6 +1171,8 @@ const App = {
                 </div>
             </div>
         `).join('');
+        const sentinel = document.getElementById('browse-sentinel');
+        if (sentinel) sentinel.style.display = filtered.length > showCount ? 'block' : 'none';
     },
 
     renderLeaderboard(period = 'alltime') {
@@ -835,6 +1209,26 @@ const App = {
         document.getElementById('lb-popular').innerHTML = mostReviewed.length
             ? mostReviewed.map(([name, { count }], i) => `<div class="lb-row"><span class="lb-rank">${i < 3 ? ['🥇','🥈','🥉'][i] : (i+1)}</span><span class="lb-name">${Utils.escapeHtml(name)}</span><span class="lb-value">${count} reviews</span></div>`).join('')
             : '<p class="empty-state">No data yet</p>';
+
+        const lbCheers = document.getElementById('lb-cheers');
+        if (lbCheers) {
+            let mostCheered = [];
+            if (DB.isDemo) {
+                const raw = Utils.storage.get(this._demoCheersKey) || {};
+                const byCount = [];
+                for (const [ratingId, entry] of Object.entries(raw)) {
+                    const c = entry && (entry.count || entry.userIds?.length || 0);
+                    if (c > 0) {
+                        const r = (this.allRatings || []).find(x => x.id === ratingId);
+                        byCount.push({ ratingId, count: c, beerName: r ? r.beer_name : ratingId });
+                    }
+                }
+                mostCheered = byCount.sort((a, b) => b.count - a.count).slice(0, 10);
+            }
+            lbCheers.innerHTML = mostCheered.length
+                ? mostCheered.map((c, i) => `<div class="lb-row"><span class="lb-rank">${i < 3 ? ['🥇','🥈','🥉'][i] : (i+1)}</span><span class="lb-name">${Utils.escapeHtml(c.beerName)}</span><span class="lb-value">🍻 ${c.count}</span></div>`).join('')
+                : '<p class="empty-state">No data yet</p>';
+        }
     },
 
     renderActivityFeed(items, showCount = 10) {
@@ -863,17 +1257,24 @@ const App = {
             const initials = Utils.initials(name) || '🍺';
             const ygBadge = (item.yg_value != null && item.yg_value > 0) ? ` <span class="yg-badge-pill">${Number(item.yg_value)} YG</span>` : '';
             const cheers = (item.cheers_count > 0) ? ` · 🍻 ${item.cheers_count} cheers` : '';
+            const beerName = item.beer_name || '';
+            const beerLink = beerName ? `<span class="beer-name-link" data-beer-name="${Utils.escapeHtml(beerName)}" data-beer-brewery="${Utils.escapeHtml(item.brewery || '')}" data-beer-style="${Utils.escapeHtml(item.style || '')}" role="button" tabindex="0">${Utils.escapeHtml(beerName)}</span>` : '';
+            const cheersBtn = item.id ? `<div class="activity-cheers">${this.cheersButtonHtml(item.id)}</div>` : '';
             return `<div class="activity-item">
                 <div class="activity-avatar">${Utils.escapeHtml(initials)}</div>
                 <div class="activity-body">
-                    <div class="activity-text">${Utils.escapeHtml(name)} rated ${Utils.escapeHtml(item.beer_name || '')} ${Utils.stars(item.rating || 0)}${ygBadge}${item.location_name ? ' at ' + Utils.escapeHtml(item.location_name) : ''}</div>
+                    <div class="activity-text">${Utils.escapeHtml(name)} rated ${beerLink} ${Utils.stars(item.rating || 0)}${ygBadge}${item.location_name ? ' at ' + Utils.escapeHtml(item.location_name) : ''}</div>
                     ${item.notes ? `<div class="activity-notes">"${Utils.escapeHtml(Utils.truncate(item.notes, 80))}"</div>` : ''}
-                    <div class="activity-meta">${Utils.timeAgo(item.created_at)}${cheers}</div>
+                    <div class="activity-meta">${Utils.timeAgo(item.created_at)}${cheersBtn}</div>
                 </div>
             </div>`;
         }).join('');
+        const ratingIds = list.filter(i => i.id).map(i => i.id);
+        this.fillCheersForCards(ratingIds);
         const hasMore = (items.length || 0) > showCount;
         if (loadMoreBtn) loadMoreBtn.style.display = hasMore ? 'block' : 'none';
+        const activitySentinel = document.getElementById('activity-sentinel');
+        if (activitySentinel) activitySentinel.style.display = hasMore ? 'block' : 'none';
     },
 
     async renderProfile() {
@@ -905,15 +1306,19 @@ const App = {
             return `<div class="review-card" data-rating-id="${r.id}">
                 <div class="review-rating">${this.ratingEmoji(r.rating)}</div>
                 <div class="review-content">
-                    <div class="review-beer-name">${Utils.escapeHtml(r.beer_name)}</div>
-                    <div class="review-meta">${Utils.escapeHtml(r.brewery || '')}${r.brewery && r.style ? ' · ' : ''}${Utils.escapeHtml(r.style || '')}</div>
+                    <div class="review-beer-name"><span class="beer-name-link" data-beer-name="${Utils.escapeHtml(r.beer_name)}" data-beer-brewery="${Utils.escapeHtml(r.brewery || '')}" data-beer-style="${Utils.escapeHtml(r.style || '')}" role="button" tabindex="0">${Utils.escapeHtml(r.beer_name)}</span></div>
+                    <div class="review-meta">${Utils.escapeHtml(r.brewery || '')}${r.brewery && r.style ? ' · ' : ''}${r.style ? `<span class="style-tooltip" data-style="${Utils.escapeHtml(r.style)}">${Utils.escapeHtml(r.style)}</span>` : ''}</div>
                     <div class="review-stars">${Utils.stars(r.rating)}${ygBadge}</div>
                     ${r.notes ? `<div class="review-notes">${Utils.escapeHtml(r.notes)}</div>` : ''}
                     <div class="review-user">${Utils.timeAgo(r.created_at)}</div>
                 </div>
-                <button type="button" class="review-delete" aria-label="Delete rating" data-rating-id="${r.id}">🗑️</button>
+                <div class="review-actions">
+                    ${this.cheersButtonHtml(r.id)}
+                    <button type="button" class="review-delete" aria-label="Delete rating" data-rating-id="${r.id}">🗑️</button>
+                </div>
             </div>`;
         }).join('');
+        this.fillCheersForCards(myRatings.map(r => r.id));
         container.querySelectorAll('.review-delete').forEach(btn => {
             btn.addEventListener('click', () => {
                 this._deleteRatingId = btn.dataset.ratingId;

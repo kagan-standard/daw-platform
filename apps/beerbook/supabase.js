@@ -5,6 +5,24 @@
    Demo: localStorage fallback
    ============================================ */
 
+const _cache = new Map();
+function cachedFetch(key, ttlMs, fetchFn) {
+    const cached = _cache.get(key);
+    if (cached && Date.now() - cached.time < ttlMs) return Promise.resolve(cached.data);
+    return fetchFn().then((data) => {
+        _cache.set(key, { data, time: Date.now() });
+        return data;
+    });
+}
+function invalidateCache(prefix) {
+    if (!prefix) { _cache.clear(); return; }
+    for (const k of _cache.keys()) {
+        if (k.startsWith(prefix)) _cache.delete(k);
+    }
+}
+
+const CACHE_TTL = { stats: 60000, leaderboard: 60000, exchange: 60000, beerSearch: 30000, userProfile: 120000, map: 120000, activity: 60000 };
+
 const DB = {
     client: null,
     isDemo: false,
@@ -355,8 +373,11 @@ const DB = {
             photo_url: record.photo_url,
         };
         const data = await this._api('POST', '/api/ratings', { body: JSON.stringify(body) });
+        invalidateCache('');
         return data;
     },
+
+    cacheInvalidate(prefix) { invalidateCache(prefix || ''); },
 
     async getAllRatings() {
         if (this.isDemo) return Utils.storage.get('reviews', []);
@@ -377,6 +398,7 @@ const DB = {
             return true;
         }
         await this._api('DELETE', `/api/ratings/${encodeURIComponent(id)}`);
+        invalidateCache('');
         return true;
     },
 
@@ -392,19 +414,21 @@ const DB = {
                 ratings
             };
         }
-        const [statsRes, ratingsRes] = await Promise.all([
-            this._api('GET', '/api/stats?limit=100'),
-            this._api('GET', '/api/ratings?limit=100&order=desc')
-        ]);
-        const ratings = (ratingsRes && ratingsRes.data) ? ratingsRes.data : [];
-        const summary = (statsRes && statsRes.summary) ? statsRes.summary : {};
-        return {
-            totalBeers: summary.totalBeers ?? new Set(ratings.map(r => r.beer_name?.toLowerCase())).size,
-            totalReviews: summary.totalReviews ?? ratings.length,
-            totalUsers: summary.totalUsers ?? new Set(ratings.map(r => r.user_id)).size,
-            avgRating: summary.avgRating ?? (ratings.length ? (ratings.reduce((s, r) => s + r.rating, 0) / ratings.length).toFixed(1) : '0.0'),
-            ratings
-        };
+        return cachedFetch('stats', CACHE_TTL.stats, async () => {
+            const [statsRes, ratingsRes] = await Promise.all([
+                this._api('GET', '/api/stats?limit=100'),
+                this._api('GET', '/api/ratings?limit=100&order=desc')
+            ]);
+            const ratings = (ratingsRes && ratingsRes.data) ? ratingsRes.data : [];
+            const summary = (statsRes && statsRes.summary) ? statsRes.summary : {};
+            return {
+                totalBeers: summary.totalBeers ?? new Set(ratings.map(r => r.beer_name?.toLowerCase())).size,
+                totalReviews: summary.totalReviews ?? ratings.length,
+                totalUsers: summary.totalUsers ?? new Set(ratings.map(r => r.user_id)).size,
+                avgRating: summary.avgRating ?? (ratings.length ? (ratings.reduce((s, r) => s + r.rating, 0) / ratings.length).toFixed(1) : '0.0'),
+                ratings
+            };
+        });
     },
 
     subscribeToRatings(callback) {
@@ -436,8 +460,11 @@ const DB = {
     async searchBeers(q) {
         if (this.isDemo) return [];
         if (!q || q.length < 2) return [];
-        const out = await this._api('GET', `/api/beers/search?q=${encodeURIComponent(q)}`);
-        return (out && out.data) ? out.data : [];
+        const key = `beerSearch:${q.toLowerCase().trim()}`;
+        return cachedFetch(key, CACHE_TTL.beerSearch, async () => {
+            const out = await this._api('GET', `/api/beers/search?q=${encodeURIComponent(q)}`);
+            return (out && out.data) ? out.data : [];
+        });
     },
 
     async getVenuesCount() {
@@ -452,16 +479,18 @@ const DB = {
     async getActivity() {
         if (this.isDemo) return { data: [] };
         try {
-            return await this._api('GET', '/api/activity');
+            return await cachedFetch('activity', CACHE_TTL.activity, () => this._api('GET', '/api/activity'));
         } catch { return { data: [] }; }
     },
 
     async getLeaderboard(period = 'alltime') {
-        if (this.isDemo) return { reviewers: [], beers: [], styles: [], popular: [] };
+        if (this.isDemo) return { top_reviewers: [], top_beers: [], top_yg_values: [], most_venues: [] };
         try {
-            const out = await this._api('GET', `/api/leaderboard?period=${encodeURIComponent(period)}`);
-            return out || { reviewers: [], beers: [], styles: [], popular: [] };
-        } catch { return { reviewers: [], beers: [], styles: [], popular: [] }; }
+            return await cachedFetch(`leaderboard:${period}`, CACHE_TTL.leaderboard, async () => {
+                const out = await this._api('GET', `/api/leaderboard?period=${encodeURIComponent(period)}`);
+                return out || { top_reviewers: [], top_beers: [], top_yg_values: [], most_venues: [] };
+            });
+        } catch { return { top_reviewers: [], top_beers: [], top_yg_values: [], most_venues: [] }; }
     },
 
     async getBeerOfTheWeek() {
@@ -502,7 +531,59 @@ const DB = {
 
     async getExchange() {
         if (this.isDemo) return { data: [], pagination: { limit: 50, offset: 0, total: 0 } };
-        return await this._api('GET', '/api/exchange?limit=100&offset=0');
+        return await cachedFetch('exchange:rates', CACHE_TTL.exchange, () => this._api('GET', '/api/exchange?limit=100&offset=0'));
+    },
+
+    async getBeerDetail(beerName) {
+        if (this.isDemo) return null;
+        try {
+            return await cachedFetch(`beer:${encodeURIComponent(beerName)}`, CACHE_TTL.beerSearch, () => this._api('GET', `/api/beers/${encodeURIComponent(beerName)}`));
+        } catch { return null; }
+    },
+
+    async getBeerCrossRates(beerName) {
+        if (this.isDemo) return null;
+        try {
+            return await this._api('GET', `/api/exchange/${encodeURIComponent(beerName)}`);
+        } catch { return null; }
+    },
+
+    async getRatingCheers(ratingId) {
+        if (this.isDemo) return { count: 0, users: [] };
+        try {
+            const out = await this._api('GET', `/api/ratings/${encodeURIComponent(ratingId)}/cheers`);
+            return { count: out.count ?? 0, users: out.users ?? [] };
+        } catch { return { count: 0, users: [] }; }
+    },
+
+    async toggleCheers(ratingId) {
+        if (this.isDemo) {
+            const key = 'beerbook_demo_cheers';
+            const raw = Utils.storage.get(key) || {};
+            const entry = raw[ratingId] || { count: 0, userIds: [] };
+            const uid = this.currentUser && this.currentUser.id;
+            const userIds = entry.userIds || [];
+            const idx = userIds.indexOf(uid);
+            if (idx >= 0) {
+                userIds.splice(idx, 1);
+                entry.count = Math.max(0, (entry.count || 1) - 1);
+                entry.userIds = userIds;
+                raw[ratingId] = entry;
+                Utils.storage.set(key, raw);
+                return { action: 'removed', count: entry.count };
+            } else {
+                userIds.push(uid);
+                entry.count = (entry.count || 0) + 1;
+                entry.userIds = userIds;
+                raw[ratingId] = entry;
+                Utils.storage.set(key, raw);
+                return { action: 'added', count: entry.count };
+            }
+        }
+        const out = await this._api('POST', `/api/ratings/${encodeURIComponent(ratingId)}/cheers`);
+        invalidateCache('activity');
+        invalidateCache('leaderboard');
+        return out;
     },
 
     async getMap() {
