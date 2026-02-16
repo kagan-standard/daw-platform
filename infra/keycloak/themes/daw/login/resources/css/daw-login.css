@@ -1,4 +1,6 @@
-/* DAW Keycloak Login Theme — matches landing page aesthetic */
+/* DAW Keycloak Login Theme — CSS-only theming for Keycloak 26 */
+
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Outfit:wght@300;400;500;600;700&display=swap');
 
 :root {
   --daw-bg: #0b0e1a;
@@ -16,8 +18,9 @@
   --daw-success: #2ecc71;
 }
 
-/* Base */
-.daw-login-body {
+/* Base body/html styling - DAW dark theme */
+html,
+body {
   margin: 0;
   padding: 0;
   min-height: 100vh;
@@ -28,493 +31,447 @@
   position: relative;
 }
 
-#stars-canvas {
+/* Night sky background with stars effect */
+body::before {
+  content: '';
   position: fixed;
   inset: 0;
   z-index: 0;
+  background: 
+    radial-gradient(2px 2px at 20% 30%, rgba(255,255,240,0.8), transparent),
+    radial-gradient(1px 1px at 50% 50%, rgba(255,255,240,0.6), transparent),
+    radial-gradient(1.5px 1.5px at 80% 70%, rgba(255,255,240,0.7), transparent),
+    radial-gradient(1px 1px at 40% 60%, rgba(255,255,240,0.5), transparent),
+    radial-gradient(2px 2px at 90% 20%, rgba(255,255,240,0.6), transparent),
+    radial-gradient(1px 1px at 10% 80%, rgba(255,255,240,0.5), transparent),
+    radial-gradient(1.5px 1.5px at 60% 10%, rgba(255,255,240,0.7), transparent),
+    linear-gradient(180deg, #0b0e1a 0%, #080a14 100%);
+  background-size: 200% 200%, 150% 150%, 180% 180%, 120% 120%, 160% 160%, 140% 140%, 170% 170%, 100% 100%;
+  animation: stars 20s ease-in-out infinite;
   pointer-events: none;
 }
 
-.daw-cityscape {
+@keyframes stars {
+  0%, 100% { opacity: 0.8; }
+  50% { opacity: 1; }
+}
+
+/* Cityscape silhouette at bottom */
+body::after {
+  content: '';
   position: fixed;
   bottom: 0;
   left: 0;
   right: 0;
   height: 400px;
   z-index: 1;
+  background-image: 
+    linear-gradient(to top, #0e1225 0%, transparent 100%),
+    url("data:image/svg+xml,%3Csvg viewBox='0 0 1440 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill='%230e1225' opacity='0.5' d='M0,400 L0,280 L30,280 L30,220 L50,220 L50,180 L65,180 L65,220 L90,220 L90,160 L110,160 L110,120 L125,120 L125,100 L140,100 L140,140 L160,140 L160,200 L190,200 L190,150 L210,150 L210,100 L225,100 L225,70 L240,70 L240,60 L255,60 L255,100 L280,100 L280,160 L310,160 L310,220 L340,220 L340,180 L360,180 L360,130 L375,130 L375,90 L390,90 L390,70 L405,70 L405,110 L430,110 L430,170 L460,170 L460,230 L490,230 L490,190 L510,190 L510,140 L525,140 L525,100 L540,100 L540,80 L555,80 L555,60 L570,60 L570,100 L590,100 L590,150 L620,150 L620,210 L650,210 L650,260 L680,260 L680,200 L700,200 L700,150 L715,150 L715,110 L730,110 L730,80 L745,80 L745,50 L760,50 L760,90 L780,90 L780,140 L810,140 L810,200 L840,200 L840,250 L870,250 L870,210 L890,210 L890,160 L910,160 L910,120 L925,120 L925,80 L940,80 L940,110 L960,110 L960,160 L990,160 L990,220 L1020,220 L1020,260 L1050,260 L1050,200 L1070,200 L1070,150 L1085,150 L1085,110 L1100,110 L1100,80 L1115,80 L1115,55 L1130,55 L1130,90 L1150,90 L1150,140 L1180,140 L1180,200 L1210,200 L1210,250 L1240,250 L1240,190 L1260,190 L1260,140 L1275,140 L1275,100 L1290,100 L1290,70 L1305,70 L1305,110 L1330,110 L1330,170 L1360,170 L1360,230 L1390,230 L1390,180 L1410,180 L1410,140 L1430,140 L1430,200 L1440,200 L1440,400 Z'/%3E%3C/svg%3E");
+  background-size: 100% 100%, 100% 100%;
+  background-position: bottom, bottom;
+  background-repeat: no-repeat;
   pointer-events: none;
 }
 
-.daw-cityscape svg {
-  width: 100%;
-  height: 100%;
-}
-
-.daw-page {
+/* Main Keycloak login container */
+.login-pf body,
+#kc-container,
+.kc-login-container,
+[class*="kc-container"] {
   position: relative;
   z-index: 2;
+  min-height: 100vh;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-height: 100vh;
-  padding: 20px 20px 120px;
+  padding: 20px;
+  padding-bottom: 120px;
 }
 
-/* Logo area */
-.daw-logo-area {
-  margin-bottom: 24px;
-  text-align: center;
-}
-
-.daw-logo-img {
-  width: 100px;
-  height: 100px;
-  border-radius: 50%;
-  border: 2px solid var(--daw-gold);
-  box-shadow: 0 0 30px var(--daw-glow);
-  object-fit: cover;
-}
-
-.daw-site-title {
-  font-family: 'Bebas Neue', sans-serif;
-  font-size: 32px;
-  letter-spacing: 4px;
-  color: var(--daw-gold);
-  margin: 12px 0 0;
-  text-shadow: 0 0 20px var(--daw-glow);
-  font-weight: 400;
-}
-
-.daw-tagline {
-  font-size: 14px;
-  color: var(--daw-text-dim);
-  margin: 6px 0 0;
-  letter-spacing: 0.5px;
-}
-
-/* Card + tabs */
-.daw-card-wrapper {
-  width: 440px;
-  max-width: 100%;
-}
-
-.daw-tabs {
-  display: flex;
-  gap: 0;
-  margin-bottom: 0;
-  border-bottom: 1px solid var(--daw-input-border);
-  background: var(--daw-bg-card-alt);
-  border-radius: 16px 16px 0 0;
-  overflow: hidden;
-}
-
-.daw-tab {
-  flex: 1;
-  padding: 14px 20px;
-  text-align: center;
-  font-family: 'Bebas Neue', sans-serif;
-  font-size: 18px;
-  letter-spacing: 2px;
-  color: var(--daw-text-dim);
-  text-decoration: none;
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  transition: color 0.2s, background 0.2s;
-}
-
-.daw-tab:hover {
-  color: var(--daw-text);
-  background: rgba(245, 183, 49, 0.05);
-}
-
-.daw-tab.daw-tab-active {
-  color: var(--daw-gold);
-  background: var(--daw-bg-card);
-  border-bottom: 2px solid var(--daw-gold);
-}
-
-.daw-card {
-  background: var(--daw-bg-card);
-  border: 1px solid var(--daw-input-border);
-  border-top: none;
-  border-radius: 0 0 16px 16px;
-  padding: 32px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5), 0 0 40px var(--daw-glow);
-}
-
-/* Alerts */
-.daw-alert {
-  padding: 12px 16px;
-  border-radius: 10px;
-  margin-bottom: 20px;
-  font-size: 14px;
-}
-
-.daw-alert-error {
-  background: rgba(231, 76, 60, 0.15);
-  border: 1px solid var(--daw-error);
-  color: #ff6b6b;
-}
-
-.daw-alert-warning {
-  background: rgba(245, 183, 49, 0.1);
-  border: 1px solid var(--daw-gold);
-  color: var(--daw-gold);
-}
-
-.daw-alert-success {
-  background: rgba(46, 204, 113, 0.15);
-  border: 1px solid var(--daw-success);
-  color: var(--daw-success);
-}
-
-.daw-alert-info {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid var(--daw-input-border);
-  color: var(--daw-text);
-}
-
-/* Locale */
-.daw-locale {
-  margin-bottom: 16px;
-  font-size: 13px;
-}
-
-.daw-locale-link {
-  color: var(--daw-text-dim);
-  text-decoration: none;
-  margin-right: 8px;
-}
-
-.daw-locale-link:hover,
-.daw-locale-active {
-  color: var(--daw-gold);
-}
-
-.daw-required-hint {
-  font-size: 12px;
-  color: var(--daw-text-dim);
-  margin-bottom: 12px;
-}
-
-/* Form */
-.daw-form-title {
-  font-family: 'Bebas Neue', sans-serif;
-  font-size: 22px;
-  letter-spacing: 2px;
-  color: var(--daw-gold);
-  margin: 0 0 24px;
-  font-weight: 400;
-}
-
-.daw-form-inner {
-  margin: 0;
-}
-
-.daw-form-group {
-  margin-bottom: 20px;
-}
-
-.daw-label {
-  display: block;
-  font-size: 14px;
-  color: var(--daw-text);
-  margin-bottom: 8px;
-}
-
-.daw-required {
-  color: var(--daw-gold);
-}
-
-.daw-input {
+/* Keycloak card styling */
+.card-pf,
+[class*="kc-card"],
+[class*="kc-content"] {
+  background: var(--daw-bg-card) !important;
+  border: 1px solid var(--daw-input-border) !important;
+  border-radius: 16px !important;
+  padding: 32px !important;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5), 0 0 40px var(--daw-glow) !important;
+  max-width: 440px;
   width: 100%;
-  padding: 12px 14px;
-  font-size: 16px;
-  font-family: 'Outfit', sans-serif;
-  color: var(--daw-text);
-  background: var(--daw-input-bg);
-  border: 1px solid var(--daw-input-border);
-  border-radius: 10px;
-  box-sizing: border-box;
-  transition: border-color 0.2s, box-shadow 0.2s;
+  color: var(--daw-text) !important;
 }
 
-.daw-input:focus {
-  outline: none;
-  border-color: var(--daw-gold);
-  box-shadow: 0 0 0 2px var(--daw-glow);
+/* Keycloak header/title */
+#kc-header,
+#kc-header-wrapper,
+[class*="kc-header"],
+h1#kc-page-title,
+h2#kc-page-title,
+.kc-page-title {
+  font-family: 'Bebas Neue', sans-serif !important;
+  font-size: 32px !important;
+  letter-spacing: 4px !important;
+  color: var(--daw-gold) !important;
+  text-align: center !important;
+  margin: 0 0 12px 0 !important;
+  text-shadow: 0 0 20px var(--daw-glow) !important;
+  font-weight: 400 !important;
 }
 
-.daw-input::placeholder {
-  color: var(--daw-text-dim);
+/* Subtitle */
+#kc-header-wrapper + p,
+.kc-subtitle,
+[class*="kc-subtitle"] {
+  font-size: 14px !important;
+  color: var(--daw-text-dim) !important;
+  text-align: center !important;
+  margin: 0 0 24px 0 !important;
+  letter-spacing: 0.5px !important;
 }
 
-.daw-input-group {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  position: relative;
+/* Form groups */
+.form-group,
+[class*="kcFormGroup"],
+[class*="form-group"] {
+  margin-bottom: 20px !important;
 }
 
-.daw-input-group .daw-input {
-  flex: 1;
-  padding-right: 44px;
+/* Labels */
+label,
+[class*="kcLabel"],
+.form-group label {
+  display: block !important;
+  font-size: 14px !important;
+  color: var(--daw-text) !important;
+  margin-bottom: 8px !important;
+  font-weight: 400 !important;
 }
 
-.daw-password-toggle {
+label .required,
+.required {
+  color: var(--daw-gold) !important;
+}
+
+/* Input fields */
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="tel"],
+input[type="number"],
+textarea,
+select,
+[class*="kcInput"],
+.form-control {
+  width: 100% !important;
+  padding: 12px 14px !important;
+  font-size: 16px !important;
+  font-family: 'Outfit', sans-serif !important;
+  color: var(--daw-text) !important;
+  background: var(--daw-input-bg) !important;
+  border: 1px solid var(--daw-input-border) !important;
+  border-radius: 10px !important;
+  box-sizing: border-box !important;
+  transition: border-color 0.2s, box-shadow 0.2s !important;
+}
+
+input:focus,
+textarea:focus,
+select:focus,
+[class*="kcInput"]:focus {
+  outline: none !important;
+  border-color: var(--daw-gold) !important;
+  box-shadow: 0 0 0 2px var(--daw-glow) !important;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--daw-text-dim) !important;
+}
+
+/* Password visibility toggle */
+[data-password-toggle],
+button[aria-controls] {
   position: absolute;
   right: 10px;
-  background: none;
-  border: none;
-  color: var(--daw-text-dim);
+  background: none !important;
+  border: none !important;
+  color: var(--daw-text-dim) !important;
   cursor: pointer;
   padding: 6px;
 }
 
-.daw-password-toggle:hover {
-  color: var(--daw-gold);
+[data-password-toggle]:hover {
+  color: var(--daw-gold) !important;
 }
 
-.daw-input-error {
-  display: block;
-  font-size: 13px;
-  color: var(--daw-error);
-  margin-top: 6px;
-}
-
-.daw-form-options {
+/* Input wrapper for password fields */
+.input-group,
+[class*="kcInputGroup"] {
+  position: relative;
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 16px;
-  margin-bottom: 20px;
 }
 
-.daw-checkbox {
-  margin: 0;
+.input-group input {
+  padding-right: 44px !important;
 }
 
-.daw-checkbox label {
-  font-size: 14px;
-  color: var(--daw-text-dim);
-  cursor: pointer;
+/* Error messages */
+.alert-error,
+.alert-danger,
+[class*="kcAlertError"],
+[class*="kcInputErrorMessage"],
+[class*="kc-feedback-text"],
+.error {
+  display: block !important;
+  font-size: 13px !important;
+  color: var(--daw-error) !important;
+  margin-top: 6px !important;
+  padding: 8px 12px !important;
+  background: rgba(231, 76, 60, 0.15) !important;
+  border: 1px solid var(--daw-error) !important;
+  border-radius: 10px !important;
 }
 
-.daw-checkbox input {
-  margin-right: 8px;
-  accent-color: var(--daw-gold);
+/* Success messages */
+.alert-success,
+[class*="kcAlertSuccess"] {
+  padding: 12px 16px !important;
+  border-radius: 10px !important;
+  margin-bottom: 20px !important;
+  font-size: 14px !important;
+  background: rgba(46, 204, 113, 0.15) !important;
+  border: 1px solid var(--daw-success) !important;
+  color: var(--daw-success) !important;
 }
 
-.daw-link {
-  color: var(--daw-gold);
-  text-decoration: none;
-  font-size: 14px;
+/* Warning messages */
+.alert-warning,
+[class*="kcAlertWarning"] {
+  padding: 12px 16px !important;
+  border-radius: 10px !important;
+  margin-bottom: 20px !important;
+  font-size: 14px !important;
+  background: rgba(245, 183, 49, 0.1) !important;
+  border: 1px solid var(--daw-gold) !important;
+  color: var(--daw-gold) !important;
 }
 
-.daw-link:hover {
-  text-decoration: underline;
+/* Info messages */
+.alert-info,
+[class*="kcAlertInfo"] {
+  padding: 12px 16px !important;
+  border-radius: 10px !important;
+  margin-bottom: 20px !important;
+  font-size: 14px !important;
+  background: rgba(255, 255, 255, 0.05) !important;
+  border: 1px solid var(--daw-input-border) !important;
+  color: var(--daw-text) !important;
 }
 
-.daw-form-buttons {
-  margin-top: 24px;
+/* Buttons */
+button,
+.btn,
+input[type="submit"],
+[class*="kcButton"],
+[class*="kc-button"] {
+  width: 100% !important;
+  padding: 15px !important;
+  border: none !important;
+  border-radius: 10px !important;
+  font-family: 'Bebas Neue', sans-serif !important;
+  font-size: 20px !important;
+  letter-spacing: 3px !important;
+  cursor: pointer !important;
+  transition: all 0.3s !important;
+  box-sizing: border-box !important;
+  margin-top: 8px !important;
 }
 
-.daw-btn {
-  width: 100%;
-  padding: 15px;
-  border: none;
-  border-radius: 10px;
-  font-family: 'Bebas Neue', sans-serif;
-  font-size: 20px;
-  letter-spacing: 3px;
-  cursor: pointer;
-  transition: all 0.3s;
-  box-sizing: border-box;
+.btn-primary,
+button[type="submit"],
+input[type="submit"],
+[class*="kcButtonPrimary"],
+[class*="kc-button-primary"] {
+  background: linear-gradient(180deg, var(--daw-gold-light) 0%, var(--daw-gold) 100%) !important;
+  color: var(--daw-bg) !important;
 }
 
-.daw-btn-primary {
-  background: linear-gradient(180deg, var(--daw-gold-light) 0%, var(--daw-gold) 100%);
-  color: var(--daw-bg);
+.btn-primary:hover,
+button[type="submit"]:hover,
+input[type="submit"]:hover,
+[class*="kcButtonPrimary"]:hover {
+  background: var(--daw-gold-dim) !important;
+  box-shadow: 0 4px 20px var(--daw-glow) !important;
+  transform: translateY(-1px) !important;
 }
 
-.daw-btn-primary:hover {
-  background: var(--daw-gold-dim);
-  box-shadow: 0 4px 20px var(--daw-glow);
-  transform: translateY(-1px);
+.btn-secondary,
+[class*="kcButtonSecondary"] {
+  background: var(--daw-input-bg) !important;
+  color: var(--daw-text) !important;
+  border: 1px solid var(--daw-input-border) !important;
 }
 
-/* Info (no account / register link) */
-.daw-info {
-  margin-top: 20px;
-  text-align: center;
-  font-size: 14px;
-  color: var(--daw-text-dim);
+.btn-secondary:hover {
+  border-color: var(--daw-gold) !important;
+  box-shadow: 0 0 20px var(--daw-glow) !important;
 }
 
-/* Social / IDP */
-.daw-social {
-  margin-top: 24px;
-  padding-top: 20px;
+/* Links */
+a,
+[class*="kcLink"] {
+  color: var(--daw-gold) !important;
+  text-decoration: none !important;
+  font-size: 14px !important;
 }
 
-.daw-hr {
-  border: none;
-  border-top: 1px solid var(--daw-input-border);
-  margin-bottom: 16px;
+a:hover {
+  text-decoration: underline !important;
 }
 
-.daw-social-title {
-  font-family: 'Bebas Neue', sans-serif;
-  font-size: 16px;
-  letter-spacing: 1px;
-  color: var(--daw-text-dim);
-  margin: 0 0 12px;
-  font-weight: 400;
+/* Checkboxes */
+input[type="checkbox"] {
+  margin-right: 8px !important;
+  accent-color: var(--daw-gold) !important;
+  width: auto !important;
 }
 
-.daw-social-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
+.checkbox label,
+[class*="kcCheckbox"] label {
+  font-size: 14px !important;
+  color: var(--daw-text-dim) !important;
+  cursor: pointer !important;
+  font-weight: normal !important;
 }
 
-.daw-social-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 16px;
-  background: var(--daw-input-bg);
-  border: 1px solid var(--daw-input-border);
-  border-radius: 10px;
-  color: var(--daw-text);
-  text-decoration: none;
-  font-size: 14px;
-  transition: border-color 0.2s, box-shadow 0.2s;
+/* Form options (remember me, forgot password) */
+#kc-form-options,
+[class*="kcFormOptions"],
+.form-options {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  align-items: center !important;
+  gap: 16px !important;
+  margin-bottom: 20px !important;
 }
 
-.daw-social-btn:hover {
-  border-color: var(--daw-gold);
-  box-shadow: 0 0 20px var(--daw-glow);
+/* Info section (registration link) */
+#kc-info,
+#kc-info-wrapper,
+[class*="kcInfo"] {
+  margin-top: 20px !important;
+  text-align: center !important;
+  font-size: 14px !important;
+  color: var(--daw-text-dim) !important;
 }
 
-.daw-social-name {
-  color: inherit;
+/* Social providers */
+#kc-social-providers,
+[class*="kcSocialProviders"] {
+  margin-top: 24px !important;
+  padding-top: 20px !important;
 }
 
-/* Channel pills */
-.daw-channel-pills {
-  margin-top: 32px;
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 10px;
+#kc-social-providers hr,
+[class*="kcSocialProviders"] hr {
+  border: none !important;
+  border-top: 1px solid var(--daw-input-border) !important;
+  margin-bottom: 16px !important;
 }
 
-.daw-pill {
-  font-size: 12px;
-  color: var(--daw-text-dim);
-  padding: 6px 12px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid var(--daw-input-border);
-  border-radius: 20px;
+#kc-social-providers h3,
+[class*="kcSocialProviders"] h3 {
+  font-family: 'Bebas Neue', sans-serif !important;
+  font-size: 16px !important;
+  letter-spacing: 1px !important;
+  color: var(--daw-text-dim) !important;
+  margin: 0 0 12px 0 !important;
+  font-weight: 400 !important;
 }
 
-/* Username display (restart flow) */
-.daw-username-display {
-  font-size: 14px;
-  color: var(--daw-text);
-  margin: 8px 0;
+#kc-social-providers ul,
+[class*="kcSocialProviders"] ul {
+  list-style: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 10px !important;
 }
 
-/* Fallbacks for Keycloak base classes inside our card */
-.daw-card .form-group,
-.daw-card [class*="kcFormGroup"] {
-  margin-bottom: 20px;
+#kc-social-providers li a,
+[class*="kcSocialProviders"] li a {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  padding: 10px 16px !important;
+  background: var(--daw-input-bg) !important;
+  border: 1px solid var(--daw-input-border) !important;
+  border-radius: 10px !important;
+  color: var(--daw-text) !important;
+  text-decoration: none !important;
+  font-size: 14px !important;
+  transition: border-color 0.2s, box-shadow 0.2s !important;
 }
 
-.daw-card .form-group label,
-.daw-card [class*="kcLabel"] {
-  display: block;
-  font-size: 14px;
-  color: var(--daw-text);
-  margin-bottom: 8px;
+#kc-social-providers li a:hover {
+  border-color: var(--daw-gold) !important;
+  box-shadow: 0 0 20px var(--daw-glow) !important;
 }
 
-.daw-card input[type="text"],
-.daw-card input[type="email"],
-.daw-card input[type="password"],
-.daw-card [class*="kcInput"] {
-  width: 100%;
-  padding: 12px 14px;
-  font-size: 16px;
-  color: var(--daw-text);
-  background: var(--daw-input-bg);
-  border: 1px solid var(--daw-input-border);
-  border-radius: 10px;
-  box-sizing: border-box;
+/* Locale selector */
+#kc-locale,
+[class*="kcLocale"] {
+  margin-bottom: 16px !important;
+  font-size: 13px !important;
 }
 
-.daw-card input:focus {
-  outline: none;
-  border-color: var(--daw-gold);
-  box-shadow: 0 0 0 2px var(--daw-glow);
+#kc-locale a,
+[class*="kcLocale"] a {
+  color: var(--daw-text-dim) !important;
+  text-decoration: none !important;
+  margin-right: 8px !important;
 }
 
-.daw-card [class*="kcButtonPrimary"],
-.daw-card input[type="submit"] {
-  width: 100%;
-  padding: 15px;
-  border: none;
-  border-radius: 10px;
-  font-family: 'Bebas Neue', sans-serif;
-  font-size: 20px;
-  letter-spacing: 3px;
-  cursor: pointer;
-  background: linear-gradient(180deg, var(--daw-gold-light) 0%, var(--daw-gold) 100%);
-  color: var(--daw-bg);
-  margin-top: 8px;
+#kc-locale a:hover,
+#kc-locale a.active,
+[class*="kcLocale"] a:hover,
+[class*="kcLocale"] a.active {
+  color: var(--daw-gold) !important;
 }
 
-.daw-card [class*="kcInputErrorMessage"] {
-  font-size: 13px;
-  color: var(--daw-error);
-  margin-top: 6px;
+/* Required fields hint */
+#kc-required,
+[class*="kcRequired"] {
+  font-size: 12px !important;
+  color: var(--daw-text-dim) !important;
+  margin-bottom: 12px !important;
 }
 
-/* Mobile (360px+) */
+/* Hide default Keycloak branding if needed */
+#kc-logo,
+#kc-logo-wrapper {
+  display: none !important;
+}
+
+/* Mobile responsiveness */
 @media (max-width: 480px) {
-  .daw-card-wrapper {
-    width: 100%;
+  .card-pf,
+  [class*="kc-card"] {
+    padding: 24px 20px !important;
+    margin: 10px !important;
   }
 
-  .daw-card {
-    padding: 24px 20px;
+  h1#kc-page-title,
+  h2#kc-page-title {
+    font-size: 26px !important;
   }
 
-  .daw-site-title {
-    font-size: 26px;
-  }
-
-  .daw-cityscape {
+  body::after {
     height: 260px;
-  }
-
-  .daw-page {
-    padding-bottom: 100px;
-  }
-}
-
-@media (min-width: 360px) and (max-width: 480px) {
-  .daw-tabs {
-    border-radius: 12px 12px 0 0;
-  }
-
-  .daw-card {
-    border-radius: 0 0 12px 12px;
   }
 }
