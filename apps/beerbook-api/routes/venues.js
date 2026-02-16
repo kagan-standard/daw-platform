@@ -120,7 +120,7 @@ module.exports = function (opts) {
     const b = req.body || {};
     const beer_name = b.beer_name || b.beerName;
     const price_cents = b.price_cents ?? b.priceCents;
-    if (!beer_name || price_cents == null || price_cents < 1) {
+    if (!beer_name || price_cents == null || isNaN(Number(price_cents)) || Number(price_cents) < 1) {
       return res.status(400).json({ error: 'beer_name and price_cents (positive) required' });
     }
     const record = {
