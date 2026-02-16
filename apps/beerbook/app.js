@@ -268,8 +268,12 @@ const App = {
             });
         }
 
-        // Location (Task 4)
-        document.getElementById('btn-add-location')?.addEventListener('click', () => this.captureLocation());
+        // Location (Task 4) — preventDefault so form/other handlers don't consume the click
+        document.getElementById('btn-add-location')?.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.captureLocation();
+        });
         document.getElementById('location-chip-remove')?.addEventListener('click', () => this.clearLocation());
         document.getElementById('location-manual')?.addEventListener('blur', () => {
             const v = document.getElementById('location-manual').value.trim();
@@ -289,9 +293,9 @@ const App = {
             document.getElementById('price-log-toggle').setAttribute('aria-expanded', !expanded);
         });
 
-        // Photo (Task 5)
-        document.getElementById('btn-add-photo')?.addEventListener('click', () => document.getElementById('photo-input').click());
-        document.getElementById('photo-input')?.addEventListener('change', (e) => this.handlePhotoSelect(e));
+        // Photo (Task 5) — label triggers file input natively; we still need change handler
+        const photoInput = document.getElementById('photo-input');
+        if (photoInput) photoInput.addEventListener('change', (e) => this.handlePhotoSelect(e));
 
         // Delete modal (Task 12)
         document.getElementById('delete-modal-cancel')?.addEventListener('click', () => this.closeDeleteModal());
@@ -355,7 +359,9 @@ const App = {
             App.toast('Geolocation not supported', 'error');
             return;
         }
-        document.getElementById('btn-add-location').disabled = true;
+        const btn = document.getElementById('btn-add-location');
+        if (btn) btn.disabled = true;
+        const options = { enableHighAccuracy: false, timeout: 15000, maximumAge: 0 };
         navigator.geolocation.getCurrentPosition(
             async (pos) => {
                 const lat = pos.coords.latitude;
@@ -379,12 +385,15 @@ const App = {
                     document.getElementById('location-chip').style.display = 'inline-flex';
                 }
                 this.togglePriceSection();
-                document.getElementById('btn-add-location').disabled = false;
+                if (btn) btn.disabled = false;
             },
-            () => {
-                document.getElementById('btn-add-location').disabled = false;
-                document.getElementById('location-manual').focus();
-            }
+            (err) => {
+                if (btn) btn.disabled = false;
+                document.getElementById('location-manual')?.focus();
+                const msg = err.code === 1 ? 'Location permission denied' : err.code === 2 ? 'Location unavailable' : err.code === 3 ? 'Location request timed out' : 'Could not get location';
+                App.toast(msg + '. You can type a location manually.', 'info');
+            },
+            options
         );
     },
 

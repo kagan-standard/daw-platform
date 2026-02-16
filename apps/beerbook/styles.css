@@ -1021,8 +1021,20 @@ input, select, textarea, button {
 
 .checkbox-label input { width: auto; }
 
-/* Photo */
-.photo-group .btn { margin-bottom: var(--space-sm); }
+/* Photo — hide file input but keep it activatable by the label */
+.photo-input-hidden {
+    position: absolute;
+    width: 0;
+    height: 0;
+    opacity: 0;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    pointer-events: none;
+}
+
+.photo-group .btn,
+.photo-group label.btn { margin-bottom: var(--space-sm); }
+.photo-group label.btn { cursor: pointer; display: inline-flex; }
 .photo-preview {
     margin-top: var(--space-sm);
 }
