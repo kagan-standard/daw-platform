@@ -348,7 +348,7 @@ const App = {
             '3-4': 'Solid beer 👍',
             '5-6': 'Above average 🍺',
             '7-8': 'Premium territory 🔥',
-            '9-10': 'Elite. This beer is special 🏆',
+            '9-10': 'This beer is Elite 🏆',
             '11-12': 'God tier. 🐐'
         };
         const getHint = (v) => {
