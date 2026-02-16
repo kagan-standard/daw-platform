@@ -979,12 +979,12 @@ input, select, textarea, button {
 
 .yg-slider-overlay::-webkit-slider-thumb {
     -webkit-appearance: none;
-    width: 32px;
-    height: 40px;
-    border-radius: 6px;
-    background: var(--amber-400);
+    width: 4px;
+    height: 48px;
+    border-radius: 2px;
+    background: var(--amber-300);
     cursor: grab;
-    box-shadow: var(--shadow-md);
+    box-shadow: 0 0 8px rgba(230, 168, 23, 0.4);
     position: relative;
     z-index: 2;
 }
@@ -1000,13 +1000,14 @@ input, select, textarea, button {
 }
 
 .yg-slider-overlay::-moz-range-thumb {
-    width: 32px;
-    height: 40px;
-    border-radius: 6px;
-    background: var(--amber-400);
+    width: 4px;
+    height: 48px;
+    border-radius: 2px;
+    background: var(--amber-300);
     cursor: grab;
+    cursor: ew-resize;
     border: none;
-    box-shadow: var(--shadow-md);
+    box-shadow: 0 0 8px rgba(230, 168, 23, 0.4);
     position: relative;
     z-index: 2;
 }
