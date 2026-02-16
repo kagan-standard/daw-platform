@@ -2,6 +2,7 @@
   "id" : "aeafec14-e91e-4d84-bbbc-ead25e5c26a1",
   "realm" : "daw",
   "displayName" : "Drinks After Work",
+  "loginTheme" : "daw",
   "notBefore" : 0,
   "defaultSignatureAlgorithm" : "RS256",
   "revokeRefreshToken" : false,

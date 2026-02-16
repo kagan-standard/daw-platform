@@ -8,12 +8,8 @@ services:
     image: quay.io/keycloak/keycloak:26.1
     container_name: keycloak
     restart: unless-stopped
-    command: start
+    command: start --proxy-headers=xforwarded --hostname=https://auth.drinksafterwork.net --http-enabled=true --hostname-strict=false
     environment:
-      KC_PROXY: edge
-      KC_HOSTNAME: auth.drinksafterwork.net
-      KC_HOSTNAME_STRICT: "false"
-      KC_HTTP_ENABLED: "true"
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
       KC_DB_USERNAME: keycloak
