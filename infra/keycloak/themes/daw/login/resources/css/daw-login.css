@@ -1,0 +1,520 @@
+/* DAW Keycloak Login Theme — matches landing page aesthetic */
+
+:root {
+  --daw-bg: #0b0e1a;
+  --daw-bg-card: #111627;
+  --daw-bg-card-alt: #0f1322;
+  --daw-gold: #f5b731;
+  --daw-gold-dim: #c4922a;
+  --daw-gold-light: #fdd868;
+  --daw-glow: rgba(245, 183, 49, 0.15);
+  --daw-text: #e8e6e1;
+  --daw-text-dim: #8a8b94;
+  --daw-input-bg: #181d30;
+  --daw-input-border: #2a2f45;
+  --daw-error: #e74c3c;
+  --daw-success: #2ecc71;
+}
+
+/* Base */
+.daw-login-body {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  font-family: 'Outfit', sans-serif;
+  background: var(--daw-bg);
+  color: var(--daw-text);
+  overflow-x: hidden;
+  position: relative;
+}
+
+#stars-canvas {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.daw-cityscape {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 400px;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.daw-cityscape svg {
+  width: 100%;
+  height: 100%;
+}
+
+.daw-page {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 20px 20px 120px;
+}
+
+/* Logo area */
+.daw-logo-area {
+  margin-bottom: 24px;
+  text-align: center;
+}
+
+.daw-logo-img {
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  border: 2px solid var(--daw-gold);
+  box-shadow: 0 0 30px var(--daw-glow);
+  object-fit: cover;
+}
+
+.daw-site-title {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 32px;
+  letter-spacing: 4px;
+  color: var(--daw-gold);
+  margin: 12px 0 0;
+  text-shadow: 0 0 20px var(--daw-glow);
+  font-weight: 400;
+}
+
+.daw-tagline {
+  font-size: 14px;
+  color: var(--daw-text-dim);
+  margin: 6px 0 0;
+  letter-spacing: 0.5px;
+}
+
+/* Card + tabs */
+.daw-card-wrapper {
+  width: 440px;
+  max-width: 100%;
+}
+
+.daw-tabs {
+  display: flex;
+  gap: 0;
+  margin-bottom: 0;
+  border-bottom: 1px solid var(--daw-input-border);
+  background: var(--daw-bg-card-alt);
+  border-radius: 16px 16px 0 0;
+  overflow: hidden;
+}
+
+.daw-tab {
+  flex: 1;
+  padding: 14px 20px;
+  text-align: center;
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 18px;
+  letter-spacing: 2px;
+  color: var(--daw-text-dim);
+  text-decoration: none;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: color 0.2s, background 0.2s;
+}
+
+.daw-tab:hover {
+  color: var(--daw-text);
+  background: rgba(245, 183, 49, 0.05);
+}
+
+.daw-tab.daw-tab-active {
+  color: var(--daw-gold);
+  background: var(--daw-bg-card);
+  border-bottom: 2px solid var(--daw-gold);
+}
+
+.daw-card {
+  background: var(--daw-bg-card);
+  border: 1px solid var(--daw-input-border);
+  border-top: none;
+  border-radius: 0 0 16px 16px;
+  padding: 32px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5), 0 0 40px var(--daw-glow);
+}
+
+/* Alerts */
+.daw-alert {
+  padding: 12px 16px;
+  border-radius: 10px;
+  margin-bottom: 20px;
+  font-size: 14px;
+}
+
+.daw-alert-error {
+  background: rgba(231, 76, 60, 0.15);
+  border: 1px solid var(--daw-error);
+  color: #ff6b6b;
+}
+
+.daw-alert-warning {
+  background: rgba(245, 183, 49, 0.1);
+  border: 1px solid var(--daw-gold);
+  color: var(--daw-gold);
+}
+
+.daw-alert-success {
+  background: rgba(46, 204, 113, 0.15);
+  border: 1px solid var(--daw-success);
+  color: var(--daw-success);
+}
+
+.daw-alert-info {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--daw-input-border);
+  color: var(--daw-text);
+}
+
+/* Locale */
+.daw-locale {
+  margin-bottom: 16px;
+  font-size: 13px;
+}
+
+.daw-locale-link {
+  color: var(--daw-text-dim);
+  text-decoration: none;
+  margin-right: 8px;
+}
+
+.daw-locale-link:hover,
+.daw-locale-active {
+  color: var(--daw-gold);
+}
+
+.daw-required-hint {
+  font-size: 12px;
+  color: var(--daw-text-dim);
+  margin-bottom: 12px;
+}
+
+/* Form */
+.daw-form-title {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 22px;
+  letter-spacing: 2px;
+  color: var(--daw-gold);
+  margin: 0 0 24px;
+  font-weight: 400;
+}
+
+.daw-form-inner {
+  margin: 0;
+}
+
+.daw-form-group {
+  margin-bottom: 20px;
+}
+
+.daw-label {
+  display: block;
+  font-size: 14px;
+  color: var(--daw-text);
+  margin-bottom: 8px;
+}
+
+.daw-required {
+  color: var(--daw-gold);
+}
+
+.daw-input {
+  width: 100%;
+  padding: 12px 14px;
+  font-size: 16px;
+  font-family: 'Outfit', sans-serif;
+  color: var(--daw-text);
+  background: var(--daw-input-bg);
+  border: 1px solid var(--daw-input-border);
+  border-radius: 10px;
+  box-sizing: border-box;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.daw-input:focus {
+  outline: none;
+  border-color: var(--daw-gold);
+  box-shadow: 0 0 0 2px var(--daw-glow);
+}
+
+.daw-input::placeholder {
+  color: var(--daw-text-dim);
+}
+
+.daw-input-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+}
+
+.daw-input-group .daw-input {
+  flex: 1;
+  padding-right: 44px;
+}
+
+.daw-password-toggle {
+  position: absolute;
+  right: 10px;
+  background: none;
+  border: none;
+  color: var(--daw-text-dim);
+  cursor: pointer;
+  padding: 6px;
+}
+
+.daw-password-toggle:hover {
+  color: var(--daw-gold);
+}
+
+.daw-input-error {
+  display: block;
+  font-size: 13px;
+  color: var(--daw-error);
+  margin-top: 6px;
+}
+
+.daw-form-options {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.daw-checkbox {
+  margin: 0;
+}
+
+.daw-checkbox label {
+  font-size: 14px;
+  color: var(--daw-text-dim);
+  cursor: pointer;
+}
+
+.daw-checkbox input {
+  margin-right: 8px;
+  accent-color: var(--daw-gold);
+}
+
+.daw-link {
+  color: var(--daw-gold);
+  text-decoration: none;
+  font-size: 14px;
+}
+
+.daw-link:hover {
+  text-decoration: underline;
+}
+
+.daw-form-buttons {
+  margin-top: 24px;
+}
+
+.daw-btn {
+  width: 100%;
+  padding: 15px;
+  border: none;
+  border-radius: 10px;
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 20px;
+  letter-spacing: 3px;
+  cursor: pointer;
+  transition: all 0.3s;
+  box-sizing: border-box;
+}
+
+.daw-btn-primary {
+  background: linear-gradient(180deg, var(--daw-gold-light) 0%, var(--daw-gold) 100%);
+  color: var(--daw-bg);
+}
+
+.daw-btn-primary:hover {
+  background: var(--daw-gold-dim);
+  box-shadow: 0 4px 20px var(--daw-glow);
+  transform: translateY(-1px);
+}
+
+/* Info (no account / register link) */
+.daw-info {
+  margin-top: 20px;
+  text-align: center;
+  font-size: 14px;
+  color: var(--daw-text-dim);
+}
+
+/* Social / IDP */
+.daw-social {
+  margin-top: 24px;
+  padding-top: 20px;
+}
+
+.daw-hr {
+  border: none;
+  border-top: 1px solid var(--daw-input-border);
+  margin-bottom: 16px;
+}
+
+.daw-social-title {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 16px;
+  letter-spacing: 1px;
+  color: var(--daw-text-dim);
+  margin: 0 0 12px;
+  font-weight: 400;
+}
+
+.daw-social-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.daw-social-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: var(--daw-input-bg);
+  border: 1px solid var(--daw-input-border);
+  border-radius: 10px;
+  color: var(--daw-text);
+  text-decoration: none;
+  font-size: 14px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.daw-social-btn:hover {
+  border-color: var(--daw-gold);
+  box-shadow: 0 0 20px var(--daw-glow);
+}
+
+.daw-social-name {
+  color: inherit;
+}
+
+/* Channel pills */
+.daw-channel-pills {
+  margin-top: 32px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+}
+
+.daw-pill {
+  font-size: 12px;
+  color: var(--daw-text-dim);
+  padding: 6px 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--daw-input-border);
+  border-radius: 20px;
+}
+
+/* Username display (restart flow) */
+.daw-username-display {
+  font-size: 14px;
+  color: var(--daw-text);
+  margin: 8px 0;
+}
+
+/* Fallbacks for Keycloak base classes inside our card */
+.daw-card .form-group,
+.daw-card [class*="kcFormGroup"] {
+  margin-bottom: 20px;
+}
+
+.daw-card .form-group label,
+.daw-card [class*="kcLabel"] {
+  display: block;
+  font-size: 14px;
+  color: var(--daw-text);
+  margin-bottom: 8px;
+}
+
+.daw-card input[type="text"],
+.daw-card input[type="email"],
+.daw-card input[type="password"],
+.daw-card [class*="kcInput"] {
+  width: 100%;
+  padding: 12px 14px;
+  font-size: 16px;
+  color: var(--daw-text);
+  background: var(--daw-input-bg);
+  border: 1px solid var(--daw-input-border);
+  border-radius: 10px;
+  box-sizing: border-box;
+}
+
+.daw-card input:focus {
+  outline: none;
+  border-color: var(--daw-gold);
+  box-shadow: 0 0 0 2px var(--daw-glow);
+}
+
+.daw-card [class*="kcButtonPrimary"],
+.daw-card input[type="submit"] {
+  width: 100%;
+  padding: 15px;
+  border: none;
+  border-radius: 10px;
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 20px;
+  letter-spacing: 3px;
+  cursor: pointer;
+  background: linear-gradient(180deg, var(--daw-gold-light) 0%, var(--daw-gold) 100%);
+  color: var(--daw-bg);
+  margin-top: 8px;
+}
+
+.daw-card [class*="kcInputErrorMessage"] {
+  font-size: 13px;
+  color: var(--daw-error);
+  margin-top: 6px;
+}
+
+/* Mobile (360px+) */
+@media (max-width: 480px) {
+  .daw-card-wrapper {
+    width: 100%;
+  }
+
+  .daw-card {
+    padding: 24px 20px;
+  }
+
+  .daw-site-title {
+    font-size: 26px;
+  }
+
+  .daw-cityscape {
+    height: 260px;
+  }
+
+  .daw-page {
+    padding-bottom: 100px;
+  }
+}
+
+@media (min-width: 360px) and (max-width: 480px) {
+  .daw-tabs {
+    border-radius: 12px 12px 0 0;
+  }
+
+  .daw-card {
+    border-radius: 0 0 12px 12px;
+  }
+}
