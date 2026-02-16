@@ -146,9 +146,22 @@ const App = {
             popup.setAttribute('aria-hidden', 'false');
             popup.classList.add('visible');
             const rect = el.getBoundingClientRect();
-            popup.style.left = `${rect.left + rect.width / 2}px`;
+            const centerX = rect.left + rect.width / 2;
+            const padding = 8;
+            popup.style.left = `${centerX}px`;
             popup.style.top = `${rect.top}px`;
             popup.style.transform = 'translate(-50%, -100%) translateY(-8px)';
+            const w = popup.offsetWidth;
+            const h = popup.offsetHeight;
+            let left = centerX;
+            if (left - w / 2 < padding) left = padding + w / 2;
+            if (left + w / 2 > window.innerWidth - padding) left = window.innerWidth - padding - w / 2;
+            popup.style.left = `${left}px`;
+            const topEdgeAbove = rect.top - h - padding;
+            if (topEdgeAbove < padding) {
+                popup.style.top = `${rect.bottom}px`;
+                popup.style.transform = `translate(-50%, 0) translateY(${padding}px)`;
+            }
         };
         const hide = () => {
             if (hideTimer) clearTimeout(hideTimer);
