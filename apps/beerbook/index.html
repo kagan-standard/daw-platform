@@ -370,18 +370,20 @@
                 </div>
 
                 <div id="price-log-section" class="price-log-section" style="display:none;">
-                    <button type="button" class="price-log-toggle" id="price-log-toggle" aria-expanded="false">💰 Log a Price</button>
+                    <button type="button" class="price-log-toggle" id="price-log-toggle" aria-expanded="false">
+                        <span class="price-log-toggle-text">💰 Log a Price</span>
+                        <span class="price-log-chevron price-log-chevron-down" aria-hidden="true">▾</span>
+                        <span class="price-log-chevron price-log-chevron-up" aria-hidden="true">▴</span>
+                    </button>
                     <div class="price-log-fields" id="price-log-fields">
-                        <div class="form-row">
-                            <div class="form-group flex-1">
-                                <label for="price-amount">Price ($)</label>
-                                <input type="text" id="price-amount" placeholder="e.g. 6.50" inputmode="decimal">
-                            </div>
-                            <div class="form-group flex-1 price-happy">
-                                <label class="checkbox-label">
-                                    <input type="checkbox" id="price-happy-hour"> Happy Hour?
-                                </label>
-                            </div>
+                        <div class="price-log-inline">
+                            <input type="text" id="price-amount" class="price-input-compact" placeholder="$6.50" inputmode="decimal" aria-label="Price">
+                            <label class="checkbox-label happy-hour-label">
+                                <input type="checkbox" id="price-happy-hour" class="happy-hour-checkbox">
+                                <span class="toggle-pill" aria-hidden="true"><span class="toggle-pill-thumb"></span></span>
+                                <span class="toggle-pill-on-label">HH</span>
+                                <span class="happy-hour-text">Happy Hour?</span>
+                            </label>
                         </div>
                     </div>
                 </div>

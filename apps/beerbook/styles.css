@@ -1085,20 +1085,143 @@ input, select, textarea, button {
 
 .location-chip-remove:hover { color: var(--error); }
 
-/* Price log */
-.price-log-section { margin-bottom: var(--space-lg); }
+/* Price log — compact, collapsed by default; optional bonus section */
+.price-log-section {
+    margin-bottom: var(--space-md);
+    max-width: 100%;
+}
+
+/* Single-line collapsed toggle: subtle expandable link, not a section header */
 .price-log-toggle {
     background: none;
     border: none;
-    color: var(--amber-400);
-    font-size: 0.9rem;
-    font-weight: 600;
+    color: var(--dark-500);
+    font-size: 0.875rem;
+    font-weight: 400;
     cursor: pointer;
-    padding: var(--space-sm) 0;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-xs);
+    transition: color 0.2s var(--ease-out);
 }
 
-.price-log-toggle:hover { color: var(--amber-300); }
-.price-log-fields { margin-top: var(--space-md); padding-left: 0; }
+.price-log-toggle:hover { color: var(--amber-400); }
+
+.price-log-chevron {
+    font-size: 0.75rem;
+    color: var(--dark-500);
+    transition: color 0.2s var(--ease-out);
+}
+
+.price-log-toggle:hover .price-log-chevron { color: var(--amber-500); }
+
+.price-log-chevron-up { display: none; }
+.price-log-chevron-down { display: inline; }
+.price-log-toggle[aria-expanded="true"] .price-log-chevron-down { display: none; }
+.price-log-toggle[aria-expanded="true"] .price-log-chevron-up { display: inline; }
+
+/* Expanded: compact inline row — price + happy hour on same row */
+.price-log-fields {
+    margin-top: var(--space-sm);
+    padding-left: 0;
+    display: none;
+}
+
+.price-log-inline {
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+    flex-wrap: wrap;
+}
+
+.price-input-compact {
+    width: 120px;
+    max-width: 100%;
+    padding: var(--space-sm) var(--space-md);
+    font-size: 0.9rem;
+    background: var(--dark-800);
+    border: 1px solid var(--dark-600);
+    border-radius: var(--radius-sm);
+    color: var(--foam-cream);
+}
+
+.price-input-compact::placeholder { color: var(--dark-500); }
+.price-input-compact:focus {
+    outline: none;
+    border-color: var(--amber-400);
+}
+
+/* Happy Hour: custom pill toggle (iOS-style), native checkbox hidden */
+.happy-hour-label {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-sm);
+    color: var(--foam-cream);
+    font-size: 0.875rem;
+    cursor: pointer;
+    user-select: none;
+    position: relative;
+}
+
+.happy-hour-checkbox {
+    position: absolute;
+    opacity: 0;
+    width: 40px;
+    height: 22px;
+    left: 0;
+    top: 50%;
+    margin: 0;
+    cursor: pointer;
+    z-index: 1;
+    transform: translateY(-50%);
+}
+
+.toggle-pill {
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+    width: 40px;
+    height: 22px;
+    border-radius: 11px;
+    background: var(--dark-600);
+    position: relative;
+    transition: background 0.2s var(--ease-out);
+}
+
+.toggle-pill-thumb {
+    position: absolute;
+    left: 2px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--foam-cream);
+    box-shadow: var(--shadow-sm);
+    transition: transform 0.2s var(--ease-out);
+}
+
+.happy-hour-checkbox:checked ~ .toggle-pill {
+    background: var(--amber-400);
+}
+
+.happy-hour-checkbox:checked ~ .toggle-pill .toggle-pill-thumb {
+    transform: translate(18px, -50%);
+}
+
+.toggle-pill-on-label {
+    display: none;
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--amber-800);
+    margin-left: -2px;
+}
+
+.happy-hour-checkbox:checked ~ .toggle-pill-on-label {
+    display: inline;
+}
+
 .checkbox-label {
     display: flex;
     align-items: center;
