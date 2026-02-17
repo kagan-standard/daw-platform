@@ -110,9 +110,36 @@ const DB = {
     async _api(method, path, opts = {}) {
         const url = `${this.apiBaseUrl}${path}`;
         const headers = { 'Content-Type': 'application/json', ...opts.headers };
+        
+        // Check token expiry BEFORE making the request (with 60s buffer)
+        let tokens = Utils.storage.get('oidc_tokens');
+        if (tokens?.expires_at && Date.now() > tokens.expires_at - 60000) {
+            await this._refreshToken();
+            tokens = Utils.storage.get('oidc_tokens'); // Get fresh tokens after refresh
+        }
+        
         const token = this._getAccessToken();
         if (token) headers['Authorization'] = `Bearer ${token}`;
-        const res = await fetch(url, { method, headers, ...opts });
+        
+        let res = await fetch(url, { method, headers, ...opts });
+        
+        // If 401, try refreshing token once and retry (only retry once to avoid infinite loops)
+        if (res.status === 401 && tokens?.refresh_token) {
+            const refreshed = await this._refreshToken();
+            if (refreshed) {
+                const newToken = this._getAccessToken();
+                if (newToken) headers['Authorization'] = `Bearer ${newToken}`;
+                res = await fetch(url, { method, headers, ...opts });
+            } else {
+                // Refresh failed - clear tokens and prompt re-login
+                Utils.storage.remove('oidc_tokens');
+                this.currentUser = null;
+                // Consume response body to avoid leaving stream open
+                await res.text().catch(() => null);
+                throw new Error('Session expired. Please sign in again.');
+            }
+        }
+        
         const text = await res.text();
         let body;
         try { body = text ? JSON.parse(text) : null; } catch { body = null; }
