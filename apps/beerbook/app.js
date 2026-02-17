@@ -290,17 +290,22 @@ const App = {
 
         // Cheers button delegation
         document.body.addEventListener('click', async (e) => {
-            const btn = e.target.closest('.cheers-btn[data-rating-id]');
+            // Check if click is on cheers button or its children
+            const btn = e.target.closest('.cheers-btn');
             if (!btn) return;
+            
+            // Verify it has the rating-id attribute
+            const ratingId = btn.getAttribute('data-rating-id') || btn.dataset.ratingId;
+            if (!ratingId) {
+                console.warn('Cheers button clicked but no rating-id found', btn);
+                return;
+            }
             
             e.preventDefault();
             e.stopPropagation();
             
-            const ratingId = btn.dataset.ratingId;
-            if (!ratingId) return;
-            
             const loggedIn = !!(DB.currentUser && DB.currentUser.id);
-            if (!loggedIn || btn.dataset.disabled === 'true') {
+            if (!loggedIn || btn.getAttribute('data-disabled') === 'true' || btn.dataset.disabled === 'true') {
                 this.toast('Sign in to cheers', 'info');
                 return;
             }
@@ -325,6 +330,7 @@ const App = {
                 const data = await this.getCheersForRating(ratingId);
                 this.setCheersOnCard(ratingId, data.count, data.youCheered);
             } catch (err) {
+                console.error('Cheers toggle failed:', err);
                 // Revert optimistic update on error
                 this.setCheersOnCard(ratingId, currentData.count, currentData.youCheered);
                 this.cheersCache[ratingId] = currentData;

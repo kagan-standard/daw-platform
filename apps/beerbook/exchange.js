@@ -118,8 +118,12 @@ const Exchange = {
             const stars = isYug ? '🔒' : (row.avg_stars != null ? Number(row.avg_stars).toFixed(1) : '—');
             const trend = this.trendSymbol(row);
             const count = isYug ? '—' : (row.rating_count != null ? row.rating_count : '—');
+            const brewery = (row.brewery || '').trim();
+            const style = (row.style || '').trim();
+            // Make beer name clickable - use same pattern as browse cards
+            const beerLink = `<span class="beer-name-link" data-beer-name="${Utils.escapeHtml(name)}" data-beer-brewery="${Utils.escapeHtml(brewery)}" data-beer-style="${Utils.escapeHtml(style)}" role="button" tabindex="0">${Utils.escapeHtml(name)}</span>`;
             return `<tr>
-                <td class="exchange-beer">${Utils.escapeHtml(name)}</td>
+                <td class="exchange-beer">${beerLink}</td>
                 <td class="exchange-num">${ygRate} YG</td>
                 <td class="exchange-num">${stars}</td>
                 <td class="exchange-trend ${trend.cls}">${trend.sym}</td>
