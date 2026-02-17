@@ -34,6 +34,7 @@ const App = {
     allRatings: [],
     cheersCache: {},
     _demoCheersKey: 'beerbook_demo_cheers',
+    _loadAllDataDebounceTimer: null,
 
     toast(message, type = 'info') {
         Utils.toast(message, type, 3000);
@@ -554,8 +555,13 @@ const App = {
         // Activity load more (Task 10)
         document.getElementById('activity-load-more')?.addEventListener('click', () => this.loadMoreActivity());
 
-        // Real-time
-        DB.subscribeToRatings(() => this.loadAllData());
+        // Real-time subscription disabled - data only refreshes on user actions
+        // This prevents excessive API calls and page flickering
+        // Data reloads when:
+        // 1. User first enters app (enterApp())
+        // 2. User submits a rating (rating form submit handler)
+        // 3. User deletes a rating (confirmDeleteRating)
+        // DB.subscribeToRatings(() => this.loadAllData()); // Disabled - was causing constant refreshes
     },
 
     bindBeerAutocomplete() {
@@ -1069,6 +1075,24 @@ const App = {
 
     // ========== DATA LOADING ==========
     async loadAllData() {
+        // Debounce rapid calls - if called multiple times quickly, only execute once
+        if (this._loadAllDataDebounceTimer) {
+            clearTimeout(this._loadAllDataDebounceTimer);
+        }
+        return new Promise((resolve, reject) => {
+            this._loadAllDataDebounceTimer = setTimeout(async () => {
+                this._loadAllDataDebounceTimer = null;
+                try {
+                    await this._loadAllDataInternal();
+                    resolve();
+                } catch (err) {
+                    reject(err);
+                }
+            }, 100); // 100ms debounce - prevents rapid successive calls
+        });
+    },
+    
+    async _loadAllDataInternal() {
         this.activityPage = 0;
         this.activityItems = [];
         const period = document.querySelector('.lb-tab.active')?.dataset.period || 'alltime';

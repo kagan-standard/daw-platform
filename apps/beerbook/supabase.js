@@ -488,9 +488,14 @@ const DB = {
     },
 
     subscribeToRatings(callback) {
+        // Polling disabled - data only refreshes on user actions (submit/delete)
+        // This prevents excessive API calls and page flickering
         if (this.isDemo) return;
-        const interval = setInterval(callback, 5000);
-        this.subscriptions.push(interval);
+        // Removed: setInterval polling that was causing constant refreshes
+        // Data now only reloads when:
+        // 1. User first enters app (enterApp())
+        // 2. User submits a rating
+        // 3. User deletes a rating
     },
 
     async getAllProfiles() {
