@@ -324,11 +324,13 @@ const App = {
             setTimeout(() => btn.classList.remove('cheers-pop'), 300);
             
             try {
-                await DB.toggleCheers(ratingId);
-                // Refresh from server to get accurate count
-                this.cheersCache[ratingId] = null;
-                const data = await this.getCheersForRating(ratingId);
-                this.setCheersOnCard(ratingId, data.count, data.youCheered);
+                // Use the server response directly — no need for separate GET that might trigger re-renders
+                const result = await DB.toggleCheers(ratingId);
+                const serverCount = result.count ?? newCount;
+                const serverYouCheered = result.action === 'added';
+                // Update with server response (more accurate than optimistic update)
+                this.setCheersOnCard(ratingId, serverCount, serverYouCheered);
+                this.cheersCache[ratingId] = { count: serverCount, youCheered: serverYouCheered };
             } catch (err) {
                 console.error('Cheers toggle failed:', err);
                 // Revert optimistic update on error
