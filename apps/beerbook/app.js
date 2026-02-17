@@ -288,7 +288,7 @@ const App = {
         });
         document.getElementById('beer-detail-back')?.addEventListener('click', () => this.closeBeerDetail());
 
-        // Cheers button delegation
+        // Cheers button delegation (for activity feed, browse, etc.)
         document.body.addEventListener('click', async (e) => {
             // Check if click is on cheers button or its children
             const btn = e.target.closest('.cheers-btn');
@@ -304,40 +304,7 @@ const App = {
             e.preventDefault();
             e.stopPropagation();
             
-            const loggedIn = !!(DB.currentUser && DB.currentUser.id);
-            if (!loggedIn || btn.getAttribute('data-disabled') === 'true' || btn.dataset.disabled === 'true') {
-                this.toast('Sign in to cheers', 'info');
-                return;
-            }
-            
-            // Optimistic UI update
-            const currentData = this.cheersCache[ratingId] || { count: 0, youCheered: false };
-            const newYouCheered = !currentData.youCheered;
-            const newCount = newYouCheered ? currentData.count + 1 : Math.max(0, currentData.count - 1);
-            
-            // Update UI immediately (optimistic)
-            this.setCheersOnCard(ratingId, newCount, newYouCheered);
-            this.cheersCache[ratingId] = { count: newCount, youCheered: newYouCheered };
-            
-            // Animation
-            btn.classList.add('cheers-pop');
-            setTimeout(() => btn.classList.remove('cheers-pop'), 300);
-            
-            try {
-                // Use the server response directly — no need for separate GET that might trigger re-renders
-                const result = await DB.toggleCheers(ratingId);
-                const serverCount = result.count ?? newCount;
-                const serverYouCheered = result.action === 'added';
-                // Update with server response (more accurate than optimistic update)
-                this.setCheersOnCard(ratingId, serverCount, serverYouCheered);
-                this.cheersCache[ratingId] = { count: serverCount, youCheered: serverYouCheered };
-            } catch (err) {
-                console.error('Cheers toggle failed:', err);
-                // Revert optimistic update on error
-                this.setCheersOnCard(ratingId, currentData.count, currentData.youCheered);
-                this.cheersCache[ratingId] = currentData;
-                this.toast('Cheers update failed', 'error');
-            }
+            await this.handleCheersClick(btn, ratingId);
         });
 
         // Mobile menu (below 520px)
@@ -885,6 +852,43 @@ const App = {
         return out;
     },
 
+    async handleCheersClick(btn, ratingId) {
+        const loggedIn = !!(DB.currentUser && DB.currentUser.id);
+        if (!loggedIn || btn.getAttribute('data-disabled') === 'true' || btn.dataset.disabled === 'true') {
+            this.toast('Sign in to cheers', 'info');
+            return;
+        }
+        
+        // Optimistic UI update
+        const currentData = this.cheersCache[ratingId] || { count: 0, youCheered: false };
+        const newYouCheered = !currentData.youCheered;
+        const newCount = newYouCheered ? currentData.count + 1 : Math.max(0, currentData.count - 1);
+        
+        // Update UI immediately (optimistic)
+        this.setCheersOnCard(ratingId, newCount, newYouCheered);
+        this.cheersCache[ratingId] = { count: newCount, youCheered: newYouCheered };
+        
+        // Animation
+        btn.classList.add('cheers-pop');
+        setTimeout(() => btn.classList.remove('cheers-pop'), 300);
+        
+        try {
+            // Use the server response directly — no need for separate GET that might trigger re-renders
+            const result = await DB.toggleCheers(ratingId);
+            const serverCount = result.count ?? newCount;
+            const serverYouCheered = result.action === 'added';
+            // Update with server response (more accurate than optimistic update)
+            this.setCheersOnCard(ratingId, serverCount, serverYouCheered);
+            this.cheersCache[ratingId] = { count: serverCount, youCheered: serverYouCheered };
+        } catch (err) {
+            console.error('Cheers toggle failed:', err);
+            // Revert optimistic update on error
+            this.setCheersOnCard(ratingId, currentData.count, currentData.youCheered);
+            this.cheersCache[ratingId] = currentData;
+            this.toast('Cheers update failed', 'error');
+        }
+    },
+
     setCheersOnCard(ratingId, count, youCheered) {
         document.querySelectorAll(`.cheers-btn[data-rating-id="${ratingId}"]`).forEach(btn => {
             const span = btn.querySelector('.cheers-count');
@@ -1004,6 +1008,18 @@ const App = {
             });
         }
         this.fillCheersForCards((beer.ratings || []).slice(0, 20).map(r => r.id));
+
+        // Add direct click handlers to cheers buttons inside modal (stopPropagation blocks delegation)
+        body.querySelectorAll('.cheers-btn').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const ratingId = btn.getAttribute('data-rating-id') || btn.dataset.ratingId;
+                if (ratingId) {
+                    await this.handleCheersClick(btn, ratingId);
+                }
+            });
+        });
 
         modal.querySelector('.modal-content-beer-detail')?.addEventListener('click', (e) => e.stopPropagation());
         modal.addEventListener('click', (e) => { if (e.target === modal) this.closeBeerDetail(); });
