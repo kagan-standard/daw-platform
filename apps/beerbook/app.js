@@ -291,19 +291,43 @@ const App = {
         // Cheers button delegation
         document.body.addEventListener('click', async (e) => {
             const btn = e.target.closest('.cheers-btn[data-rating-id]');
-            if (!btn || btn.disabled) return;
+            if (!btn) return;
+            
+            e.preventDefault();
+            e.stopPropagation();
+            
             const ratingId = btn.dataset.ratingId;
             if (!ratingId) return;
+            
             const loggedIn = !!(DB.currentUser && DB.currentUser.id);
-            if (!loggedIn) return;
+            if (!loggedIn || btn.dataset.disabled === 'true') {
+                this.toast('Sign in to cheers', 'info');
+                return;
+            }
+            
+            // Optimistic UI update
+            const currentData = this.cheersCache[ratingId] || { count: 0, youCheered: false };
+            const newYouCheered = !currentData.youCheered;
+            const newCount = newYouCheered ? currentData.count + 1 : Math.max(0, currentData.count - 1);
+            
+            // Update UI immediately (optimistic)
+            this.setCheersOnCard(ratingId, newCount, newYouCheered);
+            this.cheersCache[ratingId] = { count: newCount, youCheered: newYouCheered };
+            
+            // Animation
             btn.classList.add('cheers-pop');
             setTimeout(() => btn.classList.remove('cheers-pop'), 300);
+            
             try {
                 await DB.toggleCheers(ratingId);
+                // Refresh from server to get accurate count
                 this.cheersCache[ratingId] = null;
                 const data = await this.getCheersForRating(ratingId);
                 this.setCheersOnCard(ratingId, data.count, data.youCheered);
             } catch (err) {
+                // Revert optimistic update on error
+                this.setCheersOnCard(ratingId, currentData.count, currentData.youCheered);
+                this.cheersCache[ratingId] = currentData;
                 this.toast('Cheers update failed', 'error');
             }
         });
@@ -875,7 +899,7 @@ const App = {
 
     cheersButtonHtml(ratingId) {
         const loggedIn = !!(DB.currentUser && DB.currentUser.id);
-        return `<button type="button" class="cheers-btn" data-rating-id="${Utils.escapeHtml(ratingId)}" ${!loggedIn ? 'disabled title="Sign in to cheers"' : 'title="Cheers"'}><span class="cheers-icon">🍻</span> <span class="cheers-count">0</span></button>`;
+        return `<button type="button" class="cheers-btn" data-rating-id="${Utils.escapeHtml(ratingId)}" ${!loggedIn ? 'data-disabled="true" title="Sign in to cheers"' : 'title="Cheers"'}><span class="cheers-icon">🍻</span> <span class="cheers-count">0</span></button>`;
     },
 
     async openBeerDetail(beerName, brewery, style) {

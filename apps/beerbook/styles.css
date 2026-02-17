@@ -799,7 +799,8 @@ input, select, textarea, button {
     transition: transform 0.15s var(--ease-out), background 0.15s;
 }
 .cheers-btn:hover:not(:disabled) { background: var(--dark-600); }
-.cheers-btn:disabled { opacity: 0.7; cursor: not-allowed; }
+.cheers-btn:disabled,
+.cheers-btn[data-disabled="true"] { opacity: 0.7; cursor: not-allowed; }
 .cheers-btn.cheered { background: var(--amber-800); color: var(--amber-200); }
 .cheers-btn.cheers-pop { animation: cheersPop 0.3s var(--ease-spring); }
 @keyframes cheersPop {

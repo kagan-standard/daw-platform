@@ -41,7 +41,9 @@ module.exports = function (opts) {
       if (found) {
         const { status: delStatus } = await rest('DELETE', `/reactions?rating_id=eq.${ratingId}&user_id=eq.${encodeURIComponent(sub)}&reaction_type=eq.cheers`);
         if (delStatus >= 400) return res.status(502).json({ error: 'Delete failed' });
-        return res.json({ action: 'removed', count: 0 });
+        const countRes = await rest('GET', `/reactions?rating_id=eq.${ratingId}&select=id`, { headers: { Prefer: 'count=exact' } });
+        const count = opts.totalFromContentRange(countRes.headers['content-range']) ?? 0;
+        return res.json({ action: 'removed', count });
       } else {
         const record = { rating_id: req.params.id, user_id: sub, reaction_type: 'cheers' };
         const { status: postStatus, body } = await rest('POST', '/reactions', { headers: { Prefer: 'return=representation' }, body: JSON.stringify(record) });
