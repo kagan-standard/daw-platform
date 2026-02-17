@@ -277,6 +277,10 @@ const App = {
         document.querySelectorAll('.nav-btn').forEach(btn => {
             btn.addEventListener('click', () => this.navigate(btn.dataset.view));
         });
+        // Bottom tab nav (mobile)
+        document.querySelectorAll('#bottom-tab-nav .tab-item').forEach(tab => {
+            tab.addEventListener('click', () => this.navigate(tab.dataset.view));
+        });
 
         // Beer detail: delegate clicks on beer-name links
         document.body.addEventListener('click', (e) => {
@@ -1117,6 +1121,10 @@ const App = {
         if (btn) btn.classList.add('active');
         document.querySelectorAll('.mobile-nav-item[data-view]').forEach(b => b.classList.remove('active'));
         if (mobileBtn) mobileBtn.classList.add('active');
+        // Sync bottom tab nav active state
+        document.querySelectorAll('#bottom-tab-nav .tab-item').forEach(t => t.classList.remove('active'));
+        const bottomTab = document.querySelector(`#bottom-tab-nav .tab-item[data-view="${viewId}"]`);
+        if (bottomTab) bottomTab.classList.add('active');
 
         if (viewId === 'dashboard' || viewId === 'profile') {
             setTimeout(() => { Object.values(Charts.instances).forEach(c => c.resize()); }, 100);
