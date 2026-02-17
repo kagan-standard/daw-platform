@@ -528,6 +528,80 @@ const DB = {
         });
     },
 
+    async searchBeersExternal(q) {
+        if (!q || q.length < 3) return [];
+        try {
+            const url = `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(q)}&categories_tags_en=beers&json=1&page_size=10&fields=product_name,brands,categories_tags_en`;
+            const res = await fetch(url, {
+                headers: { 'User-Agent': 'BeerBook/1.0 (drinksafterwork.net)' }
+            });
+            if (!res.ok) return [];
+            const data = await res.json();
+            if (!data.products) return [];
+            return data.products
+                .filter(p => p.product_name)
+                .map(p => ({
+                    beer_name: p.product_name,
+                    brewery: p.brands || '',
+                    style: this._extractBeerStyle(p.categories_tags_en),
+                    source: 'openfoodfacts'
+                }));
+        } catch (e) {
+            console.warn('OpenFoodFacts search failed:', e.message);
+            return [];
+        }
+    },
+
+    _extractBeerStyle(tags) {
+        if (!Array.isArray(tags)) return '';
+        const beerTags = tags.filter(t => t !== 'beers' && t !== 'alcoholic-beverages');
+        if (!beerTags.length) return '';
+        const best = beerTags[beerTags.length - 1]; // most specific
+        return best.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    },
+
+    async searchBreweries(q) {
+        if (!q || q.length < 2) return [];
+        try {
+            const url = `https://api.openbrewerydb.org/v1/breweries/autocomplete?query=${encodeURIComponent(q)}`;
+            const res = await fetch(url);
+            if (!res.ok) return [];
+            const data = await res.json();
+            return Array.isArray(data) ? data : [];
+        } catch (e) {
+            console.warn('Open Brewery DB search failed:', e.message);
+            return [];
+        }
+    },
+
+    async searchNearbyVenues(lat, lng, radius = 200) {
+        try {
+            const query = `[out:json][timeout:10];(node["amenity"~"bar|pub|restaurant|biergarten|cafe"](around:${radius},${lat},${lng});node["craft"="brewery"](around:${radius},${lat},${lng});way["amenity"~"bar|pub|restaurant|biergarten|cafe"](around:${radius},${lat},${lng});way["craft"="brewery"](around:${radius},${lat},${lng}););out center tags;`;
+            const res = await fetch('https://overpass-api.de/api/interpreter', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: 'data=' + encodeURIComponent(query)
+            });
+            if (!res.ok) return [];
+            const data = await res.json();
+            if (!data.elements) return [];
+            return data.elements
+                .filter(e => e.tags && e.tags.name)
+                .map(e => ({
+                    osm_id: e.id,
+                    name: e.tags.name,
+                    type: e.tags.amenity || e.tags.craft || 'venue',
+                    latitude: e.lat || e.center?.lat,
+                    longitude: e.lon || e.center?.lon,
+                    address: [e.tags['addr:street'], e.tags['addr:city'], e.tags['addr:state']].filter(Boolean).join(', '),
+                    source: 'overpass'
+                }));
+        } catch (e) {
+            console.warn('Overpass API search failed:', e.message);
+            return [];
+        }
+    },
+
     async getVenuesCount() {
         if (this.isDemo) return 0;
         try {

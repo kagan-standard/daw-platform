@@ -418,6 +418,23 @@ const App = {
             const lng = document.getElementById('rating-lng').value ? parseFloat(document.getElementById('rating-lng').value) : null;
             const locationName = document.getElementById('rating-location-name').value.trim() || null;
             let venueId = document.getElementById('rating-venue-id').value || null;
+            
+            // Handle pending venue creation from Overpass selection
+            const pendingVenueData = document.getElementById('rating-venue-id').getAttribute('data-pending-venue');
+            if (pendingVenueData && !venueId && lat && lng) {
+                try {
+                    const venueData = JSON.parse(pendingVenueData);
+                    const venue = await DB.createVenue({
+                        name: venueData.name,
+                        latitude: venueData.latitude,
+                        longitude: venueData.longitude,
+                        address: venueData.address || null
+                    });
+                    venueId = venue && venue.id ? venue.id : null;
+                } catch (err) {
+                    console.warn('Failed to create venue from Overpass data:', err);
+                }
+            }
 
             let photoUrl = null;
             const previewImg = document.querySelector('#photo-preview img');
@@ -500,6 +517,9 @@ const App = {
         // Beer autocomplete (Task 2)
         this.bindBeerAutocomplete();
 
+        // Brewery autocomplete (Task 2)
+        this.bindBreweryAutocomplete();
+
         // YG slider (Task 3) — beer glass system 0–12
         this.bindYgSlider();
 
@@ -511,12 +531,18 @@ const App = {
             this.captureLocation();
         });
         document.getElementById('location-chip-remove')?.addEventListener('click', () => this.clearLocation());
+        document.getElementById('venue-chip-remove')?.addEventListener('click', () => this.clearVenue());
+        document.getElementById('btn-custom-venue')?.addEventListener('click', () => {
+            document.getElementById('venue-picker').style.display = 'none';
+            document.getElementById('location-manual').focus();
+        });
         document.getElementById('location-manual')?.addEventListener('blur', () => {
             const v = document.getElementById('location-manual').value.trim();
             if (v) {
                 document.getElementById('rating-location-name').value = v;
                 document.getElementById('location-chip-text').textContent = '📍 ' + v;
                 document.getElementById('location-chip').style.display = 'inline-flex';
+                document.getElementById('venue-picker').style.display = 'none';
                 this.togglePriceSection();
             }
         });
@@ -576,18 +602,110 @@ const App = {
             dropdown.innerHTML = '';
             if (q.length < 2) return;
             debounceTimer = setTimeout(async () => {
-                const list = await DB.searchBeers(q);
-                dropdown.innerHTML = (list.slice(0, 10) || []).map(b => {
-                    const label = `${Utils.escapeHtml(b.beer_name || b.name || '')} — ${Utils.escapeHtml(b.brewery || '')} (${Utils.escapeHtml(b.style || '')})`;
-                    return `<div class="autocomplete-item" data-name="${Utils.escapeHtml(b.beer_name || b.name || '')}" data-brewery="${Utils.escapeHtml(b.brewery || '')}" data-style="${Utils.escapeHtml(b.style || '')}">${label}</div>`;
+                const localList = await DB.searchBeers(q);
+                const localResults = (localList || []).slice(0, 10);
+                
+                let externalResults = [];
+                if (localResults.length < 3 && q.length >= 3) {
+                    externalResults = await DB.searchBeersExternal(q);
+                }
+                
+                // Deduplicate by normalized beer name
+                const seen = new Set();
+                const normalized = (name) => (name || '').toLowerCase().trim();
+                
+                const allResults = [];
+                
+                // Add local results first
+                if (localResults.length > 0) {
+                    allResults.push({ type: 'group', label: 'From your crew' });
+                    localResults.forEach(b => {
+                        const name = normalized(b.beer_name || b.name || '');
+                        if (!seen.has(name)) {
+                            seen.add(name);
+                            allResults.push({
+                                type: 'item',
+                                beer_name: b.beer_name || b.name || '',
+                                brewery: b.brewery || '',
+                                style: b.style || '',
+                                source: 'local'
+                            });
+                        }
+                    });
+                }
+                
+                // Add external results
+                if (externalResults.length > 0) {
+                    allResults.push({ type: 'group', label: 'From beer database' });
+                    externalResults.forEach(b => {
+                        const name = normalized(b.beer_name || '');
+                        if (!seen.has(name)) {
+                            seen.add(name);
+                            allResults.push({
+                                type: 'item',
+                                beer_name: b.beer_name || '',
+                                brewery: b.brewery || '',
+                                style: b.style || '',
+                                source: b.source || 'openfoodfacts'
+                            });
+                        }
+                    });
+                }
+                
+                // Render dropdown
+                dropdown.innerHTML = allResults.map(item => {
+                    if (item.type === 'group') {
+                        return `<div class="autocomplete-group-label">${Utils.escapeHtml(item.label)}</div>`;
+                    } else {
+                        const label = `${Utils.escapeHtml(item.beer_name)} — ${Utils.escapeHtml(item.brewery)} (${Utils.escapeHtml(item.style || '')})`;
+                        return `<div class="autocomplete-item" data-source="${Utils.escapeHtml(item.source)}" data-name="${Utils.escapeHtml(item.beer_name)}" data-brewery="${Utils.escapeHtml(item.brewery)}" data-style="${Utils.escapeHtml(item.style)}">${label}</div>`;
+                    }
                 }).join('');
+                
                 if (dropdown.children.length) {
                     dropdown.setAttribute('aria-hidden', 'false');
-                    dropdown.querySelectorAll('.autocomplete-item').forEach((el, i) => {
+                    dropdown.querySelectorAll('.autocomplete-item').forEach((el) => {
                         el.addEventListener('click', () => {
                             document.getElementById('beer-name').value = el.dataset.name;
                             document.getElementById('beer-brewery').value = el.dataset.brewery || '';
                             document.getElementById('beer-style').value = el.dataset.style || '';
+                            dropdown.innerHTML = '';
+                            dropdown.setAttribute('aria-hidden', 'true');
+                        });
+                    });
+                }
+            }, 300);
+        });
+        input.addEventListener('blur', () => { setTimeout(() => { dropdown.innerHTML = ''; dropdown.setAttribute('aria-hidden', 'true'); }, 150); });
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') { dropdown.innerHTML = ''; dropdown.setAttribute('aria-hidden', 'true'); }
+        });
+    },
+
+    bindBreweryAutocomplete() {
+        const input = document.getElementById('beer-brewery');
+        const dropdown = document.getElementById('brewery-autocomplete');
+        if (!input || !dropdown) return;
+        let debounceTimer;
+        input.addEventListener('input', () => {
+            clearTimeout(debounceTimer);
+            const q = input.value.trim();
+            dropdown.setAttribute('aria-hidden', 'true');
+            dropdown.innerHTML = '';
+            if (q.length < 2) return;
+            debounceTimer = setTimeout(async () => {
+                const list = await DB.searchBreweries(q);
+                dropdown.innerHTML = (list.slice(0, 15) || []).map(b => {
+                    const cityState = [b.city, b.state].filter(Boolean).join(', ');
+                    const type = b.brewery_type ? b.brewery_type.charAt(0).toUpperCase() + b.brewery_type.slice(1) : '';
+                    const label = `${Utils.escapeHtml(b.name || '')}${cityState ? ' — ' + Utils.escapeHtml(cityState) : ''}${type ? ' (' + Utils.escapeHtml(type) + ')' : ''}`;
+                    return `<div class="autocomplete-item" data-name="${Utils.escapeHtml(b.name || '')}">${label}</div>`;
+                }).join('');
+                if (dropdown.children.length) {
+                    dropdown.setAttribute('aria-hidden', 'false');
+                    dropdown.querySelectorAll('.autocomplete-item').forEach((el) => {
+                        el.addEventListener('click', () => {
+                            document.getElementById('beer-brewery').value = el.dataset.name;
                             dropdown.innerHTML = '';
                             dropdown.setAttribute('aria-hidden', 'true');
                         });
@@ -758,22 +876,57 @@ const App = {
                 const lng = pos.coords.longitude;
                 document.getElementById('rating-lat').value = lat;
                 document.getElementById('rating-lng').value = lng;
-                try {
-                    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`, {
+                
+                // Show venue picker and query Overpass in parallel with Nominatim
+                const venuePicker = document.getElementById('venue-picker');
+                const venueSuggestions = document.getElementById('venue-suggestions');
+                venuePicker.style.display = 'block';
+                venueSuggestions.innerHTML = '<div class="venue-suggestion-skeleton"><div class="skeleton" style="height:40px;margin-bottom:6px;"></div><div class="skeleton" style="height:40px;margin-bottom:6px;"></div></div>';
+                
+                const [nominatimData, overpassVenues] = await Promise.all([
+                    fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`, {
                         headers: { 'User-Agent': 'BeerBook/1.0' }
+                    }).then(r => r.json()).catch(() => null),
+                    DB.searchNearbyVenues(lat, lng, 200).catch(() => [])
+                ]);
+                
+                const name = (nominatimData && nominatimData.display_name) ? nominatimData.display_name : `Location ${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+                document.getElementById('rating-location-name').value = name;
+                document.getElementById('location-chip-text').textContent = '📍 ' + name;
+                document.getElementById('location-chip').style.display = 'inline-flex';
+                document.getElementById('location-manual').value = name;
+                
+                // Render venue suggestions
+                if (overpassVenues && overpassVenues.length > 0) {
+                    const sortedVenues = overpassVenues
+                        .map(v => ({
+                            ...v,
+                            distance: this._distanceMeters(lat, lng, v.latitude, v.longitude)
+                        }))
+                        .sort((a, b) => a.distance - b.distance);
+                    
+                    venueSuggestions.innerHTML = sortedVenues.map(v => {
+                        const icon = this._venueIcon(v.type);
+                        const distText = v.distance < 1000 ? `${Math.round(v.distance)}m away` : `${(v.distance / 1000).toFixed(1)} km away`;
+                        const addressText = v.address ? ` · ${Utils.escapeHtml(v.address)}` : '';
+                        return `<div class="venue-suggestion" data-osm-id="${v.osm_id}" data-name="${Utils.escapeHtml(v.name)}" data-lat="${v.latitude}" data-lng="${v.longitude}" data-type="${Utils.escapeHtml(v.type)}">
+                            <span class="venue-icon">${icon}</span>
+                            <div class="venue-info">
+                                <div class="venue-name">${Utils.escapeHtml(v.name)}</div>
+                                <div class="venue-meta">${Utils.escapeHtml(v.type)} · ${distText}${addressText}</div>
+                            </div>
+                        </div>`;
+                    }).join('');
+                    
+                    // Add click handlers
+                    venueSuggestions.querySelectorAll('.venue-suggestion').forEach(el => {
+                        el.addEventListener('click', () => this._selectVenue(el));
                     });
-                    const data = await res.json();
-                    const name = (data && data.display_name) ? data.display_name : `Location ${lat.toFixed(4)}, ${lng.toFixed(4)}`;
-                    document.getElementById('rating-location-name').value = name;
-                    document.getElementById('location-chip-text').textContent = '📍 ' + name;
-                    document.getElementById('location-chip').style.display = 'inline-flex';
-                    document.getElementById('location-manual').value = name;
-                    App.toast('Location captured', 'success');
-                } catch {
-                    document.getElementById('rating-location-name').value = `Location ${lat.toFixed(4)}, ${lng.toFixed(4)}`;
-                    document.getElementById('location-chip-text').textContent = '📍 Location (lat, lng)';
-                    document.getElementById('location-chip').style.display = 'inline-flex';
+                } else {
+                    venueSuggestions.innerHTML = '<p class="empty-state">No nearby venues found</p>';
                 }
+                
+                App.toast('Location captured', 'success');
                 this.togglePriceSection();
                 if (btn) btn.disabled = false;
             },
@@ -787,14 +940,86 @@ const App = {
         );
     },
 
+    _venueIcon(type) {
+        switch(type) {
+            case 'bar': case 'pub': return '🍺';
+            case 'restaurant': return '🍽️';
+            case 'biergarten': return '🌿';
+            case 'brewery': return '🏭';
+            case 'cafe': return '☕';
+            default: return '📍';
+        }
+    },
+
+    _distanceMeters(lat1, lon1, lat2, lon2) {
+        const R = 6371000;
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLon = (lon2 - lon1) * Math.PI / 180;
+        const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLon/2)**2;
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    },
+
+    async _selectVenue(el) {
+        const osmId = el.dataset.osmId;
+        const name = el.dataset.name;
+        const lat = parseFloat(el.dataset.lat);
+        const lng = parseFloat(el.dataset.lng);
+        
+        // Check if a DAW venue exists within 100m
+        let venueId = null;
+        try {
+            if (!DB.isDemo) {
+                const venuesRes = await DB._api('GET', `/api/venues?lat=${lat}&lng=${lng}&radius=100`);
+                if (venuesRes && venuesRes.data && venuesRes.data.length > 0) {
+                    venueId = venuesRes.data[0].id;
+                }
+            }
+        } catch (e) {
+            console.warn('Venue matching failed:', e);
+        }
+        
+        // Store venue data for creation on submit if no match
+        if (!venueId) {
+            document.getElementById('rating-venue-id').setAttribute('data-pending-venue', JSON.stringify({
+                name, latitude: lat, longitude: lng, address: el.querySelector('.venue-meta')?.textContent || ''
+            }));
+        } else {
+            document.getElementById('rating-venue-id').value = venueId;
+            document.getElementById('rating-venue-id').removeAttribute('data-pending-venue');
+        }
+        
+        // Show selected venue chip
+        const venueType = el.dataset.type || 'venue';
+        const icon = this._venueIcon(venueType);
+        document.getElementById('venue-chip-text').textContent = `${icon} ${name}`;
+        document.getElementById('venue-chip').style.display = 'inline-flex';
+        
+        // Hide venue picker
+        document.getElementById('venue-picker').style.display = 'none';
+    },
+
     clearLocation() {
         document.getElementById('rating-lat').value = '';
         document.getElementById('rating-lng').value = '';
         document.getElementById('rating-location-name').value = '';
         document.getElementById('rating-venue-id').value = '';
+        document.getElementById('rating-venue-id').removeAttribute('data-pending-venue');
         document.getElementById('location-manual').value = '';
         document.getElementById('location-chip').style.display = 'none';
+        document.getElementById('venue-picker').style.display = 'none';
+        document.getElementById('venue-chip').style.display = 'none';
         this.togglePriceSection();
+    },
+
+    clearVenue() {
+        document.getElementById('rating-venue-id').value = '';
+        document.getElementById('rating-venue-id').removeAttribute('data-pending-venue');
+        document.getElementById('venue-chip').style.display = 'none';
+        const lat = document.getElementById('rating-lat').value;
+        const lng = document.getElementById('rating-lng').value;
+        if (lat && lng) {
+            document.getElementById('venue-picker').style.display = 'block';
+        }
     },
 
     togglePriceSection() {
@@ -1452,6 +1677,7 @@ const App = {
         });
         if (typeof App._ygSetValue === 'function') App._ygSetValue(0);
         this.clearLocation();
+        document.getElementById('venue-chip').style.display = 'none';
         document.getElementById('price-amount').value = '';
         document.getElementById('price-happy-hour').checked = false;
         document.getElementById('price-log-fields').style.display = 'none';

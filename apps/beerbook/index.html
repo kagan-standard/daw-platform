@@ -299,9 +299,10 @@
                         <input type="text" id="beer-name" placeholder="e.g. Pliny the Elder" required autocomplete="off">
                         <div id="beer-autocomplete" class="autocomplete-dropdown" aria-hidden="true"></div>
                     </div>
-                    <div class="form-group flex-1">
+                    <div class="form-group flex-1 brewery-autocomplete-wrap">
                         <label for="beer-brewery">Brewery</label>
-                        <input type="text" id="beer-brewery" placeholder="e.g. Russian River">
+                        <input type="text" id="beer-brewery" placeholder="e.g. Russian River" autocomplete="off">
+                        <div id="brewery-autocomplete" class="autocomplete-dropdown" aria-hidden="true"></div>
                     </div>
                 </div>
 
@@ -416,6 +417,22 @@
                     <div id="location-chip" class="location-chip" style="display:none;">
                         <span id="location-chip-text"></span>
                         <button type="button" id="location-chip-remove" class="location-chip-remove" aria-label="Remove location">✕</button>
+                    </div>
+                    <div id="venue-picker" class="venue-picker" style="display:none;">
+                        <label>Where are you drinking?</label>
+                        <div id="venue-suggestions" class="venue-suggestions">
+                            <div class="venue-suggestion-skeleton">
+                                <div class="skeleton" style="height:40px;margin-bottom:6px;"></div>
+                                <div class="skeleton" style="height:40px;margin-bottom:6px;"></div>
+                            </div>
+                        </div>
+                        <button type="button" class="btn btn-ghost btn-sm" id="btn-custom-venue">
+                            + Add a different place
+                        </button>
+                    </div>
+                    <div id="venue-chip" class="venue-chip" style="display:none;">
+                        <span id="venue-chip-text"></span>
+                        <button type="button" id="venue-chip-remove" class="venue-chip-remove" aria-label="Remove venue">✕</button>
                     </div>
                     <input type="hidden" id="rating-lat">
                     <input type="hidden" id="rating-lng">
