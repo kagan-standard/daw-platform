@@ -921,7 +921,7 @@ const App = {
         const st = Utils.escapeHtml(beer.style || '');
         const abv = beer.abv != null ? `${beer.abv}% ABV` : '';
         const avgRating = beer.avg_rating ?? (beer.ratings && beer.ratings.length ? (beer.ratings.reduce((s, r) => s + (r.rating || 0), 0) / beer.ratings.length).toFixed(1) : '—');
-        const reviewCount = beer.review_count ?? (beer.ratings && beer.ratings.length) || 0;
+        const reviewCount = beer.review_count != null ? beer.review_count : ((beer.ratings && beer.ratings.length) || 0);
         const avgYg = beer.avg_yg ?? (beer.ratings && beer.ratings.length ? (() => {
             const yg = beer.ratings.map(r => r.yg_value).filter(v => v != null && v > 0);
             return yg.length ? (yg.reduce((a, b) => a + b, 0) / yg.length).toFixed(1) : null;
