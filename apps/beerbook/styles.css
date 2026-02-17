@@ -160,9 +160,12 @@ input, select, textarea, button {
 }
 
 .auth-logo-img {
-    width: 80px;
-    height: 80px;
+    width: 280px;
+    height: auto;
     margin: 0 auto var(--space-md);
+    border-radius: 0;
+    border: none;
+    box-shadow: none;
     filter: drop-shadow(0 4px 12px rgba(230,168,23,0.3));
     animation: gentleBounce 3s ease-in-out infinite;
 }
@@ -182,10 +185,10 @@ input, select, textarea, button {
 }
 
 .auth-subtitle {
-    font-size: 0.9rem;
+    font-size: 0.85rem;
     color: var(--amber-500);
-    font-weight: 300;
-    letter-spacing: 0.15em;
+    font-weight: 700;
+    letter-spacing: 0.1em;
     text-transform: uppercase;
     margin-top: var(--space-xs);
 }
@@ -440,8 +443,8 @@ input, select, textarea, button {
 }
 
 .topbar-logo {
-    width: 32px;
     height: 32px;
+    width: auto;
 }
 
 .topbar-brand {
