@@ -1,7 +1,7 @@
 <#import "footer.ftl" as loginFooter>
 <#macro registrationLayout bodyClass="" displayInfo=false displayMessage=true displayRequiredFields=false>
 <!DOCTYPE html>
-<html lang="${locale.currentLanguageTag}" dir="${(locale.rtl)?then('rtl','ltr')}">
+<html lang="${(locale.currentLanguageTag)!'en'}" dir="${(locale?? && locale.rtl)?then('rtl','ltr')!'ltr'}">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -73,7 +73,7 @@
                 </div>
             </#if>
 
-            <#if realm.internationalizationEnabled && locale?? && locale.supported?? && locale.supported?size gt 1>
+            <#if realm.internationalizationEnabled?? && realm.internationalizationEnabled && locale?? && locale.supported?? && locale.supported?size gt 1>
                 <div class="daw-locale">
                     <#list locale.supported as l>
                         <a href="${l.url!''}" class="daw-locale-link <#if locale.current?? && locale.current == l.label>daw-locale-active</#if>">${l.label!''}</a><#if l_has_next> </#if>
