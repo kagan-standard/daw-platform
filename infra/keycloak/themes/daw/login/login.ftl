@@ -1,18 +1,25 @@
 <#import "template.ftl" as layout>
-<#import "passkeys.ftl" as passkeys>
-<@layout.registrationLayout displayMessage=!(messagesPerField?? && messagesPerField.existsError('username','password')) displayInfo=(realm.password!false) && (realm.registrationAllowed!false) && !(registrationDisabled?? && registrationDisabled); section>
+<@layout.registrationLayout displayMessage=true displayInfo=(realm.password!false) && (realm.registrationAllowed!false); section>
     <#if section = "header">
         <h2 class="daw-form-title">${msg("loginAccountTitle")}</h2>
     <#elseif section = "form">
         <div id="kc-form" class="daw-form-inner">
             <div id="kc-form-wrapper">
-                <#if realm.password>
+                <#if realm.password!false>
                     <form id="kc-form-login" class="daw-form" onsubmit="login.disabled = true; return true;" action="${url.loginAction}" method="post">
                         <#if !(usernameHidden?? && usernameHidden)>
                             <div class="daw-form-group">
-                                <label for="username" class="daw-label"><#if !(realm.loginWithEmailAllowed!false)>${msg("username")}<#elseif !(realm.registrationEmailAsUsername!false)>${msg("usernameOrEmail")}<#else>${msg("email")}</#if></label>
+                                <label for="username" class="daw-label">
+                                    <#if !(realm.loginWithEmailAllowed!false)>
+                                        ${msg("username")}
+                                    <#elseif !(realm.registrationEmailAsUsername!false)>
+                                        ${msg("usernameOrEmail")}
+                                    <#else>
+                                        ${msg("email")}
+                                    </#if>
+                                </label>
                                 <input tabindex="2" id="username" class="daw-input" name="username" value="${(login.username!'')}" type="text"
-                                       autofocus autocomplete="${(enableWebAuthnConditionalUI?? && enableWebAuthnConditionalUI?has_content)?then('username webauthn', 'username')}"
+                                       autofocus autocomplete="username"
                                        aria-invalid="<#if messagesPerField?? && messagesPerField.existsError('username','password')>true</#if>"
                                        dir="ltr" />
                                 <#if messagesPerField?? && messagesPerField.existsError('username','password')>
@@ -69,14 +76,11 @@
                 </#if>
             </div>
         </div>
-        <#if passkeys??>
-            <@passkeys.conditionalUIData />
-        </#if>
         <#if url.resourcesPath??>
             <script type="module" src="${url.resourcesPath}/js/passwordVisibility.js"></script>
         </#if>
     <#elseif section = "info">
-        <#if (realm.password!false) && (realm.registrationAllowed!false) && !(registrationDisabled?? && registrationDisabled) && url.registrationUrl??>
+        <#if (realm.password!false) && (realm.registrationAllowed!false) && url.registrationUrl??>
             <div id="kc-registration-container" class="daw-info">
                 <span>${msg("noAccount")} <a tabindex="8" href="${url.registrationUrl}" class="daw-link">${msg("doRegister")}</a></span>
             </div>
