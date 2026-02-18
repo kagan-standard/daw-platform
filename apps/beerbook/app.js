@@ -520,6 +520,9 @@ const App = {
         // Brewery autocomplete (Task 2)
         this.bindBreweryAutocomplete();
 
+        // Location autocomplete (forward geocoding)
+        this.bindLocationAutocomplete();
+
         // YG slider (Task 3) — beer glass system 0–12
         this.bindYgSlider();
 
@@ -716,6 +719,92 @@ const App = {
         input.addEventListener('blur', () => { setTimeout(() => { dropdown.innerHTML = ''; dropdown.setAttribute('aria-hidden', 'true'); }, 150); });
         input.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') { dropdown.innerHTML = ''; dropdown.setAttribute('aria-hidden', 'true'); }
+        });
+    },
+
+    bindLocationAutocomplete() {
+        const input = document.getElementById('location-manual');
+        const dropdown = document.getElementById('venue-suggestions');
+        const picker = document.getElementById('venue-picker');
+        if (!input || !dropdown) return;
+        let debounceTimer;
+
+        input.addEventListener('input', () => {
+            clearTimeout(debounceTimer);
+            const q = input.value.trim();
+            dropdown.innerHTML = '';
+            if (picker) picker.style.display = 'none';
+            if (q.length < 3) return; // Need at least 3 chars for meaningful search
+
+            debounceTimer = setTimeout(async () => {
+                try {
+                    // Forward geocode via Nominatim
+                    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=6&addressdetails=1`;
+                    const resp = await fetch(url, {
+                        headers: { 'User-Agent': 'BeerBook/1.0' }
+                    });
+                    if (!resp.ok) return;
+                    const results = await resp.json();
+                    if (!results.length) {
+                        dropdown.innerHTML = '<div class="venue-suggestion-item" style="opacity:0.6;pointer-events:none;">No results found</div>';
+                        if (picker) picker.style.display = 'block';
+                        return;
+                    }
+
+                    dropdown.innerHTML = results.map(r => {
+                        const name = r.display_name || '';
+                        // Shorten display: take first 2-3 parts of the comma-separated name
+                        const shortName = name.split(',').slice(0, 3).map(s => s.trim()).join(', ');
+                        return `<div class="venue-suggestion-item" 
+                            data-lat="${r.lat}" 
+                            data-lng="${r.lon}" 
+                            data-name="${Utils.escapeHtml(shortName)}"
+                            data-full-name="${Utils.escapeHtml(name)}">
+                            📍 ${Utils.escapeHtml(shortName)}
+                        </div>`;
+                    }).join('');
+
+                    if (picker) picker.style.display = 'block';
+
+                    // Bind click handlers on results
+                    dropdown.querySelectorAll('.venue-suggestion-item').forEach(el => {
+                        if (el.style.pointerEvents === 'none') return; // skip "no results"
+                        el.addEventListener('click', () => {
+                            const lat = el.dataset.lat;
+                            const lng = el.dataset.lng;
+                            const locationName = el.dataset.name;
+
+                            // Set hidden fields
+                            document.getElementById('rating-lat').value = lat;
+                            document.getElementById('rating-lng').value = lng;
+                            document.getElementById('rating-location-name').value = locationName;
+                            document.getElementById('location-manual').value = locationName;
+
+                            // Show chip
+                            document.getElementById('location-chip-text').textContent = '📍 ' + locationName;
+                            document.getElementById('location-chip').style.display = 'inline-flex';
+
+                            // Hide dropdown
+                            dropdown.innerHTML = '';
+                            if (picker) picker.style.display = 'none';
+
+                            // Show price section since we now have a location
+                            App.togglePriceSection();
+                            App.toast('Location set', 'success');
+                        });
+                    });
+                } catch (err) {
+                    console.warn('Location search failed:', err);
+                }
+            }, 500); // 500ms debounce to respect Nominatim rate limit
+        });
+
+        // Close dropdown when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!input.contains(e.target) && !dropdown.contains(e.target)) {
+                dropdown.innerHTML = '';
+                if (picker) picker.style.display = 'none';
+            }
         });
     },
 
