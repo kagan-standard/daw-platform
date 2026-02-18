@@ -593,6 +593,66 @@ const App = {
         // DB.subscribeToRatings(() => this.loadAllData()); // Disabled - was causing constant refreshes
     },
 
+    _mapStyleToDropdown(rawStyle) {
+        if (!rawStyle) return '';
+        
+        const s = rawStyle.toLowerCase().trim();
+        
+        // Direct and partial match mapping
+        // Order matters — check more specific patterns first
+        const mappings = [
+            // IPAs
+            [/double\s*ipa|imperial\s*ipa|dipa/i, 'Double IPA'],
+            [/hazy\s*ipa|new\s*england\s*ipa|neipa|juicy\s*ipa/i, 'Hazy IPA'],
+            [/india\s*pale\s*ale|\bipa\b/i, 'IPA'],
+            // Pale ales
+            [/pale\s*ale/i, 'Pale Ale'],
+            [/amber\s*ale/i, 'Amber Ale'],
+            [/brown\s*ale/i, 'Brown Ale'],
+            [/red\s*ale|irish\s*red/i, 'Red Ale'],
+            [/cream\s*ale/i, 'Cream Ale'],
+            [/scotch\s*ale|wee\s*heavy/i, 'Scotch Ale'],
+            // Stouts & Porters
+            [/imperial\s*stout|russian\s*imperial/i, 'Imperial Stout'],
+            [/stout/i, 'Stout'],
+            [/porter/i, 'Porter'],
+            // Wheat & German
+            [/hefeweizen|hefe/i, 'Hefeweizen'],
+            [/berliner\s*weisse/i, 'Berliner Weisse'],
+            [/wheat\s*beer|weizen|wit\b|white\s*ale/i, 'Wheat Beer'],
+            [/kolsch|kölsch/i, 'Kolsch'],
+            [/dunkel/i, 'Dunkel'],
+            [/bock|doppelbock|maibock/i, 'Bock'],
+            // Belgian
+            [/saison|farmhouse/i, 'Saison'],
+            [/belgian|abbey|dubbel|tripel|quad/i, 'Belgian'],
+            // Sours
+            [/gose/i, 'Gose'],
+            [/sour|lambic|gueuze|flanders/i, 'Sour'],
+            // Lagers & Pilsners
+            [/pilsner|pils\b/i, 'Pilsner'],
+            [/lager|helles|marzen|oktoberfest|vienna|czech|mexican\s*lager/i, 'Lager'],
+            // Other
+            [/barleywine|barley\s*wine/i, 'Barleywine'],
+            [/cider/i, 'Cider'],
+            [/mead/i, 'Mead'],
+        ];
+
+        for (const [pattern, value] of mappings) {
+            if (pattern.test(rawStyle)) return value;
+        }
+
+        // If no match, try checking if rawStyle is already a valid dropdown value
+        const styleSelect = document.getElementById('beer-style');
+        if (styleSelect) {
+            for (const opt of styleSelect.options) {
+                if (opt.value && opt.value.toLowerCase() === s) return opt.value;
+            }
+        }
+
+        return ''; // No match — leave dropdown on "Select style..."
+    },
+
     bindBeerAutocomplete() {
         const input = document.getElementById('beer-name');
         const dropdown = document.getElementById('beer-autocomplete');
@@ -613,6 +673,25 @@ const App = {
                     externalResults = await DB.searchBeersExternal(q);
                 }
                 
+                // Sort external results by relevance: name matches first, then category-only matches
+                const query = q.toLowerCase();
+                externalResults.sort((a, b) => {
+                    const aName = (a.beer_name || '').toLowerCase();
+                    const bName = (b.beer_name || '').toLowerCase();
+                    const aNameMatch = aName.includes(query);
+                    const bNameMatch = bName.includes(query);
+                    
+                    // Exact name start > name contains > category-only match
+                    const aStartsWith = aName.startsWith(query);
+                    const bStartsWith = bName.startsWith(query);
+                    
+                    if (aStartsWith && !bStartsWith) return -1;
+                    if (bStartsWith && !aStartsWith) return 1;
+                    if (aNameMatch && !bNameMatch) return -1;
+                    if (bNameMatch && !aNameMatch) return 1;
+                    return 0; // preserve original order for ties
+                });
+                
                 // Deduplicate by normalized beer name
                 const seen = new Set();
                 const normalized = (name) => (name || '').toLowerCase().trim();
@@ -631,6 +710,7 @@ const App = {
                                 beer_name: b.beer_name || b.name || '',
                                 brewery: b.brewery || '',
                                 style: b.style || '',
+                                abv: b.abv || '',
                                 source: 'local'
                             });
                         }
@@ -649,6 +729,7 @@ const App = {
                                 beer_name: b.beer_name || '',
                                 brewery: b.brewery || '',
                                 style: b.style || '',
+                                abv: b.abv || '',
                                 source: b.source || 'openfoodfacts'
                             });
                         }
@@ -661,7 +742,7 @@ const App = {
                         return `<div class="autocomplete-group-label">${Utils.escapeHtml(item.label)}</div>`;
                     } else {
                         const label = `${Utils.escapeHtml(item.beer_name)} — ${Utils.escapeHtml(item.brewery)} (${Utils.escapeHtml(item.style || '')})`;
-                        return `<div class="autocomplete-item" data-source="${Utils.escapeHtml(item.source)}" data-name="${Utils.escapeHtml(item.beer_name)}" data-brewery="${Utils.escapeHtml(item.brewery)}" data-style="${Utils.escapeHtml(item.style)}">${label}</div>`;
+                        return `<div class="autocomplete-item" data-source="${Utils.escapeHtml(item.source)}" data-name="${Utils.escapeHtml(item.beer_name)}" data-brewery="${Utils.escapeHtml(item.brewery)}" data-style="${Utils.escapeHtml(item.style)}" data-abv="${Utils.escapeHtml(item.abv || '')}">${label}</div>`;
                     }
                 }).join('');
                 
@@ -671,7 +752,33 @@ const App = {
                         el.addEventListener('click', () => {
                             document.getElementById('beer-name').value = el.dataset.name;
                             document.getElementById('beer-brewery').value = el.dataset.brewery || '';
-                            document.getElementById('beer-style').value = el.dataset.style || '';
+                            
+                            // Map style to dropdown value
+                            const rawStyle = el.dataset.style || '';
+                            const mappedStyle = App._mapStyleToDropdown(rawStyle);
+                            if (mappedStyle) {
+                                document.getElementById('beer-style').value = mappedStyle;
+                            }
+                            
+                            // Set ABV if available from the selected result
+                            const abv = el.dataset.abv;
+                            if (abv && parseFloat(abv) > 0) {
+                                document.getElementById('beer-abv').value = parseFloat(abv).toFixed(1);
+                            } else {
+                                // If no ABV from data, try STYLE_GUIDE default
+                                if (mappedStyle) {
+                                    const guide = STYLE_GUIDE?.[mappedStyle];
+                                    if (guide && guide.abv) {
+                                        // Parse ABV range like "5.5–7.5%" and use midpoint
+                                        const match = guide.abv.match(/([\d.]+)[–-]([\d.]+)/);
+                                        if (match) {
+                                            const mid = ((parseFloat(match[1]) + parseFloat(match[2])) / 2).toFixed(1);
+                                            document.getElementById('beer-abv').value = mid;
+                                        }
+                                    }
+                                }
+                            }
+                            
                             dropdown.innerHTML = '';
                             dropdown.setAttribute('aria-hidden', 'true');
                         });

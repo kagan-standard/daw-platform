@@ -531,7 +531,7 @@ const DB = {
     async searchBeersExternal(q) {
         if (!q || q.length < 3) return [];
         try {
-            const url = `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(q)}&categories_tags_en=beers&json=1&page_size=10&fields=product_name,brands,categories_tags_en`;
+            const url = `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(q)}&categories_tags_en=beers&json=1&page_size=10&fields=product_name,brands,categories_tags_en,alcohol_value`;
             const res = await fetch(url, {
                 headers: { 'User-Agent': 'BeerBook/1.0 (drinksafterwork.net)' }
             });
@@ -544,6 +544,7 @@ const DB = {
                     beer_name: p.product_name,
                     brewery: p.brands || '',
                     style: this._extractBeerStyle(p.categories_tags_en),
+                    abv: p.alcohol_value || '',
                     source: 'openfoodfacts'
                 }));
         } catch (e) {
