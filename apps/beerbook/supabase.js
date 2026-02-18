@@ -575,29 +575,46 @@ const DB = {
     },
 
     async searchNearbyVenues(lat, lng, radius = 200) {
+        // Convert radius (meters) to approximate lat/lng delta
+        const delta = radius / 111000; // ~111km per degree
+        const south = lat - delta;
+        const north = lat + delta;
+        const west = lng - delta;
+        const east = lng + delta;
+
+        const query = `
+            [out:json][timeout:10];
+            (
+                node["amenity"~"bar|pub|restaurant|cafe|brewery|biergarten"](${south},${west},${north},${east});
+            );
+            out body 10;
+        `;
+
         try {
-            const query = `[out:json][timeout:10];(node["amenity"~"bar|pub|restaurant|biergarten|cafe"](around:${radius},${lat},${lng});node["craft"="brewery"](around:${radius},${lat},${lng});way["amenity"~"bar|pub|restaurant|biergarten|cafe"](around:${radius},${lat},${lng});way["craft"="brewery"](around:${radius},${lat},${lng}););out center tags;`;
-            const res = await fetch('https://overpass-api.de/api/interpreter', {
+            const resp = await fetch('https://overpass-api.de/api/interpreter', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: 'data=' + encodeURIComponent(query)
+                headers: { 
+                    'Content-Type': 'application/x-www-form-urlencoded', 
+                    'User-Agent': 'BeerBook/1.0' 
+                },
+                body: `data=${encodeURIComponent(query)}`
             });
-            if (!res.ok) return [];
-            const data = await res.json();
+            if (!resp.ok) return [];
+            const data = await resp.json();
             if (!data.elements) return [];
-            return data.elements
+            return (data.elements || [])
                 .filter(e => e.tags && e.tags.name)
                 .map(e => ({
                     osm_id: e.id,
                     name: e.tags.name,
                     type: e.tags.amenity || e.tags.craft || 'venue',
-                    latitude: e.lat || e.center?.lat,
-                    longitude: e.lon || e.center?.lon,
+                    latitude: e.lat,
+                    longitude: e.lon,
                     address: [e.tags['addr:street'], e.tags['addr:city'], e.tags['addr:state']].filter(Boolean).join(', '),
                     source: 'overpass'
                 }));
-        } catch (e) {
-            console.warn('Overpass API search failed:', e.message);
+        } catch (err) {
+            console.warn('Overpass query failed:', err);
             return [];
         }
     },

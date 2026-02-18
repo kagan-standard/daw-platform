@@ -778,6 +778,7 @@ const App = {
                             document.getElementById('rating-lat').value = lat;
                             document.getElementById('rating-lng').value = lng;
                             document.getElementById('rating-location-name').value = locationName;
+                            document.getElementById('rating-venue-id').value = '';
                             document.getElementById('location-manual').value = locationName;
 
                             // Show chip
