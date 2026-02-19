@@ -251,6 +251,145 @@
   color: var(--daw-text-dim);
 }
 
+/* ============================================
+   Form Inputs — ALL types (login + registration)
+   Ensure username, email, first/last name from user-profile also get DAW styling
+   ============================================ */
+input[type="text"],
+input[type="password"],
+input[type="email"],
+input[type="tel"],
+input[type="url"],
+input[type="number"],
+input[type="search"],
+input,
+select,
+textarea {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  background: rgba(11, 14, 26, 0.8);
+  border: 1px solid rgba(245, 183, 49, 0.3);
+  border-radius: 8px;
+  color: #f5f0e8;
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.95rem;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  outline: none;
+  box-sizing: border-box;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--daw-gold);
+  box-shadow: 0 0 0 3px var(--daw-glow);
+}
+
+input::placeholder {
+  color: rgba(245, 240, 232, 0.4);
+}
+
+/* PatternFly form controls override */
+.pf-c-form-control,
+.pf-c-form-control[type="text"],
+.pf-c-form-control[type="password"],
+.pf-c-form-control[type="email"] {
+  background: rgba(11, 14, 26, 0.8) !important;
+  border: 1px solid rgba(245, 183, 49, 0.3) !important;
+  border-radius: 8px !important;
+  color: #f5f0e8 !important;
+  padding: 0.75rem 1rem !important;
+  font-size: 0.95rem !important;
+}
+
+.pf-c-form-control:focus {
+  border-color: var(--daw-gold) !important;
+  box-shadow: 0 0 0 3px var(--daw-glow) !important;
+}
+
+/* Labels (registration / Keycloak default) */
+label,
+.pf-c-form__label,
+.pf-c-form__label-text {
+  color: var(--daw-gold);
+  font-weight: 600;
+  font-size: 0.85rem;
+  letter-spacing: 0.03em;
+  margin-bottom: 0.4rem;
+  display: block;
+}
+
+.pf-c-form__label-required,
+.required {
+  color: var(--daw-error);
+}
+
+/* Registration helper text */
+#kc-form-options,
+.kc-form-options {
+  color: rgba(245, 240, 232, 0.5);
+  font-size: 0.8rem;
+}
+
+/* Back to Login and kc links */
+#kc-registration a,
+a.kc-link,
+a[href*="login-actions"] {
+  color: var(--daw-gold);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+#kc-registration a:hover,
+a.kc-link:hover {
+  color: var(--daw-gold-light);
+  text-decoration: underline;
+}
+
+/* Register submit button (match Sign In) */
+input[type="submit"],
+button[type="submit"],
+.pf-c-button--primary,
+#kc-register-form input[type="submit"],
+#kc-register-form button[type="submit"] {
+  width: 100%;
+  padding: 15px;
+  background: var(--daw-gold);
+  color: var(--daw-bg);
+  border: none;
+  border-radius: 10px;
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 20px;
+  letter-spacing: 3px;
+  cursor: pointer;
+  transition: all 0.3s;
+  text-transform: uppercase;
+}
+
+input[type="submit"]:hover,
+button[type="submit"]:hover {
+  background: var(--daw-gold-dim);
+  box-shadow: 0 4px 20px var(--daw-glow);
+  transform: translateY(-1px);
+}
+
+/* Form groups spacing */
+.form-group,
+.pf-c-form__group {
+  margin-bottom: 1rem;
+}
+
+/* Social/realm links */
+.kc-social-links a,
+.kc-realm-links a {
+  color: rgba(245, 240, 232, 0.5);
+  border: 1px solid rgba(245, 240, 232, 0.2);
+  border-radius: 20px;
+  padding: 4px 12px;
+  font-size: 0.8rem;
+  text-decoration: none;
+}
+
 .daw-input-group {
   display: flex;
   align-items: center;
