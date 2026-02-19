@@ -1,4 +1,4 @@
-# Phase 3.1 — Beer Catalog: Schema & Seed Data
+# Phase 3.1 — Beer Catalog: Schema, Pipeline & Seed Data
 
 Apply `cursor/prompts/00_system.md` rules.
 
@@ -7,23 +7,62 @@ Apply `cursor/prompts/00_system.md` rules.
 - `DECISIONS.md`
 - `apps/beerbook/docs/database-schema.sql` (current canonical schema)
 - `apps/beerbook-api/server.js` (current API — **read-only, do NOT modify**)
+- `apps/beerbook-api/routes/beers.js` (current beer endpoints — **read-only**)
 - `infra/compose/docker-compose.yml` (current compose)
 
 ## Goal
 
-Add a global beer and brewery catalog to BeerBook — normalized, deduplicated, and seeded with ~8,000 breweries and ~5,000+ beers from open data sources. This catalog becomes the backbone for autocomplete, beer discovery, and future monetization (brewery referral links). **No API or frontend changes in this phase.** Schema + seed data only.
+Add a global beer and brewery catalog to BeerBook — normalized, deduplicated, and seeded from **local data files** (no external API calls). The catalog becomes the backbone for autocomplete, beer discovery, beer detail pages, and future monetization (brewery referral links). **No API or frontend changes in this phase.** Schema + seed data only.
+
+### Why no external APIs?
+
+The old approach called Open Brewery DB, Open Beer DB, and Punk API at seed time. Problems:
+- APIs go down (Punk API died May 2024)
+- Rate limits slow seeding
+- Network dependency on VPS
+- Our local datasets are **far richer**: 1M+ reviews across 42K beers with ratings, ABV, styles
+
+Instead, we have **5 local data files** that produce a bigger, richer catalog than any free API combo.
 
 ## Background
 
 Currently, beer identity in BeerBook is free-text strings (`beer_name`, `brewery`) on the `ratings` table. This causes duplicates ("Sierra Nevada Pale Ale" vs "SN Pale Ale" vs "sierra nevada pale"), makes aggregation unreliable, and blocks features like autocomplete, brewery pages, and beer detail views.
 
-This phase introduces proper `breweries` and `beers` catalog tables with identity/dedup strategy, alias tables for name drift, and trigram indexes for fuzzy search. Existing ratings are **not migrated** to use `beer_id` yet — that happens in Phase 3.2.
+This phase introduces proper `breweries` and `beers` catalog tables with identity/dedup strategy, alias tables for name drift, trigram indexes for fuzzy search, and a Python pipeline to deduplicate and load ~60-80K beers from local data. Existing ratings are **not migrated** to use `beer_id` yet — that happens in Phase 3.2.
+
+---
+
+## Data Sources (local files)
+
+These files must be placed in `data/` before running the pipeline. **Add `data/*.xlsx` and `data/*.csv` to `.gitignore`** — these are large and shouldn't be committed. Document their location in the seed runbook.
+
+| File | Rows | What it provides | Priority |
+|------|------|------------------|----------|
+| `full_beer_reviews.xlsx` | **1,048,575 reviews → 42,719 unique beers** | brewery_name, beer_name, beer_style, beer_abv, review_overall (1-5), beer_beerid, brewery_id. Must be aggregated per beer. **Primary source.** | 1 |
+| `beer_profile_and_ratings.csv` | 3,197 beers | Name, Style, Brewery, Description, ABV, IBU range, 10 flavor descriptors (Astringency–Malty), 5 review dimension scores. **Only source with flavor profiles, descriptions, and IBU.** Enriches beers from source 1. | 2 (enrichment) |
+| `beermanufacturersmicrobrewersbrands.csv` | 1,654 rows | Brewery → Beer Name mapping. Fills gaps. | 3 |
+| `beer_list_simple.txt` | 45,253 names | One beer name per line (brewery+name combined, no metadata). Lowest priority. | 4 |
+| `Beer_Name_Fuzzy_Match_List.csv` | 1,088 mappings | `Beer Name (Full)` → canonical match. For dedup. | — |
+| `Brewery_Name_Fuzzy_Match_List.csv` | 87 mappings | `Brewery` → canonical match. For dedup. | — |
+| `Beer_Descriptors_Simplified.xlsx` | 210 keywords | Flavor/aroma keyword → category (Fruity/Hoppy/Spices/Malty) with impact scores. | — |
+
+### Known data issues to handle
+
+1. **`full_beer_reviews.xlsx` is capped at 1,048,575 rows** — that's Excel's row limit minus header. The actual dataset is likely larger and got truncated. Note this as a known limitation in output stats.
+2. **Encoding mojibake** — styles like `BiÃ¨re de Champagne` are UTF-8 bytes decoded as Latin-1. The pipeline must fix common patterns: `Ã©`→`é`, `Ã¨`→`è`, `Ã¶`→`ö`, `Ã¼`→`ü`, `Ã±`→`ñ`, `Ã¤`→`ä`.
+3. **CSV escaping in profiles** — `beer_profile_and_ratings.csv` has descriptions with embedded double-quotes (`""alt""` style), commas inside quoted fields, and trailing `\t` characters. The CSV reader must handle RFC 4180 quoting properly.
+4. **Empty vs None in CSV output** — When writing output CSVs, `None` values must be written as empty string (not the literal string `"None"`), because Postgres `COPY ... NULL ''` expects empty for NULL.
 
 ---
 
 ## Workstream 1: Database Migration
 
 Create `apps/beerbook/docs/migration-3.1.sql` — a single, idempotent migration file.
+
+**CRITICAL: Back up the database before running this migration.**
+```bash
+docker exec supabase-db pg_dump -U postgres -d postgres > /opt/backups/pre-phase-3.1-$(date +%Y%m%d%H%M%S).sql
+```
 
 ### 1A: Enable pg_trgm extension
 
@@ -53,20 +92,19 @@ CREATE TABLE IF NOT EXISTS breweries (
 
     -- Contact & web
     phone TEXT,
-    website_url TEXT,                    -- raw URL from source
+    website_url TEXT,
     referral_url TEXT,                   -- tracked/affiliate link (future monetization)
 
     -- Classification
-    brewery_type TEXT,                   -- micro, regional, brewpub, taproom, contract, proprietor, large, planning, closed
+    brewery_type TEXT,                   -- micro, regional, brewpub, taproom, contract, large, closed
 
     -- Media
     logo_url TEXT,
     description TEXT,
 
     -- Data provenance
-    source TEXT NOT NULL DEFAULT 'user_submitted',  -- openbrewerydb, user_submitted, scraped
+    source TEXT NOT NULL DEFAULT 'user_submitted',  -- full_reviews, profile, manufacturer, simple_list, user_submitted
     source_id TEXT,                                  -- original ID in source system
-    source_url TEXT,                                 -- where the data came from
     import_batch_id TEXT,                            -- for rollback of bad imports
     verified BOOLEAN DEFAULT FALSE,
     claimed BOOLEAN DEFAULT FALSE,                   -- future: brewery claims their listing
@@ -85,9 +123,7 @@ CREATE INDEX IF NOT EXISTS idx_breweries_name_trgm ON breweries USING gin(name g
 CREATE INDEX IF NOT EXISTS idx_breweries_city_state ON breweries(state, city);
 CREATE INDEX IF NOT EXISTS idx_breweries_geo ON breweries(latitude, longitude);
 CREATE INDEX IF NOT EXISTS idx_breweries_source ON breweries(source);
-CREATE INDEX IF NOT EXISTS idx_breweries_verified ON breweries(verified);
 
--- Grants
 GRANT SELECT ON breweries TO anon;
 ```
 
@@ -105,14 +141,37 @@ CREATE TABLE IF NOT EXISTS beers (
     brewery_name TEXT,                               -- denormalized fallback
 
     -- Classification
-    style TEXT,                                      -- raw style string from source/user (e.g. "New England Style IPA")
-    style_category TEXT,                             -- BJCP-derived style name (matches beer_styles.name, e.g. "Hazy IPA")
-    style_source TEXT DEFAULT 'user',                -- mapped, user, vendor
+    style TEXT,                                      -- raw style string from source
+    style_category TEXT,                             -- BJCP-derived (matches beer_styles.name)
+    style_source TEXT DEFAULT 'inferred',            -- mapped, user, inferred
 
     -- Specs
     abv DECIMAL(4,2),
-    ibu INTEGER,
-    srm INTEGER,                                     -- color scale
+    ibu_min INTEGER,
+    ibu_max INTEGER,
+    srm INTEGER,                                     -- color scale (if available)
+
+    -- Flavor profile (from beer_profile_and_ratings.csv — raw 0-200 scores)
+    -- Only ~3,000 beers have these; NULL for the rest
+    flavor_astringency INTEGER,
+    flavor_body INTEGER,
+    flavor_alcohol INTEGER,
+    flavor_bitter INTEGER,
+    flavor_sweet INTEGER,
+    flavor_sour INTEGER,
+    flavor_salty INTEGER,
+    flavor_fruity INTEGER,
+    flavor_hoppy INTEGER,
+    flavor_spicy INTEGER,
+    flavor_malty INTEGER,
+
+    -- Aggregate community reviews (from datasets, NOT BeerBook user ratings)
+    review_aroma DECIMAL(4,2),
+    review_appearance DECIMAL(4,2),
+    review_palate DECIMAL(4,2),
+    review_taste DECIMAL(4,2),
+    review_overall DECIMAL(4,2),
+    review_count INTEGER DEFAULT 0,
 
     -- Details
     description TEXT,
@@ -120,24 +179,20 @@ CREATE TABLE IF NOT EXISTS beers (
     ingredients JSONB,                               -- { malts: [], hops: [], yeast: '' }
     food_pairings TEXT[],
 
-    -- Availability
-    availability TEXT,                               -- year-round, seasonal, limited
-    is_seasonal BOOLEAN DEFAULT FALSE,
-
     -- Media
     image_url TEXT,
     label_url TEXT,
 
     -- Data provenance
-    source TEXT NOT NULL DEFAULT 'user_submitted',   -- openbeerdatabase, punkapi, user_submitted
-    source_id TEXT,
-    source_url TEXT,
+    source TEXT NOT NULL DEFAULT 'user_submitted',   -- full_reviews, profile, manufacturer, simple_list, user_submitted
+    source_id TEXT,                                   -- external beer ID from dataset
+    source_brewery_id TEXT,                           -- external brewery ID from dataset
     import_batch_id TEXT,
     verified BOOLEAN DEFAULT FALSE,
     submitted_by TEXT,                               -- user_id if user-submitted
 
     -- Multi-tenant
-    crew_id TEXT,                                    -- NULL = global catalog
+    crew_id TEXT,
 
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
@@ -154,9 +209,9 @@ CREATE INDEX IF NOT EXISTS idx_beers_brewery_id ON beers(brewery_id);
 CREATE INDEX IF NOT EXISTS idx_beers_style ON beers(style);
 CREATE INDEX IF NOT EXISTS idx_beers_style_category ON beers(style_category);
 CREATE INDEX IF NOT EXISTS idx_beers_source ON beers(source);
-CREATE INDEX IF NOT EXISTS idx_beers_verified ON beers(verified);
+CREATE INDEX IF NOT EXISTS idx_beers_review_overall ON beers(review_overall DESC NULLS LAST);
+CREATE INDEX IF NOT EXISTS idx_beers_review_count ON beers(review_count DESC NULLS LAST);
 
--- Grants
 GRANT SELECT ON beers TO anon;
 ```
 
@@ -166,7 +221,7 @@ GRANT SELECT ON beers TO anon;
 CREATE TABLE IF NOT EXISTS beer_styles (
     id TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::text,
     name TEXT NOT NULL UNIQUE,
-    category TEXT,                       -- Ale, Lager, Wild/Sour, Hybrid
+    category TEXT,                       -- Ale, Lager, Sour/Wild, Hybrid, etc.
     description TEXT,
     abv_min DECIMAL(4,2),
     abv_max DECIMAL(4,2),
@@ -184,17 +239,15 @@ CREATE TABLE IF NOT EXISTS brewery_aliases (
     id TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::text,
     brewery_id TEXT NOT NULL REFERENCES breweries(id) ON DELETE CASCADE,
     alias_name TEXT NOT NULL,
-    normalized_alias TEXT NOT NULL,       -- lowercase, stripped
-    source TEXT DEFAULT 'import',         -- import, user_correction, merge
+    normalized_alias TEXT NOT NULL,
+    source TEXT DEFAULT 'import',
     created_at TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE(brewery_id, normalized_alias)
 );
 
 CREATE INDEX IF NOT EXISTS idx_brewery_aliases_normalized ON brewery_aliases(normalized_alias);
 CREATE INDEX IF NOT EXISTS idx_brewery_aliases_trgm ON brewery_aliases USING gin(alias_name gin_trgm_ops);
-
 GRANT SELECT ON brewery_aliases TO anon;
-
 
 CREATE TABLE IF NOT EXISTS beer_aliases (
     id TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::text,
@@ -208,11 +261,25 @@ CREATE TABLE IF NOT EXISTS beer_aliases (
 
 CREATE INDEX IF NOT EXISTS idx_beer_aliases_normalized ON beer_aliases(normalized_alias);
 CREATE INDEX IF NOT EXISTS idx_beer_aliases_trgm ON beer_aliases USING gin(alias_name gin_trgm_ops);
-
 GRANT SELECT ON beer_aliases TO anon;
 ```
 
-### 1F: Add `beer_id` column to `ratings` (nullable, no enforcement yet)
+### 1F: Create `flavor_descriptors` table
+
+```sql
+CREATE TABLE IF NOT EXISTS flavor_descriptors (
+    id SERIAL PRIMARY KEY,
+    category TEXT NOT NULL,    -- 'fruity', 'hoppy', 'spices', 'malty'
+    keyword TEXT NOT NULL,
+    impact INTEGER DEFAULT 1,
+    UNIQUE(category, keyword)
+);
+
+CREATE INDEX IF NOT EXISTS idx_descriptors_category ON flavor_descriptors(category);
+GRANT SELECT ON flavor_descriptors TO anon;
+```
+
+### 1G: Add `beer_id` column to `ratings` (nullable, no enforcement yet)
 
 ```sql
 ALTER TABLE ratings ADD COLUMN IF NOT EXISTS beer_id TEXT REFERENCES beers(id) ON DELETE SET NULL;
@@ -221,696 +288,729 @@ CREATE INDEX IF NOT EXISTS idx_ratings_beer_id ON ratings(beer_id);
 
 This column will be used in Phase 3.2 to link ratings to catalog beers. Existing ratings continue to work via `beer_name` strings.
 
-### 1G: Add `updated_at` trigger for new tables
+### 1H: Catalog search function
+
+```sql
+-- Fast prefix + fuzzy search across beers catalog
+-- GRANT EXECUTE is required for PostgREST /rpc/ exposure
+CREATE OR REPLACE FUNCTION search_beer_catalog(
+    search_term TEXT,
+    max_results INTEGER DEFAULT 10
+) RETURNS TABLE (
+    id TEXT,
+    name TEXT,
+    brewery_name TEXT,
+    style TEXT,
+    abv DECIMAL(4,2),
+    review_overall DECIMAL(4,2),
+    review_count INTEGER,
+    source TEXT,
+    similarity_score REAL
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        b.id, b.name, b.brewery_name, b.style,
+        b.abv, b.review_overall, b.review_count, b.source,
+        greatest(
+            similarity(b.name, search_term),
+            similarity(b.brewery_name || ' ' || b.name, search_term)
+        ) AS similarity_score
+    FROM beers b
+    WHERE
+        b.name ILIKE search_term || '%'
+        OR (b.brewery_name || ' ' || b.name) ILIKE '%' || search_term || '%'
+        OR b.brewery_name ILIKE search_term || '%'
+        OR similarity(b.name, search_term) > 0.3
+    ORDER BY
+        CASE WHEN b.name ILIKE search_term || '%' THEN 0 ELSE 1 END,
+        greatest(similarity(b.name, search_term), similarity(b.brewery_name || ' ' || b.name, search_term)) DESC,
+        b.review_count DESC NULLS LAST
+    LIMIT max_results;
+END;
+$$ LANGUAGE plpgsql STABLE;
+
+-- CRITICAL: PostgREST needs EXECUTE grant to expose via /rpc/
+GRANT EXECUTE ON FUNCTION search_beer_catalog(TEXT, INTEGER) TO anon;
+```
+
+### 1I: Triggers
 
 ```sql
 DROP TRIGGER IF EXISTS breweries_updated_at ON breweries;
 CREATE TRIGGER breweries_updated_at BEFORE UPDATE ON breweries FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+DROP TRIGGER IF EXISTS beers_updated_at ON beers;
+CREATE TRIGGER beers_updated_at BEFORE UPDATE ON beers FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 ```
 
-### 1H: Update canonical schema
+### 1J: Update canonical schema
 
-After migration runs, update `apps/beerbook/docs/database-schema.sql` to reflect the full merged schema (existing tables + new catalog tables). This is the single source of truth for "what does the DB look like now."
+After migration runs, update `apps/beerbook/docs/database-schema.sql` to reflect the full merged schema.
 
 **Success criteria for Workstream 1:**
-- [ ] Migration runs without error: `docker exec -i supabase-db psql -U postgres -d postgres < apps/beerbook/docs/migration-3.1.sql`
-- [ ] `\dt` shows new tables: `breweries`, `beers`, `beer_styles`, `brewery_aliases`, `beer_aliases`
-- [ ] `\d breweries` shows all columns including `slug`, `normalized_name`, `referral_url`
-- [ ] `\d beers` shows all columns including `flavor_notes`, `ingredients`, composite unique constraint
+- [ ] Backup taken before migration
+- [ ] Migration runs without error
+- [ ] `\dt` shows new tables: `breweries`, `beers`, `beer_styles`, `brewery_aliases`, `beer_aliases`, `flavor_descriptors`
+- [ ] `\d beers` shows all columns including flavor fields, composite unique constraint
 - [ ] `\d ratings` shows new `beer_id` column
 - [ ] `SELECT * FROM pg_extension WHERE extname = 'pg_trgm';` returns a row
-- [ ] Existing data intact: `SELECT count(*) FROM ratings` matches pre-migration count
+- [ ] Existing data intact: `SELECT count(*) FROM ratings` unchanged
 - [ ] Existing views still work: `SELECT * FROM beer_averages LIMIT 1;`
 
 **STOP. Verify all criteria. Do not proceed to Workstream 2 until migration is confirmed.**
 
 ---
 
-## Workstream 2: Seed Script
+## Workstream 2: Python Data Pipeline
 
-Create `scripts/seed-catalog.js` — a Node.js script that populates the catalog tables from open data sources.
+Create `scripts/build_beer_catalog.py` — a Python script that reads local data files, deduplicates, and outputs clean CSVs for loading into the catalog tables.
 
 ### 2A: Dependencies
 
-The script should use only:
-- `node-fetch` (or native fetch if Node 18+) for HTTP requests
-- `csv-parse` (from npm) for CSV parsing
-- `pg` (node-postgres) for direct DB access
-
-Create `scripts/package.json`:
-```json
-{
-  "name": "beerbook-seed",
-  "version": "1.0.0",
-  "private": true,
-  "type": "module",
-  "dependencies": {
-    "csv-parse": "^5.5.0",
-    "pg": "^8.12.0"
-  }
-}
+Create `scripts/requirements.txt`:
+```
+openpyxl>=3.1.0
 ```
 
-The script connects directly to Postgres (not through PostgREST/beerbook-api). Connection string from environment:
-```
-DATABASE_URL=postgresql://postgres:YOUR_PASSWORD@localhost:5432/postgres
-```
-
-On VPS, if Postgres is only accessible via Docker network, use:
-```bash
-docker exec -i supabase-db psql -U postgres -d postgres
-```
-Or expose port 5432 temporarily for the seed run, or run the script inside a container on the same Docker network.
-
-**Recommended approach:** Create a one-off Docker container that runs on the `default` network (same as supabase-db):
-```bash
-cd scripts
-docker run --rm -it \
-  --network daw-platform_default \
-  -v $(pwd):/app \
-  -w /app \
-  -e DATABASE_URL=postgresql://postgres:$SUPABASE_DB_PASSWORD@supabase-db:5432/postgres \
-  node:20-alpine \
-  sh -c "npm install && node seed-catalog.js"
-```
+No pandas. No external API calls. Only `openpyxl` for reading xlsx files. Everything else is stdlib (`csv`, `re`, `collections`, `pathlib`).
 
 ### 2B: Utility functions
 
-The script needs these helpers:
+```python
+import csv, re, sys
+from pathlib import Path
+from collections import defaultdict, Counter
+import openpyxl
 
-```javascript
-function slugify(name) {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-}
+DATA_DIR = Path(__file__).parent.parent / "data"
+OUT_DIR = Path(__file__).parent.parent / "data" / "output"
+OUT_DIR.mkdir(exist_ok=True)
 
-function normalizeName(name) {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
+def slugify(name: str) -> str:
+    """URL-safe slug: 'Sierra Nevada Brewing Co.' -> 'sierra-nevada-brewing-co'"""
+    return re.sub(r'-+', '-', re.sub(r'[^a-z0-9]+', '-', name.lower())).strip('-')
 
-function generateBatchId() {
-  return `seed_${new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14)}`;
-}
-```
+def normalize_name(name: str) -> str:
+    """Lowercase, strip punctuation, collapse whitespace. For dedup matching."""
+    if not name: return ""
+    return re.sub(r'\s+', ' ', re.sub(r'[^a-z0-9\s]', '', name.lower())).strip()
 
-### 2C: Step 1 — Seed breweries from Open Brewery DB
+def normalize_brewery(name: str) -> str:
+    """Like normalize_name but also strips common suffixes."""
+    if not name: return ""
+    name = re.sub(r'\s+', ' ', name.strip().lower())
+    for suffix in ['brewing company', 'brewing co.', 'brewing co', 'brewery',
+                   'beer company', 'beer co.', 'beer co', 'brew co',
+                   'breweries', 'brauerei', 'brasserie', 'brouwerij',
+                   'llc', 'inc.', 'inc', 'ltd.', 'ltd', 'co.', 'gmbh',
+                   'obergärige hausbrauerei gmbh']:
+        name = re.sub(rf'\s*{re.escape(suffix)}\s*$', '', name, flags=re.IGNORECASE)
+    return re.sub(r'[^a-z0-9\s]', '', name).strip()
 
-Source: `https://api.openbrewerydb.org/v1/breweries`
-
-This API is paginated (200 per page max). Fetch all pages:
-
-```
-GET https://api.openbrewerydb.org/v1/breweries?page=1&per_page=200
-GET https://api.openbrewerydb.org/v1/breweries?page=2&per_page=200
-... continue until empty response
-```
-
-For each brewery, map fields:
-```javascript
-{
-  name: b.name,
-  slug: slugify(b.name),
-  normalized_name: normalizeName(b.name),
-  street: b.street || null,
-  city: b.city || null,
-  state: b.state || null,
-  postal_code: b.postal_code || null,
-  country: b.country || 'US',
-  latitude: b.latitude ? parseFloat(b.latitude) : null,
-  longitude: b.longitude ? parseFloat(b.longitude) : null,
-  phone: b.phone || null,
-  website_url: b.website_url || null,
-  brewery_type: b.brewery_type || null,
-  source: 'openbrewerydb',
-  source_id: b.id,
-  source_url: `https://api.openbrewerydb.org/v1/breweries/${b.id}`,
-  import_batch_id: batchId,
-  verified: true
-}
-```
-
-**Dedup rule:** If a brewery with the same `normalized_name` AND `state` already exists, skip it. Log skips.
-
-**Handle slug collisions:** If `slug` already exists, append city: `${slug}-${slugify(city)}`. If still collides, append source_id.
-
-Use batch inserts (100-200 per INSERT) for performance. Log progress every 500 records.
-
-**Expected result:** ~8,000–9,000 brewery rows.
-
-### 2D: Step 2 — Seed beers from Open Beer DB
-
-Source: Download the CSV dump from GitHub. The script should fetch it from:
-`https://raw.githubusercontent.com/brewdega/open-beer-database-dumps/master/dumps/beers.csv`
-
-Also fetch breweries CSV to map their brewery IDs to names:
-`https://raw.githubusercontent.com/brewdega/open-beer-database-dumps/master/dumps/breweries.csv`
-
-If those URLs are unavailable, fall back to the original source:
-`https://raw.githubusercontent.com/BJClark/openbeerdatabase/master/data/beers.csv`
-
-If neither GitHub URL works, fall back to a local file `scripts/data/beers.csv` and `scripts/data/breweries_openbeerdb.csv` (operator downloads from https://openbeerdb.com and places manually).
-
-**Note:** This dataset is from ~2011 — it won't have modern craft beers. That's fine. User submissions and future imports will fill gaps over time.
-
-For each beer:
-1. Look up the brewery by matching `normalizeName(brewery_name)` against our `breweries.normalized_name`
-2. If no match found, create a new brewery record with `source = 'openbeerdatabase'` and `verified = false`
-3. Map the raw style string to a BJCP style name using `mapStyleToName()` (see 2F)
-4. Derive the broad category from the `beer_styles` lookup table
-5. Insert the beer:
-
-```javascript
-{
-  name: beer.name,
-  slug: slugify(beer.name),
-  normalized_name: normalizeName(beer.name),
-  brewery_id: matchedBreweryId,
-  brewery_name: beer.brewery_name,       // denormalized
-  style: beer.style || null,             // raw style string from source
-  style_category: mapStyleToName(beer.style),  // BJCP-derived style name (matches beer_styles.name)
-  style_source: 'vendor',
-  abv: beer.abv ? parseFloat(beer.abv) : null,
-  ibu: beer.ibu ? parseInt(beer.ibu) : null,
-  description: beer.description || null,
-  source: 'openbeerdatabase',
-  source_id: beer.id,
-  import_batch_id: batchId,
-  verified: true
-}
-```
-
-**Dedup rule:** Use the composite unique constraint `(brewery_id, normalized_name)`. Use `ON CONFLICT DO NOTHING` to skip exact dupes.
-
-**Expected result:** ~5,000–6,000 beer rows.
-
-### 2E: Step 3 — Seed beers from Punk API (BrewDog)
-
-Source: The original Punk API (`api.punkapi.com`) shut down May 2024. Use the community fork:
-`https://punkapi-alxiw.amvera.io/v3/beers`
-
-Paginated: `?page=1&per_page=80`. Fetch all pages until empty.
-
-**Note:** This fork has 415 beers (more than the original 300). If this fork is also unavailable, the `punkapi-db` npm package (`npm install punkapi-db`) contains the full `data.json` as a fallback. The seed should still succeed without Punk API data — it's a nice-to-have for rich ingredient/pairing data.
-
-First, ensure a "BrewDog" brewery exists:
-```javascript
-// Find or create BrewDog brewery
-let brewdogId = await findBreweryByNormalizedName('brewdog');
-if (!brewdogId) {
-  brewdogId = await insertBrewery({
-    name: 'BrewDog',
-    slug: 'brewdog',
-    normalized_name: 'brewdog',
-    city: 'Ellon',
-    state: null,
-    country: 'Scotland',
-    brewery_type: 'large',
-    website_url: 'https://www.brewdog.com',
-    source: 'punkapi',
-    verified: true,
-    import_batch_id: batchId
-  });
-}
-```
-
-For each Punk API beer:
-```javascript
-{
-  name: beer.name,
-  slug: slugify(beer.name),
-  normalized_name: normalizeName(beer.name),
-  brewery_id: brewdogId,
-  brewery_name: 'BrewDog',
-  style: beer.tagline || null,
-  abv: beer.abv,
-  ibu: beer.ibu,
-  srm: beer.srm,
-  description: beer.description,
-  flavor_notes: extractFlavorNotes(beer),   // see 2F
-  ingredients: {
-    malts: beer.ingredients?.malt?.map(m => m.name) || [],
-    hops: beer.ingredients?.hops?.map(h => h.name) || [],
-    yeast: beer.ingredients?.yeast || null
-  },
-  food_pairings: beer.food_pairing || [],
-  source: 'punkapi',
-  source_id: String(beer.id),
-  import_batch_id: batchId,
-  verified: true
-}
-```
-
-**Expected result:** ~300 beer rows with rich ingredient/pairing data.
-
-### 2F: Helper functions
-
-```javascript
-// Map raw style strings to the closest BJCP-derived style name
-// Returns the specific style for beer_styles lookup matching
-function mapStyleToName(styleStr) {
-  if (!styleStr) return null;
-  const s = styleStr.toLowerCase();
-
-  // IPA family
-  if (s.includes('hazy') || s.includes('new england') || s.includes('neipa') || s.includes('juicy')) return 'Hazy IPA';
-  if (s.includes('double ipa') || s.includes('imperial ipa') || s.includes('dipa')) return 'Double IPA';
-  if (s.includes('brut ipa')) return 'Brut IPA';
-  if (s.includes('black ipa') || s.includes('cascadian')) return 'Black IPA';
-  if (s.includes('rye ipa')) return 'Rye IPA';
-  if (s.includes('belgian ipa')) return 'Belgian IPA';
-  if (s.includes('english ipa')) return 'English IPA';
-  if (s.includes('ipa') || s.includes('india pale')) return 'American IPA';
-
-  // Stout family
-  if (s.includes('imperial stout') || s.includes('russian imperial')) return 'Imperial Stout';
-  if (s.includes('oatmeal stout')) return 'Oatmeal Stout';
-  if (s.includes('sweet stout') || s.includes('milk stout') || s.includes('lactose stout')) return 'Sweet Stout';
-  if (s.includes('tropical stout')) return 'Tropical Stout';
-  if (s.includes('foreign extra stout') || s.includes('export stout')) return 'Foreign Extra Stout';
-  if (s.includes('irish extra stout')) return 'Irish Extra Stout';
-  if (s.includes('irish stout') || s.includes('dry stout')) return 'Irish Stout';
-  if (s.includes('american stout')) return 'American Stout';
-  if (s.includes('stout')) return 'Irish Stout';
-
-  // Porter family
-  if (s.includes('baltic porter')) return 'Baltic Porter';
-  if (s.includes('english porter')) return 'English Porter';
-  if (s.includes('american porter')) return 'American Porter';
-  if (s.includes('porter')) return 'American Porter';
-
-  // Sour / Wild
-  if (s.includes('berliner')) return 'Berliner Weisse';
-  if (s.includes('gose')) return 'Gose';
-  if (s.includes('gueuze')) return 'Gueuze';
-  if (s.includes('lambic')) return 'Lambic';
-  if (s.includes('flanders red')) return 'Flanders Red Ale';
-  if (s.includes('oud bruin')) return 'Oud Bruin';
-  if (s.includes('brett')) return 'Brett Beer';
-  if (s.includes('sour') || s.includes('wild')) return 'Mixed-Fermentation Sour Beer';
-
-  // Belgian family
-  if (s.includes('witbier') || s.includes('belgian wit') || s.includes('white ale')) return 'Witbier';
-  if (s.includes('saison') || s.includes('farmhouse')) return 'Saison';
-  if (s.includes('dubbel')) return 'Belgian Dubbel';
-  if (s.includes('tripel')) return 'Belgian Tripel';
-  if (s.includes('belgian dark strong')) return 'Belgian Dark Strong Ale';
-  if (s.includes('belgian golden strong')) return 'Belgian Golden Strong Ale';
-  if (s.includes('belgian blonde')) return 'Belgian Blonde Ale';
-  if (s.includes('belgian pale')) return 'Belgian Pale Ale';
-  if (s.includes('bière de garde') || s.includes('biere de garde')) return 'Bière de Garde';
-  if (s.includes('belgian single')) return 'Belgian Single';
-  if (s.includes('belgian')) return 'Belgian Pale Ale';
-
-  // Wheat family
-  if (s.includes('weizenbock')) return 'Weizenbock';
-  if (s.includes('dunkles weiss') || s.includes('dunkelweizen')) return 'Dunkles Weissbier';
-  if (s.includes('hefeweizen') || s.includes('weissbier') || s.includes('weizen')) return 'Weissbier';
-  if (s.includes('wheatwine')) return 'Wheatwine';
-  if (s.includes('american wheat')) return 'American Wheat Beer';
-  if (s.includes('wheat')) return 'American Wheat Beer';
-
-  // Lager family
-  if (s.includes('czech') && s.includes('pale')) return 'Czech Premium Pale Lager';
-  if (s.includes('czech') && s.includes('amber')) return 'Czech Amber Lager';
-  if (s.includes('czech') && s.includes('dark')) return 'Czech Dark Lager';
-  if (s.includes('pilsner') || s.includes('pilsener') || s.includes('pils')) return 'German Pils';
-  if (s.includes('helles') && !s.includes('bock')) return 'Munich Helles';
-  if (s.includes('festbier') || s.includes('oktoberfest')) return 'Festbier';
-  if (s.includes('märzen') || s.includes('marzen')) return 'Märzen';
-  if (s.includes('vienna lager')) return 'Vienna Lager';
-  if (s.includes('dunkel') && !s.includes('weiss') && !s.includes('weizen')) return 'Munich Dunkel';
-  if (s.includes('schwarzbier')) return 'Schwarzbier';
-  if (s.includes('rauchbier') || s.includes('smoked lager')) return 'Rauchbier';
-  if (s.includes('american light lager')) return 'American Light Lager';
-  if (s.includes('american lager') || s.includes('adjunct lager')) return 'American Lager';
-  if (s.includes('cream ale')) return 'Cream Ale';
-  if (s.includes('lager')) return 'International Pale Lager';
-
-  // Bock family
-  if (s.includes('eisbock')) return 'Eisbock';
-  if (s.includes('doppelbock')) return 'Doppelbock';
-  if (s.includes('helles bock') || s.includes('maibock')) return 'Helles Bock';
-  if (s.includes('dunkles bock')) return 'Dunkles Bock';
-  if (s.includes('bock')) return 'Dunkles Bock';
-
-  // Hybrid
-  if (s.includes('kölsch') || s.includes('kolsch')) return 'Kölsch';
-  if (s.includes('altbier') || s.includes('alt beer')) return 'Altbier';
-  if (s.includes('california common') || s.includes('steam beer')) return 'California Common';
-
-  // Pale Ale family
-  if (s.includes('american pale')) return 'American Pale Ale';
-  if (s.includes('british golden')) return 'British Golden Ale';
-  if (s.includes('blonde ale') || s.includes('golden ale')) return 'Blonde Ale';
-  if (s.includes('pale ale')) return 'American Pale Ale';
-
-  // Amber / Red
-  if (s.includes('irish red')) return 'Irish Red Ale';
-  if (s.includes('american amber')) return 'American Amber Ale';
-  if (s.includes('amber') || s.includes('red ale')) return 'American Amber Ale';
-
-  // Brown Ale
-  if (s.includes('american brown')) return 'American Brown Ale';
-  if (s.includes('british brown') || s.includes('english brown')) return 'British Brown Ale';
-  if (s.includes('dark mild') || s.includes('mild ale')) return 'Dark Mild';
-  if (s.includes('brown ale')) return 'American Brown Ale';
-
-  // Bitter
-  if (s.includes('strong bitter') || s.includes('esb') || s.includes('extra special')) return 'Strong Bitter';
-  if (s.includes('best bitter')) return 'Best Bitter';
-  if (s.includes('ordinary bitter') || s.includes('session bitter')) return 'Ordinary Bitter';
-  if (s.includes('bitter')) return 'Best Bitter';
-
-  // Scottish
-  if (s.includes('wee heavy') || s.includes('scotch ale')) return 'Wee Heavy';
-  if (s.includes('scottish')) return 'Scottish Export';
-
-  // Barleywine
-  if (s.includes('american barleywine') || s.includes('american barley wine')) return 'American Barleywine';
-  if (s.includes('english barleywine') || s.includes('english barley wine')) return 'English Barleywine';
-  if (s.includes('barleywine') || s.includes('barley wine')) return 'American Barleywine';
-
-  // Strong
-  if (s.includes('american strong') || s.includes('imperial')) return 'American Strong Ale';
-  if (s.includes('british strong') || s.includes('old ale')) return 'Old Ale';
-
-  // Specialty
-  if (s.includes('fruit')) return 'Fruit Beer';
-  if (s.includes('smoked') || s.includes('smoke')) return 'Smoked Beer';
-  if (s.includes('wood') || s.includes('barrel')) return 'Wood-Aged Beer';
-  if (s.includes('spice') || s.includes('herb') || s.includes('pumpkin') || s.includes('chili') || s.includes('chile')) return 'Spice/Herb/Vegetable Beer';
-
-  // Non-beer
-  if (s.includes('cider')) return 'Cider';
-  if (s.includes('mead')) return 'Mead';
-  if (s.includes('seltzer')) return 'Hard Seltzer';
-
-  return 'Other';
-}
-
-// Extract flavor notes from Punk API hop data
-function extractFlavorNotes(beer) {
-  const notes = new Set();
-  if (beer.ingredients?.hops) {
-    for (const hop of beer.ingredients.hops) {
-      // Punk API sometimes includes flavor attribute
-      if (hop.attribute === 'flavour' || hop.attribute === 'aroma') {
-        notes.add(hop.name.toLowerCase());
-      }
+def fix_mojibake(text: str) -> str:
+    """Fix common UTF-8-as-Latin-1 encoding artifacts."""
+    if not text: return text
+    replacements = {
+        'Ã©': 'é', 'Ã¨': 'è', 'Ã¶': 'ö', 'Ã¼': 'ü', 'Ã±': 'ñ',
+        'Ã¤': 'ä', 'Ã³': 'ó', 'Ã¡': 'á', 'Ã­': 'í', 'Ã§': 'ç',
+        'Ã¢': 'â', 'Ãª': 'ê', 'Ã®': 'î', 'Ã´': 'ô', 'Ã»': 'û',
+        'Ã¨re': 'ère', 'BiÃ¨re': 'Bière',
     }
-  }
-  return notes.size > 0 ? [...notes] : null;
-}
+    for bad, good in replacements.items():
+        text = text.replace(bad, good)
+    return text
+
+def safe_float(v):
+    try: return round(float(v), 2) if v is not None and str(v).strip() != '' else None
+    except: return None
+
+def safe_int(v):
+    try: return int(float(v)) if v is not None and str(v).strip() != '' else None
+    except: return None
+
+def csv_val(v):
+    """Convert Python value to CSV-safe string. None -> empty string (not 'None')."""
+    if v is None: return ''
+    if isinstance(v, float): return str(v)
+    return str(v)
 ```
 
-### 2G: Seed beer_styles lookup
+### 2C: Load fuzzy match mappings
 
-Seed with the full BJCP 2021-derived style list (~67 styles). Each style has a `category` for broad grouping in the UI. Stats (ABV, IBU) are typical ranges from BJCP guidelines.
+```python
+def load_beer_fuzzy_map() -> dict:
+    mapping = {}
+    with open(DATA_DIR / "Beer_Name_Fuzzy_Match_List.csv", encoding="utf-8-sig") as f:
+        for row in csv.DictReader(f):
+            key = normalize_name(row["Beer Name (Full)"])
+            mapping[key] = row["matches"].strip()
+    return mapping
 
-```javascript
-const STYLES = [
-  // === Standard American Beer ===
-  { name: 'American Light Lager', category: 'Lager', abv_min: 2.8, abv_max: 4.2, ibu_min: 8, ibu_max: 12 },
-  { name: 'American Lager', category: 'Lager', abv_min: 4.2, abv_max: 5.3, ibu_min: 8, ibu_max: 18 },
-  { name: 'Cream Ale', category: 'Hybrid', abv_min: 4.2, abv_max: 5.6, ibu_min: 8, ibu_max: 20 },
-  { name: 'American Wheat Beer', category: 'Wheat', abv_min: 4.0, abv_max: 5.5, ibu_min: 15, ibu_max: 30 },
-
-  // === International Lager ===
-  { name: 'International Pale Lager', category: 'Lager', abv_min: 4.5, abv_max: 6.0, ibu_min: 18, ibu_max: 25 },
-  { name: 'International Amber Lager', category: 'Lager', abv_min: 4.5, abv_max: 6.0, ibu_min: 8, ibu_max: 25 },
-  { name: 'International Dark Lager', category: 'Lager', abv_min: 4.2, abv_max: 6.0, ibu_min: 8, ibu_max: 20 },
-
-  // === Czech Lager ===
-  { name: 'Czech Pale Lager', category: 'Lager', abv_min: 3.0, abv_max: 4.1, ibu_min: 20, ibu_max: 35 },
-  { name: 'Czech Premium Pale Lager', category: 'Lager', abv_min: 4.2, abv_max: 5.8, ibu_min: 30, ibu_max: 45 },
-  { name: 'Czech Amber Lager', category: 'Lager', abv_min: 4.4, abv_max: 5.8, ibu_min: 20, ibu_max: 35 },
-  { name: 'Czech Dark Lager', category: 'Lager', abv_min: 4.4, abv_max: 5.8, ibu_min: 18, ibu_max: 34 },
-
-  // === Pale Malty European Lager ===
-  { name: 'Munich Helles', category: 'Lager', abv_min: 4.7, abv_max: 5.4, ibu_min: 16, ibu_max: 22 },
-  { name: 'Festbier', category: 'Lager', abv_min: 5.8, abv_max: 6.3, ibu_min: 18, ibu_max: 25 },
-  { name: 'Helles Bock', category: 'Bock', abv_min: 6.3, abv_max: 7.4, ibu_min: 23, ibu_max: 35 },
-
-  // === Pale Bitter European Beer ===
-  { name: 'German Leichtbier', category: 'Lager', abv_min: 2.4, abv_max: 3.6, ibu_min: 15, ibu_max: 28 },
-  { name: 'Kölsch', category: 'Hybrid', abv_min: 4.4, abv_max: 5.2, ibu_min: 18, ibu_max: 30 },
-  { name: 'German Helles Exportbier', category: 'Lager', abv_min: 5.0, abv_max: 6.0, ibu_min: 20, ibu_max: 30 },
-  { name: 'German Pils', category: 'Lager', abv_min: 4.4, abv_max: 5.2, ibu_min: 22, ibu_max: 40 },
-
-  // === Amber Malty European Lager ===
-  { name: 'Märzen', category: 'Lager', abv_min: 5.6, abv_max: 6.3, ibu_min: 18, ibu_max: 24 },
-  { name: 'Rauchbier', category: 'Lager', abv_min: 4.8, abv_max: 6.0, ibu_min: 20, ibu_max: 30 },
-  { name: 'Dunkles Bock', category: 'Bock', abv_min: 6.3, abv_max: 7.2, ibu_min: 20, ibu_max: 27 },
-
-  // === Amber Bitter European Beer ===
-  { name: 'Vienna Lager', category: 'Lager', abv_min: 4.7, abv_max: 5.5, ibu_min: 18, ibu_max: 30 },
-  { name: 'Altbier', category: 'Hybrid', abv_min: 4.3, abv_max: 5.5, ibu_min: 25, ibu_max: 50 },
-
-  // === Dark European Lager ===
-  { name: 'Munich Dunkel', category: 'Lager', abv_min: 4.5, abv_max: 5.6, ibu_min: 18, ibu_max: 28 },
-  { name: 'Schwarzbier', category: 'Lager', abv_min: 4.4, abv_max: 5.4, ibu_min: 20, ibu_max: 35 },
-
-  // === Strong European Beer ===
-  { name: 'Doppelbock', category: 'Bock', abv_min: 7.0, abv_max: 10.0, ibu_min: 16, ibu_max: 26 },
-  { name: 'Eisbock', category: 'Bock', abv_min: 9.0, abv_max: 14.0, ibu_min: 25, ibu_max: 35 },
-  { name: 'Baltic Porter', category: 'Porter', abv_min: 6.5, abv_max: 9.5, ibu_min: 20, ibu_max: 40 },
-
-  // === German Wheat Beer ===
-  { name: 'Weissbier', category: 'Wheat', abv_min: 4.3, abv_max: 5.6, ibu_min: 8, ibu_max: 15 },
-  { name: 'Dunkles Weissbier', category: 'Wheat', abv_min: 4.3, abv_max: 5.6, ibu_min: 10, ibu_max: 18 },
-  { name: 'Weizenbock', category: 'Wheat', abv_min: 6.5, abv_max: 9.0, ibu_min: 15, ibu_max: 30 },
-
-  // === British Bitter ===
-  { name: 'Ordinary Bitter', category: 'Bitter', abv_min: 3.2, abv_max: 3.8, ibu_min: 25, ibu_max: 35 },
-  { name: 'Best Bitter', category: 'Bitter', abv_min: 3.8, abv_max: 4.6, ibu_min: 25, ibu_max: 40 },
-  { name: 'Strong Bitter', category: 'Bitter', abv_min: 4.6, abv_max: 6.2, ibu_min: 30, ibu_max: 50 },
-
-  // === Pale Commonwealth Beer ===
-  { name: 'British Golden Ale', category: 'Pale Ale', abv_min: 3.8, abv_max: 5.0, ibu_min: 20, ibu_max: 45 },
-  { name: 'Australian Sparkling Ale', category: 'Pale Ale', abv_min: 4.5, abv_max: 6.0, ibu_min: 20, ibu_max: 35 },
-  { name: 'English IPA', category: 'IPA', abv_min: 5.0, abv_max: 7.5, ibu_min: 40, ibu_max: 60 },
-
-  // === Brown British Beer ===
-  { name: 'Dark Mild', category: 'Brown Ale', abv_min: 3.0, abv_max: 3.8, ibu_min: 10, ibu_max: 25 },
-  { name: 'British Brown Ale', category: 'Brown Ale', abv_min: 4.2, abv_max: 5.9, ibu_min: 20, ibu_max: 30 },
-  { name: 'English Porter', category: 'Porter', abv_min: 4.0, abv_max: 5.4, ibu_min: 18, ibu_max: 35 },
-
-  // === Scottish Ale ===
-  { name: 'Scottish Light', category: 'Scottish Ale', abv_min: 2.5, abv_max: 3.3, ibu_min: 10, ibu_max: 20 },
-  { name: 'Scottish Heavy', category: 'Scottish Ale', abv_min: 3.3, abv_max: 3.9, ibu_min: 10, ibu_max: 20 },
-  { name: 'Scottish Export', category: 'Scottish Ale', abv_min: 3.9, abv_max: 6.0, ibu_min: 15, ibu_max: 30 },
-
-  // === Irish Beer ===
-  { name: 'Irish Red Ale', category: 'Amber/Red', abv_min: 3.8, abv_max: 5.0, ibu_min: 18, ibu_max: 28 },
-  { name: 'Irish Stout', category: 'Stout', abv_min: 3.8, abv_max: 5.0, ibu_min: 25, ibu_max: 45 },
-  { name: 'Irish Extra Stout', category: 'Stout', abv_min: 5.0, abv_max: 6.5, ibu_min: 35, ibu_max: 50 },
-
-  // === Dark British Beer ===
-  { name: 'Sweet Stout', category: 'Stout', abv_min: 4.0, abv_max: 6.0, ibu_min: 20, ibu_max: 40 },
-  { name: 'Oatmeal Stout', category: 'Stout', abv_min: 4.2, abv_max: 5.9, ibu_min: 25, ibu_max: 40 },
-  { name: 'Tropical Stout', category: 'Stout', abv_min: 5.5, abv_max: 8.0, ibu_min: 30, ibu_max: 50 },
-  { name: 'Foreign Extra Stout', category: 'Stout', abv_min: 6.3, abv_max: 8.0, ibu_min: 50, ibu_max: 70 },
-
-  // === Strong British Ale ===
-  { name: 'British Strong Ale', category: 'Strong Ale', abv_min: 5.5, abv_max: 8.0, ibu_min: 30, ibu_max: 60 },
-  { name: 'Old Ale', category: 'Strong Ale', abv_min: 5.5, abv_max: 9.0, ibu_min: 30, ibu_max: 60 },
-  { name: 'Wee Heavy', category: 'Scottish Ale', abv_min: 6.5, abv_max: 10.0, ibu_min: 17, ibu_max: 35 },
-  { name: 'English Barleywine', category: 'Barleywine', abv_min: 8.0, abv_max: 12.0, ibu_min: 35, ibu_max: 70 },
-
-  // === Pale American Ale ===
-  { name: 'Blonde Ale', category: 'Pale Ale', abv_min: 3.8, abv_max: 5.5, ibu_min: 15, ibu_max: 28 },
-  { name: 'American Pale Ale', category: 'Pale Ale', abv_min: 4.5, abv_max: 6.2, ibu_min: 30, ibu_max: 50 },
-
-  // === Amber and Brown American Beer ===
-  { name: 'American Amber Ale', category: 'Amber/Red', abv_min: 4.5, abv_max: 6.2, ibu_min: 25, ibu_max: 40 },
-  { name: 'California Common', category: 'Hybrid', abv_min: 4.5, abv_max: 5.5, ibu_min: 30, ibu_max: 45 },
-  { name: 'American Brown Ale', category: 'Brown Ale', abv_min: 4.3, abv_max: 6.2, ibu_min: 20, ibu_max: 30 },
-
-  // === American Porter and Stout ===
-  { name: 'American Porter', category: 'Porter', abv_min: 4.8, abv_max: 6.5, ibu_min: 25, ibu_max: 50 },
-  { name: 'American Stout', category: 'Stout', abv_min: 5.0, abv_max: 7.0, ibu_min: 35, ibu_max: 75 },
-  { name: 'Imperial Stout', category: 'Stout', abv_min: 8.0, abv_max: 12.0, ibu_min: 50, ibu_max: 90 },
-
-  // === IPA ===
-  { name: 'American IPA', category: 'IPA', abv_min: 5.5, abv_max: 7.5, ibu_min: 40, ibu_max: 70 },
-  { name: 'Hazy IPA', category: 'IPA', abv_min: 6.0, abv_max: 9.0, ibu_min: 25, ibu_max: 60 },
-  { name: 'Double IPA', category: 'IPA', abv_min: 7.5, abv_max: 10.0, ibu_min: 60, ibu_max: 100 },
-
-  // === Strong American Ale ===
-  { name: 'American Strong Ale', category: 'Strong Ale', abv_min: 6.3, abv_max: 10.0, ibu_min: 50, ibu_max: 100 },
-  { name: 'American Barleywine', category: 'Barleywine', abv_min: 8.0, abv_max: 12.0, ibu_min: 50, ibu_max: 100 },
-  { name: 'Wheatwine', category: 'Wheat', abv_min: 8.0, abv_max: 12.0, ibu_min: 30, ibu_max: 60 },
-
-  // === European Sour Ale ===
-  { name: 'Berliner Weisse', category: 'Sour/Wild', abv_min: 2.8, abv_max: 3.8, ibu_min: 3, ibu_max: 8 },
-  { name: 'Flanders Red Ale', category: 'Sour/Wild', abv_min: 4.6, abv_max: 6.5, ibu_min: 10, ibu_max: 25 },
-  { name: 'Oud Bruin', category: 'Sour/Wild', abv_min: 4.0, abv_max: 8.0, ibu_min: 20, ibu_max: 25 },
-  { name: 'Lambic', category: 'Sour/Wild', abv_min: 5.0, abv_max: 6.5, ibu_min: 0, ibu_max: 10 },
-  { name: 'Gueuze', category: 'Sour/Wild', abv_min: 5.0, abv_max: 8.0, ibu_min: 0, ibu_max: 10 },
-  { name: 'Gose', category: 'Sour/Wild', abv_min: 4.2, abv_max: 4.8, ibu_min: 5, ibu_max: 12 },
-
-  // === Belgian Ale ===
-  { name: 'Witbier', category: 'Wheat', abv_min: 4.5, abv_max: 5.5, ibu_min: 8, ibu_max: 20 },
-  { name: 'Belgian Pale Ale', category: 'Belgian', abv_min: 4.8, abv_max: 5.5, ibu_min: 20, ibu_max: 30 },
-  { name: 'Bière de Garde', category: 'Belgian', abv_min: 6.0, abv_max: 8.5, ibu_min: 18, ibu_max: 28 },
-  { name: 'Saison', category: 'Belgian', abv_min: 5.0, abv_max: 9.5, ibu_min: 20, ibu_max: 35 },
-
-  // === Strong Belgian Ale ===
-  { name: 'Belgian Blonde Ale', category: 'Belgian', abv_min: 6.0, abv_max: 7.5, ibu_min: 15, ibu_max: 30 },
-  { name: 'Belgian Golden Strong Ale', category: 'Belgian', abv_min: 7.5, abv_max: 10.5, ibu_min: 22, ibu_max: 35 },
-  { name: 'Belgian Tripel', category: 'Belgian', abv_min: 7.5, abv_max: 9.5, ibu_min: 20, ibu_max: 40 },
-
-  // === Monastic Ale ===
-  { name: 'Belgian Single', category: 'Belgian', abv_min: 4.8, abv_max: 6.0, ibu_min: 25, ibu_max: 45 },
-  { name: 'Belgian Dubbel', category: 'Belgian', abv_min: 6.0, abv_max: 7.6, ibu_min: 15, ibu_max: 25 },
-  { name: 'Belgian Dark Strong Ale', category: 'Belgian', abv_min: 8.0, abv_max: 12.0, ibu_min: 20, ibu_max: 35 },
-
-  // === Specialty IPA (popular substyles worth tracking) ===
-  { name: 'Belgian IPA', category: 'IPA', abv_min: 6.2, abv_max: 9.5, ibu_min: 50, ibu_max: 100 },
-  { name: 'Black IPA', category: 'IPA', abv_min: 5.0, abv_max: 9.0, ibu_min: 50, ibu_max: 90 },
-  { name: 'Brut IPA', category: 'IPA', abv_min: 6.0, abv_max: 7.5, ibu_min: 20, ibu_max: 30 },
-  { name: 'Rye IPA', category: 'IPA', abv_min: 5.5, abv_max: 8.0, ibu_min: 50, ibu_max: 75 },
-
-  // === American Wild Ale ===
-  { name: 'Brett Beer', category: 'Sour/Wild', abv_min: null, abv_max: null, ibu_min: null, ibu_max: null },
-  { name: 'Mixed-Fermentation Sour Beer', category: 'Sour/Wild', abv_min: null, abv_max: null, ibu_min: null, ibu_max: null },
-
-  // === Specialty / Catch-all ===
-  { name: 'Fruit Beer', category: 'Specialty', abv_min: null, abv_max: null, ibu_min: null, ibu_max: null },
-  { name: 'Spice/Herb/Vegetable Beer', category: 'Specialty', abv_min: null, abv_max: null, ibu_min: null, ibu_max: null },
-  { name: 'Smoked Beer', category: 'Specialty', abv_min: null, abv_max: null, ibu_min: null, ibu_max: null },
-  { name: 'Wood-Aged Beer', category: 'Specialty', abv_min: null, abv_max: null, ibu_min: null, ibu_max: null },
-
-  // === Non-beer (for completeness) ===
-  { name: 'Cider', category: 'Cider', abv_min: 3.0, abv_max: 10.0, ibu_min: null, ibu_max: null },
-  { name: 'Mead', category: 'Mead', abv_min: 5.0, abv_max: 20.0, ibu_min: null, ibu_max: null },
-  { name: 'Hard Seltzer', category: 'Other', abv_min: 3.0, abv_max: 7.0, ibu_min: null, ibu_max: null },
-  { name: 'Other', category: 'Other', abv_min: null, abv_max: null, ibu_min: null, ibu_max: null }
-];
+def load_brewery_fuzzy_map() -> dict:
+    mapping = {}
+    with open(DATA_DIR / "Brewery_Name_Fuzzy_Match_List.csv", encoding="utf-8-sig") as f:
+        for row in csv.DictReader(f):
+            key = normalize_brewery(row["Brewery"])
+            mapping[key] = row["matches"].strip()
+    return mapping
 ```
 
-That's ~87 styles derived from BJCP 2021 categories. Use `ON CONFLICT (name) DO NOTHING`.
+### 2D: Load descriptor keywords
 
-### 2H: Script output
-
-The script should print a summary at the end:
-
-```
-=== Seed Complete ===
-Batch ID: seed_20260218143022
-Breweries inserted: 8,412
-Breweries skipped (dupe): 203
-Beers inserted: 5,847
-Beers skipped (dupe): 312
-Beer styles inserted: 18
-Punk API beers: 325 (or "Punk API unavailable — skipped")
-Duration: 2m 34s
-```
-
-### 2I: Rollback support
-
-If the seed goes wrong, the `import_batch_id` makes cleanup easy:
-
-```sql
-DELETE FROM beers WHERE import_batch_id = 'seed_20260218143022';
-DELETE FROM breweries WHERE import_batch_id = 'seed_20260218143022';
+```python
+def load_descriptors() -> dict:
+    wb = openpyxl.load_workbook(DATA_DIR / "Beer_Descriptors_Simplified.xlsx", read_only=True)
+    ws = wb.active
+    descriptors = {"fruity": {}, "hoppy": {}, "spices": {}, "malty": {}}
+    cats = ["fruity", "hoppy", "spices", "malty"]
+    for row in ws.iter_rows(min_row=2, values_only=True):
+        for i, cat in enumerate(cats):
+            keyword = row[i * 2]
+            impact = row[i * 2 + 1]
+            if keyword:
+                descriptors[cat][keyword.strip().lower()] = int(impact or 1)
+    wb.close()
+    return descriptors
 ```
 
-Document this in a comment at the top of the seed script.
+### 2E: PRIMARY — Ingest full_beer_reviews.xlsx (42K beers from 1M+ reviews)
+
+```python
+def ingest_full_reviews(brewery_fuzzy: dict) -> tuple[dict, dict]:
+    """
+    Read full_beer_reviews.xlsx (1M+ rows), aggregate per beer_beerid.
+    Returns (beers_dict, breweries_dict) keyed by dedup keys.
+    
+    Columns: brewery_id, brewery_name, review_overall, beer_style, beer_name, beer_abv, beer_beerid
+    """
+    print("  Reading full_beer_reviews.xlsx (expect 30-60 seconds)...")
+    wb = openpyxl.load_workbook(DATA_DIR / "full_beer_reviews.xlsx", read_only=True)
+    ws = wb.active
+
+    # Aggregate reviews per beer_beerid
+    agg = defaultdict(lambda: {
+        'name': '', 'brewery': '', 'brewery_id': None,
+        'style': '', 'abv': None, 'beer_id': None, 'ratings': []
+    })
+
+    row_count = 0
+    for row in ws.iter_rows(min_row=2, values_only=True):
+        row_count += 1
+        beer_id = row[6]   # beer_beerid
+        if not beer_id: continue
+
+        b = agg[beer_id]
+        b['beer_id'] = beer_id
+        b['name'] = fix_mojibake(str(row[4] or b['name']))
+        b['brewery'] = fix_mojibake(str(row[1] or b['brewery']))
+        b['brewery_id'] = row[0] or b['brewery_id']
+        b['style'] = fix_mojibake(str(row[3] or b['style']))
+        if row[5] is not None: b['abv'] = row[5]
+        if row[2] is not None: b['ratings'].append(float(row[2]))
+
+    wb.close()
+    print(f"  Processed {row_count} review rows -> {len(agg)} unique beers")
+    if row_count >= 1048575:
+        print(f"  WARNING: Hit Excel row limit (1,048,575). Dataset may be truncated.")
+
+    # Build breweries dict and beers dict
+    breweries = {}  # {normalized_brewery: brewery_record}
+    beers = {}      # {dedup_key: beer_record}
+
+    for beer_id, b in agg.items():
+        beer_name = (b['name'] or '').strip()
+        brewery_raw = (b['brewery'] or '').strip()
+        if not beer_name: continue
+
+        # Resolve brewery
+        norm_brew = normalize_brewery(brewery_raw)
+        canonical_brewery = brewery_fuzzy.get(norm_brew, brewery_raw)
+        brew_key = normalize_brewery(canonical_brewery)
+
+        if brew_key and brew_key not in breweries:
+            breweries[brew_key] = {
+                "name": canonical_brewery,
+                "slug": slugify(canonical_brewery),
+                "normalized_name": brew_key,
+                "source": "full_reviews",
+                "source_id": str(b['brewery_id']) if b['brewery_id'] else None,
+            }
+
+        # Aggregate stats
+        ratings = b['ratings']
+        avg_overall = round(sum(ratings) / len(ratings), 2) if ratings else None
+
+        style_raw = fix_mojibake((b['style'] or '').strip()) or None
+        beer_dedup = f"{brew_key} {normalize_name(beer_name)}"
+
+        beers[beer_dedup] = {
+            "name": beer_name,
+            "slug": slugify(f"{canonical_brewery} {beer_name}"),
+            "normalized_name": normalize_name(beer_name),
+            "brewery_key": brew_key,
+            "brewery_name": canonical_brewery,
+            "style": style_raw,
+            "style_category": map_style_to_bjcp(style_raw),
+            "abv": safe_float(b['abv']),
+            "description": None,
+            "ibu_min": None, "ibu_max": None,
+            # Flavor fields — not in this source
+            "flavor_astringency": None, "flavor_body": None,
+            "flavor_alcohol": None, "flavor_bitter": None,
+            "flavor_sweet": None, "flavor_sour": None,
+            "flavor_salty": None, "flavor_fruity": None,
+            "flavor_hoppy": None, "flavor_spicy": None,
+            "flavor_malty": None,
+            # Review aggregates
+            "review_aroma": None, "review_appearance": None,
+            "review_palate": None, "review_taste": None,
+            "review_overall": avg_overall,
+            "review_count": len(ratings),
+            "source": "full_reviews",
+            "source_id": str(beer_id),
+            "source_brewery_id": str(b['brewery_id']) if b['brewery_id'] else None,
+        }
+
+    return beers, breweries
+```
+
+### 2F: ENRICHMENT — Merge beer_profile_and_ratings.csv
+
+Only ~3,197 beers but the **sole source of flavor profiles, descriptions, IBU, and review dimensions**.
+
+```python
+def merge_profiles(beers: dict, breweries: dict, beer_fuzzy: dict, brewery_fuzzy: dict):
+    """
+    Merge into existing beers dict. If match found, enrich with flavor/description/IBU.
+    If no match, add as new beer.
+    """
+    enriched = 0
+    added = 0
+
+    with open(DATA_DIR / "beer_profile_and_ratings.csv", encoding="utf-8-sig") as f:
+        for row in csv.DictReader(f):
+            beer_name = row["Name"].strip()
+            brewery_raw = row["Brewery"].strip()
+            style = row["Style"].strip()
+
+            norm_brew = normalize_brewery(brewery_raw)
+            canonical_brewery = brewery_fuzzy.get(norm_brew, brewery_raw)
+            brew_key = normalize_brewery(canonical_brewery)
+            beer_dedup = f"{brew_key} {normalize_name(beer_name)}"
+
+            # Ensure brewery exists
+            if brew_key and brew_key not in breweries:
+                breweries[brew_key] = {
+                    "name": canonical_brewery,
+                    "slug": slugify(canonical_brewery),
+                    "normalized_name": brew_key,
+                    "source": "profile",
+                    "source_id": None,
+                }
+
+            # Fields only this source has
+            description_raw = (row.get("Description") or "").strip()
+            # Clean description: remove "Notes:" prefix and trailing \t
+            description = re.sub(r'^Notes:\s*', '', description_raw).rstrip('\t').strip() or None
+
+            enrichment = {
+                "description": description,
+                "ibu_min": safe_int(row.get("Min IBU")),
+                "ibu_max": safe_int(row.get("Max IBU")),
+                "flavor_astringency": safe_int(row.get("Astringency")),
+                "flavor_body": safe_int(row.get("Body")),
+                "flavor_alcohol": safe_int(row.get("Alcohol")),
+                "flavor_bitter": safe_int(row.get("Bitter")),
+                "flavor_sweet": safe_int(row.get("Sweet")),
+                "flavor_sour": safe_int(row.get("Sour")),
+                "flavor_salty": safe_int(row.get("Salty")),
+                "flavor_fruity": safe_int(row.get("Fruits")),
+                "flavor_hoppy": safe_int(row.get("Hoppy")),
+                "flavor_spicy": safe_int(row.get("Spices")),
+                "flavor_malty": safe_int(row.get("Malty")),
+                "review_aroma": safe_float(row.get("review_aroma")),
+                "review_appearance": safe_float(row.get("review_appearance")),
+                "review_palate": safe_float(row.get("review_palate")),
+                "review_taste": safe_float(row.get("review_taste")),
+            }
+
+            if beer_dedup in beers:
+                existing = beers[beer_dedup]
+                for key, val in enrichment.items():
+                    if val is not None and existing.get(key) is None:
+                        existing[key] = val
+                if style and not existing.get("style"):
+                    existing["style"] = style
+                    existing["style_category"] = map_style_to_bjcp(style)
+                if safe_float(row.get("ABV")) and not existing.get("abv"):
+                    existing["abv"] = safe_float(row.get("ABV"))
+                enriched += 1
+            else:
+                beers[beer_dedup] = {
+                    "name": beer_name,
+                    "slug": slugify(f"{canonical_brewery} {beer_name}"),
+                    "normalized_name": normalize_name(beer_name),
+                    "brewery_key": brew_key,
+                    "brewery_name": canonical_brewery,
+                    "style": style or None,
+                    "style_category": map_style_to_bjcp(style),
+                    "abv": safe_float(row.get("ABV")),
+                    "source": "profile",
+                    "source_id": None,
+                    "source_brewery_id": None,
+                    "review_overall": safe_float(row.get("review_overall")),
+                    "review_count": safe_int(row.get("number_of_reviews")),
+                    **enrichment,
+                }
+                added += 1
+
+    print(f"  Profiles: enriched {enriched} existing beers, added {added} new")
+```
+
+### 2G: Tertiary — manufacturers + simple list
+
+```python
+def ingest_manufacturers(beers: dict, breweries: dict, brewery_fuzzy: dict):
+    added = 0
+    with open(DATA_DIR / "beermanufacturersmicrobrewersbrands.csv", encoding="utf-8-sig") as f:
+        for row in csv.DictReader(f):
+            brewery_raw = row["Brewery"].strip()
+            beer_name = row["Beer Name"].strip()
+            if not beer_name: continue
+            norm_brew = normalize_brewery(brewery_raw)
+            canonical_brewery = brewery_fuzzy.get(norm_brew, brewery_raw)
+            brew_key = normalize_brewery(canonical_brewery)
+            beer_dedup = f"{brew_key} {normalize_name(beer_name)}"
+
+            if brew_key and brew_key not in breweries:
+                breweries[brew_key] = {
+                    "name": canonical_brewery, "slug": slugify(canonical_brewery),
+                    "normalized_name": brew_key, "source": "manufacturer", "source_id": None,
+                }
+            if beer_dedup not in beers:
+                beers[beer_dedup] = make_empty_beer(beer_name, brew_key, canonical_brewery, "manufacturer")
+                added += 1
+    print(f"  Manufacturers: +{added} new beers")
+
+def ingest_simple_list(beers: dict, breweries: dict, brewery_fuzzy: dict):
+    added = 0
+    known = sorted(
+        set(b["name"] for b in breweries.values()),
+        key=len, reverse=True
+    )
+    with open(DATA_DIR / "beer_list_simple.txt", encoding="utf-8") as f:
+        for line in f:
+            name = line.strip()
+            if not name: continue
+            dedup_key = normalize_name(name)
+            if dedup_key in beers: continue
+
+            brewery, beer = try_extract_brewery(name, known)
+            brew_key = normalize_brewery(brewery) if brewery else ""
+            beers[dedup_key] = make_empty_beer(
+                beer or name, brew_key, brewery or "", "simple_list",
+                style=infer_style_from_name(name), full_name=name,
+            )
+            added += 1
+    print(f"  Simple list: +{added} new beers")
+```
+
+### 2H: Style mapping (BJCP-derived)
+
+Implement the full `map_style_to_bjcp()` function using the same mapping table from the old prompt (IPA family, Stout family, Porter family, Sour/Wild, Belgian, Wheat, Lager, Bock, Hybrid, Pale Ale, Amber/Red, Brown Ale, Strong Ale, Barleywine, non-beer). This is the same function from the uploaded `09_phase_3_7.md` — copy it exactly, including all the `if s.includes(...)` patterns, translated to Python `if ... in s:` patterns.
+
+Also implement `infer_style_from_name()` for name-only beers (simple regex patterns like `\bIPA\b` → 'American IPA', `\bStout\b` → 'Irish Stout', etc.)
+
+### 2I: BJCP styles seed data
+
+The pipeline should also write `data/output/beer_styles.csv` with the full BJCP-derived style list (~87 styles). Use the complete list from the uploaded `09_phase_3_7.md` section 2G, converted to CSV rows with columns: `name, category, description, abv_min, abv_max, ibu_min, ibu_max`.
+
+### 2J: Helper functions
+
+```python
+def make_empty_beer(beer_name, brew_key, brewery_name, source, style=None, full_name=None):
+    return {
+        "name": beer_name,
+        "slug": slugify(f"{brewery_name} {beer_name}" if brewery_name else beer_name),
+        "normalized_name": normalize_name(beer_name),
+        "brewery_key": brew_key,
+        "brewery_name": brewery_name,
+        "style": style, "style_category": map_style_to_bjcp(style) if style else None,
+        "abv": None, "description": None, "ibu_min": None, "ibu_max": None,
+        "flavor_astringency": None, "flavor_body": None, "flavor_alcohol": None,
+        "flavor_bitter": None, "flavor_sweet": None, "flavor_sour": None,
+        "flavor_salty": None, "flavor_fruity": None, "flavor_hoppy": None,
+        "flavor_spicy": None, "flavor_malty": None,
+        "review_aroma": None, "review_appearance": None, "review_palate": None,
+        "review_taste": None, "review_overall": None, "review_count": None,
+        "source": source, "source_id": None, "source_brewery_id": None,
+    }
+
+def try_extract_brewery(full_name: str, known_breweries: list) -> tuple:
+    lower = full_name.lower()
+    for brewery in known_breweries:
+        if lower.startswith(brewery.lower()) and len(brewery) > 3:
+            remainder = full_name[len(brewery):].strip()
+            if remainder: return brewery, remainder
+    return None, full_name
+```
+
+### 2K: Output writers
+
+Write 4 CSV files to `data/output/`:
+
+1. **`breweries.csv`** — columns: `name, slug, normalized_name, source, source_id`
+2. **`beers.csv`** — columns: `name, slug, normalized_name, brewery_normalized_name, brewery_name, style, style_category, abv, ibu_min, ibu_max, flavor_astringency, flavor_body, flavor_alcohol, flavor_bitter, flavor_sweet, flavor_sour, flavor_salty, flavor_fruity, flavor_hoppy, flavor_spicy, flavor_malty, review_aroma, review_appearance, review_palate, review_taste, review_overall, review_count, description, source, source_id, source_brewery_id`
+3. **`beer_styles.csv`** — columns: `name, category, description, abv_min, abv_max, ibu_min, ibu_max`
+4. **`flavor_descriptors.csv`** — columns: `category, keyword, impact`
+
+**CRITICAL:** Use `csv_val()` helper so `None` → empty string, not the literal `"None"`. Verify by spot-checking:
+```bash
+grep -c "None" data/output/beers.csv  # Should be 0
+```
+
+### 2L: Main pipeline + stats
+
+```python
+def main():
+    print("=" * 50)
+    print("Beer Catalog Pipeline")
+    print("=" * 50)
+
+    # ... load maps, load descriptors, ingest each source in order ...
+    # ... write all output CSVs ...
+
+    # Final stats
+    print(f"\n{'=' * 50}")
+    print(f"FINAL STATS")
+    print(f"{'=' * 50}")
+    print(f"Breweries:         {len(breweries)}")
+    print(f"Beers:             {len(beers)}")
+    print(f"  with ABV:        {sum(1 for b in beers.values() if b['abv'])}")
+    print(f"  with style:      {sum(1 for b in beers.values() if b['style'])}")
+    print(f"  with reviews:    {sum(1 for b in beers.values() if b.get('review_count') and b['review_count'] > 0)}")
+    print(f"  with flavors:    {sum(1 for b in beers.values() if b.get('flavor_hoppy') is not None)}")
+    print(f"  with description:{sum(1 for b in beers.values() if b.get('description'))}")
+    print(f"Styles:            {len(BJCP_STYLES)}")
+    print(f"Descriptors:       {sum(len(v) for v in descriptors.values())}")
+    print(f"\nBy source:")
+    for src, cnt in Counter(b['source'] for b in beers.values()).most_common():
+        print(f"  {src}: {cnt}")
+```
+
+### 2M: Run instructions
+
+```bash
+# From repo root
+pip install -r scripts/requirements.txt
+python scripts/build_beer_catalog.py
+
+# Expect ~60s for xlsx read, rest is fast
+# Outputs in data/output/:
+#   breweries.csv          — unique breweries (~4-5K)
+#   beers.csv              — all beers (~60-80K)
+#   beer_styles.csv        — BJCP styles (~87)
+#   flavor_descriptors.csv — keyword mappings
+```
 
 **Success criteria for Workstream 2:**
-- [ ] `cd scripts && npm install` succeeds
-- [ ] Seed script runs to completion without errors
-- [ ] `SELECT count(*) FROM breweries;` returns 7,000+ rows
-- [ ] `SELECT count(*) FROM beers;` returns 4,000+ rows
-- [ ] `SELECT count(*) FROM beer_styles;` returns 80+ rows
-- [ ] `SELECT * FROM breweries WHERE source = 'openbrewerydb' LIMIT 3;` shows populated fields
-- [ ] `SELECT * FROM beers WHERE source = 'punkapi' LIMIT 3;` shows `ingredients` JSONB and `food_pairings` array
-- [ ] No duplicate breweries: `SELECT normalized_name, state, count(*) FROM breweries GROUP BY normalized_name, state HAVING count(*) > 1;` returns 0 rows (or only intentional multi-location entries)
-- [ ] Slug uniqueness: `SELECT slug, count(*) FROM breweries GROUP BY slug HAVING count(*) > 1;` returns 0 rows
-- [ ] Existing tables unaffected: `SELECT count(*) FROM ratings` unchanged, `SELECT count(*) FROM venues` unchanged
-- [ ] Rollback tested: delete one batch, re-run seed, counts match
+- [ ] Script runs without errors
+- [ ] `grep -c "None" data/output/beers.csv` returns 0
+- [ ] No duplicate normalized names in breweries: `cut -d',' -f3 data/output/breweries.csv | sort | uniq -d | wc -l` = 0 (header excluded)
+- [ ] All ~42K beers from full_reviews present
+- [ ] ~2,000-3,000 beers enriched with flavor profiles from profiles CSV
+- [ ] beer_styles.csv has 80+ rows
+- [ ] Spot check: Sierra Nevada Pale Ale has ABV, style, description, and flavor data
 
-**STOP. Commit. Deploy to VPS. Run migration, then seed. Verify all counts.**
+**STOP. Verify. Commit pipeline and output CSVs.**
 
 ---
 
-## Workstream 3: Documentation
+## Workstream 3: Data Loading
 
-### 3A: Update canonical schema
+Create `scripts/load_catalog_to_db.sh` — loads CSVs into Postgres.
 
-Update `apps/beerbook/docs/database-schema.sql` to include all new tables (breweries, beers, beer_styles, brewery_aliases, beer_aliases) merged with existing schema.
+**This script handles the brewery→beer FK relationship by:**
+1. Loading breweries first
+2. Then loading beers with a JOIN to resolve `brewery_id` from `brewery_normalized_name`
 
-### 3B: Create seed runbook
+```bash
+#!/bin/bash
+set -euo pipefail
 
-Create `runbooks/seed-catalog.md`:
+DB_CONTAINER="${DB_CONTAINER:-supabase-db}"
+DATA_DIR="data/output"
+BATCH_ID="seed_$(date +%Y%m%d%H%M%S)"
 
-```markdown
-# Beer Catalog Seed
+echo "=== Loading Beer Catalog (batch: $BATCH_ID) ==="
 
-## Prerequisites
-- Phase 3.1 migration applied (breweries, beers tables exist)
-- Docker stack running
-- Know your SUPABASE_DB_PASSWORD (from .env)
+# 0. Backup
+echo "0. Backing up database..."
+docker exec "$DB_CONTAINER" pg_dump -U postgres -d postgres > "/opt/backups/pre-catalog-load-$(date +%Y%m%d%H%M%S).sql"
 
-## Run seed
-From repo root on VPS:
-\`\`\`bash
-cd scripts
-docker run --rm -it \
-  --network daw-platform_default \
-  -v $(pwd):/app \
-  -w /app \
-  -e DATABASE_URL=postgresql://postgres:$SUPABASE_DB_PASSWORD@supabase-db:5432/postgres \
-  node:20-alpine \
-  sh -c "npm install && node seed-catalog.js"
-\`\`\`
+# 1. Load beer_styles
+echo "1. Loading beer_styles..."
+docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres -c "
+    COPY beer_styles(name, category, description, abv_min, abv_max, ibu_min, ibu_max)
+    FROM STDIN WITH (FORMAT csv, HEADER true, NULL '');
+" < "$DATA_DIR/beer_styles.csv"
 
-## Verify
-\`\`\`bash
-docker exec supabase-db psql -U postgres -d postgres -c "SELECT source, count(*) FROM breweries GROUP BY source;"
-docker exec supabase-db psql -U postgres -d postgres -c "SELECT source, count(*) FROM beers GROUP BY source;"
-\`\`\`
+# 2. Load breweries into temp table, then insert with batch_id
+echo "2. Loading breweries..."
+docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres <<SQL
+    CREATE TEMP TABLE tmp_breweries (
+        name TEXT, slug TEXT, normalized_name TEXT, source TEXT, source_id TEXT
+    );
+    COPY tmp_breweries FROM STDIN WITH (FORMAT csv, HEADER true, NULL '');
 
-## Rollback
-If seed data is bad:
-\`\`\`bash
-docker exec supabase-db psql -U postgres -d postgres -c "DELETE FROM beers WHERE import_batch_id = 'BATCH_ID_HERE';"
-docker exec supabase-db psql -U postgres -d postgres -c "DELETE FROM breweries WHERE import_batch_id = 'BATCH_ID_HERE';"
-\`\`\`
+    INSERT INTO breweries (name, slug, normalized_name, source, source_id, import_batch_id)
+    SELECT name, slug, normalized_name, source, source_id, '$BATCH_ID'
+    FROM tmp_breweries
+    ON CONFLICT (slug) DO NOTHING;
+
+    DROP TABLE tmp_breweries;
+SQL
+# (pipe the CSV via stdin between the heredoc COPY and the rest)
+
+# 3. Load beers via temp table with brewery FK resolution
+echo "3. Loading beers (this is the big one)..."
+# Load beers CSV into temp, then INSERT with brewery_id JOIN
+docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres <<'OUTER'
+    CREATE TEMP TABLE tmp_beers (
+        name TEXT, slug TEXT, normalized_name TEXT,
+        brewery_normalized_name TEXT, brewery_name TEXT,
+        style TEXT, style_category TEXT,
+        abv DECIMAL, ibu_min INTEGER, ibu_max INTEGER,
+        flavor_astringency INTEGER, flavor_body INTEGER, flavor_alcohol INTEGER,
+        flavor_bitter INTEGER, flavor_sweet INTEGER, flavor_sour INTEGER,
+        flavor_salty INTEGER, flavor_fruity INTEGER, flavor_hoppy INTEGER,
+        flavor_spicy INTEGER, flavor_malty INTEGER,
+        review_aroma DECIMAL, review_appearance DECIMAL,
+        review_palate DECIMAL, review_taste DECIMAL,
+        review_overall DECIMAL, review_count INTEGER,
+        description TEXT, source TEXT, source_id TEXT, source_brewery_id TEXT
+    );
+OUTER
+
+# Pipe the CSV
+docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres -c "
+    COPY tmp_beers FROM STDIN WITH (FORMAT csv, HEADER true, NULL '');
+" < "$DATA_DIR/beers.csv"
+
+# Insert with FK resolution
+docker exec "$DB_CONTAINER" psql -U postgres -d postgres -c "
+    INSERT INTO beers (
+        name, slug, normalized_name, brewery_id, brewery_name,
+        style, style_category, abv, ibu_min, ibu_max,
+        flavor_astringency, flavor_body, flavor_alcohol,
+        flavor_bitter, flavor_sweet, flavor_sour, flavor_salty,
+        flavor_fruity, flavor_hoppy, flavor_spicy, flavor_malty,
+        review_aroma, review_appearance, review_palate, review_taste,
+        review_overall, review_count, description,
+        source, source_id, source_brewery_id, import_batch_id
+    )
+    SELECT
+        t.name, t.slug, t.normalized_name,
+        br.id, t.brewery_name,
+        t.style, t.style_category, t.abv, t.ibu_min, t.ibu_max,
+        t.flavor_astringency, t.flavor_body, t.flavor_alcohol,
+        t.flavor_bitter, t.flavor_sweet, t.flavor_sour, t.flavor_salty,
+        t.flavor_fruity, t.flavor_hoppy, t.flavor_spicy, t.flavor_malty,
+        t.review_aroma, t.review_appearance, t.review_palate, t.review_taste,
+        t.review_overall, t.review_count, t.description,
+        t.source, t.source_id, t.source_brewery_id, '$BATCH_ID'
+    FROM tmp_beers t
+    LEFT JOIN breweries br ON br.normalized_name = t.brewery_normalized_name
+    ON CONFLICT (brewery_id, normalized_name) DO NOTHING;
+
+    DROP TABLE tmp_beers;
+"
+
+# 4. Load flavor_descriptors
+echo "4. Loading flavor_descriptors..."
+docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres -c "
+    COPY flavor_descriptors(category, keyword, impact)
+    FROM STDIN WITH (FORMAT csv, HEADER true, NULL '');
+" < "$DATA_DIR/flavor_descriptors.csv"
+
+# 5. Analyze
+echo "5. Running ANALYZE..."
+docker exec "$DB_CONTAINER" psql -U postgres -d postgres -c "
+    ANALYZE breweries; ANALYZE beers; ANALYZE beer_styles; ANALYZE flavor_descriptors;
+"
+
+# 6. Verify
+echo ""
+echo "=== Verification ==="
+docker exec "$DB_CONTAINER" psql -U postgres -d postgres -c "
+    SELECT 'breweries' as tbl, count(*) FROM breweries
+    UNION ALL SELECT 'beers', count(*) FROM beers
+    UNION ALL SELECT 'beer_styles', count(*) FROM beer_styles
+    UNION ALL SELECT 'flavor_descriptors', count(*) FROM flavor_descriptors
+    UNION ALL SELECT 'beers_with_reviews', count(*) FROM beers WHERE review_count > 0
+    UNION ALL SELECT 'beers_with_flavors', count(*) FROM beers WHERE flavor_hoppy IS NOT NULL
+    UNION ALL SELECT 'beers_with_description', count(*) FROM beers WHERE description IS NOT NULL
+    ORDER BY tbl;
+"
+
+echo ""
+echo "=== Search function test ==="
+docker exec "$DB_CONTAINER" psql -U postgres -d postgres -c "
+    SELECT name, brewery_name, style, review_overall, review_count
+    FROM search_beer_catalog('yuengling', 5);
+"
+
+echo ""
+echo "Batch ID: $BATCH_ID"
+echo "To rollback: DELETE FROM beers WHERE import_batch_id = '$BATCH_ID'; DELETE FROM breweries WHERE import_batch_id = '$BATCH_ID';"
+echo "Done!"
 ```
 
-### 3C: Create migration runbook
-
-Create `runbooks/migration-phase-3.1.md` (same pattern as `runbooks/migration-phase-2.1.md`):
-
-```markdown
-# Phase 3.1 — Database Migration
-
-## Run migration (one-time)
-\`\`\`bash
-docker exec -i supabase-db psql -U postgres -d postgres < apps/beerbook/docs/migration-3.1.sql
-\`\`\`
-
-## Verify
-\`\`\`bash
-docker exec supabase-db psql -U postgres -d postgres -c '\dt'
-docker exec supabase-db psql -U postgres -d postgres -c '\d breweries'
-docker exec supabase-db psql -U postgres -d postgres -c '\d beers'
-docker exec supabase-db psql -U postgres -d postgres -c "SELECT * FROM pg_extension WHERE extname = 'pg_trgm';"
-\`\`\`
-```
+**Note:** The heredoc + COPY piping is tricky. If the shell approach doesn't work cleanly, split into sequential `docker exec` calls — one for temp table creation, one for COPY from stdin, one for INSERT...SELECT. Prioritize correctness over elegance.
 
 **Success criteria for Workstream 3:**
-- [ ] `apps/beerbook/docs/database-schema.sql` reflects full current state including catalog tables
-- [ ] `runbooks/seed-catalog.md` exists with run + verify + rollback instructions
-- [ ] `runbooks/migration-phase-3.1.md` exists with run + verify instructions
+- [ ] `SELECT count(*) FROM breweries;` returns 3,000+ rows
+- [ ] `SELECT count(*) FROM beers;` returns 40,000+ rows
+- [ ] `SELECT count(*) FROM beer_styles;` returns 80+ rows
+- [ ] `search_beer_catalog('yuengling', 5)` returns results
+- [ ] `search_beer_catalog('sierra nevada pale', 5)` returns results with review data
+- [ ] No duplicate beers: `SELECT brewery_id, normalized_name, count(*) FROM beers GROUP BY brewery_id, normalized_name HAVING count(*) > 1;` returns 0
+- [ ] Existing tables unaffected: `SELECT count(*) FROM ratings` unchanged
+- [ ] Rollback command printed and documented
+
+---
+
+## Workstream 4: Documentation
+
+### 4A: Update canonical schema
+
+Update `apps/beerbook/docs/database-schema.sql` to include all new tables merged with existing schema.
+
+### 4B: Create seed runbook
+
+Create `runbooks/seed-catalog.md` with run + verify + rollback instructions.
+
+### 4C: Create migration runbook
+
+Create `runbooks/migration-phase-3.1.md` following the pattern from `runbooks/migration-phase-2.1.md`.
+
+### 4D: Update .gitignore
+
+Add to repo root `.gitignore`:
+```
+# Large data files (not committed, placed manually)
+data/*.xlsx
+data/*.csv
+data/*.txt
+data/output/
+```
+
+**Success criteria for Workstream 4:**
+- [ ] Canonical schema updated
+- [ ] Runbooks exist with run + verify + rollback
+- [ ] `.gitignore` updated
+- [ ] Data file placement documented in seed runbook
 
 ---
 
@@ -918,40 +1018,46 @@ docker exec supabase-db psql -U postgres -d postgres -c "SELECT * FROM pg_extens
 
 | Action | File | Description |
 |--------|------|-------------|
-| CREATE | `apps/beerbook/docs/migration-3.1.sql` | Idempotent migration — catalog tables, aliases, trigram indexes |
-| CREATE | `scripts/package.json` | Dependencies for seed script |
-| CREATE | `scripts/seed-catalog.js` | ETL script — Open Brewery DB + Open Beer DB + Punk API |
-| MODIFY | `apps/beerbook/docs/database-schema.sql` | Canonical schema updated with catalog tables |
+| CREATE | `apps/beerbook/docs/migration-3.1.sql` | Idempotent migration — catalog tables, aliases, trigram indexes, search function |
+| CREATE | `scripts/requirements.txt` | Python dependencies (openpyxl) |
+| CREATE | `scripts/build_beer_catalog.py` | Python pipeline — dedup + CSV generation |
+| CREATE | `scripts/load_catalog_to_db.sh` | Shell script — load CSVs into Postgres |
+| MODIFY | `apps/beerbook/docs/database-schema.sql` | Canonical schema updated |
 | CREATE | `runbooks/seed-catalog.md` | Seed execution + verify + rollback |
 | CREATE | `runbooks/migration-phase-3.1.md` | Migration execution + verify |
+| MODIFY | `.gitignore` | Exclude data files |
 
 ## Constraints
 
 - **Do NOT modify** `apps/beerbook-api/server.js` — API changes happen in Phase 3.2
-- **Do NOT modify** any frontend files — UI changes happen in Phase 3.2
+- **Do NOT modify** any frontend files
 - **Do NOT modify** existing tables (ratings, venues, etc.) beyond adding `beer_id` column
 - **Do NOT drop** any columns, tables, or views
-- Existing data must remain intact after migration
+- **No external API calls** — all data from local files
+- Python 3.10+ for pipeline, no pandas, only openpyxl
 - All DDL is idempotent (`IF NOT EXISTS`, `IF EXISTS`)
-- Seed script must be re-runnable (use `ON CONFLICT DO NOTHING`)
-- No new npm packages in `apps/beerbook-api/` — seed script has its own `scripts/package.json`
+- Pipeline must be idempotent (running twice produces identical output)
+- Load script uses `ON CONFLICT DO NOTHING` for re-runnability
+- `GRANT EXECUTE ON FUNCTION` required for PostgREST RPC exposure
+- Backup before migration AND before data load
 
 ## What Comes Next (Phase 3.2 — not this phase)
 
-- Catalog search API endpoints (trigram-powered autocomplete)
-- User beer submission endpoint
+- Catalog search API endpoints (expose `search_beer_catalog` via `/api/beers/search`)
+- Style list, catalog browse, and beer detail API endpoints
 - Wire `beer_id` into rating flow
-- Update rating form with autocomplete against catalog
+- Update rating form with catalog-backed autocomplete
 - Backfill existing ratings with `beer_id` where possible
+- Beer detail view with flavor profiles and community reviews
+- "Discover" browse page
 
 ## Agent Assumption Log
 
 | Date | Task | Assumption | Rationale |
 |------|------|------------|-----------|
-| | 1B | Open Brewery DB API is available at documented URL; no API key needed | Verified: actively maintained, free, no auth |
-| | 2C | Pagination uses page/per_page params with max 200 per page | Per Open Brewery DB v1 API docs |
-| | 2D | Open Beer DB CSV is accessible via brewdega GitHub fork | Original repo (BJClark) may be stale; brewdega fork has cleaned data. Fallback to local file if both fail. Data is from ~2011. |
-| | 2E | Original Punk API is dead (shut down May 2024); using community fork at punkapi-alxiw.amvera.io | Verified via search. Fork has 415 beers. Script handles gracefully if unavailable. |
-| | 2E | punkapi-db npm package available as secondary fallback | Contains full data.json with all recipes |
-| | 2B | Seed script connects to Postgres via Docker network, not exposed port | Security: don't expose DB port to host |
-| | 1F | Adding nullable beer_id to ratings is safe; no backfill in this phase | Phase 3.2 handles backfill |
+| | 2E | full_beer_reviews.xlsx may be truncated at Excel row limit | 1,048,575 data rows = Excel max. Log warning. |
+| | 2F | beer_profile_and_ratings.csv has RFC 4180 quoting | Python csv module handles this natively |
+| | 2E | Encoding mojibake exists in style names | Observed: `BiÃ¨re de Champagne`. Fix with replacement table. |
+| | 1H | PostgREST requires GRANT EXECUTE for RPC functions | Without it, /rpc/search_beer_catalog returns 404 |
+| | 3 | Brewery→beer FK resolution via normalized_name JOIN | Temp table approach avoids needing brewery IDs in the CSV |
+| | 1G | Adding nullable beer_id to ratings is safe | No backfill in this phase; Phase 3.2 handles it |
