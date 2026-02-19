@@ -390,15 +390,84 @@ const Charts = {
         });
     },
 
-    // ========== RENDER ALL DASHBOARD CHARTS ==========
+    // ========== DASHBOARD: SUMMARIES + LAZY RENDER ==========
+
+    // Summary element IDs (chart card id -> summary paragraph id)
+    _dashboardSummaryIds: {
+        activity: 'chart-summary-activity',
+        topBeers: 'chart-summary-top-beers',
+        styles: 'chart-summary-styles',
+        distribution: 'chart-summary-distribution',
+        ygDist: 'chart-summary-yg',
+        monthly: 'chart-summary-monthly'
+    },
+
+    setDashboardSummaries(ratings) {
+        const r = ratings || [];
+        const set = (chartId, text, isEmpty) => {
+            const id = this._dashboardSummaryIds[chartId];
+            const el = id ? document.getElementById(id) : null;
+            const card = document.querySelector(`[data-chart-id="${chartId}"]`);
+            if (el) el.textContent = text;
+            if (card) {
+                if (isEmpty) card.classList.add('chart-card--empty');
+                else card.classList.remove('chart-card--empty');
+            }
+        };
+
+        // Recent Activity (14 days)
+        const now = new Date();
+        let activityCount = 0;
+        for (let i = 0; i < 14; i++) {
+            const d = new Date(now);
+            d.setDate(d.getDate() - i);
+            const key = d.toISOString().split('T')[0];
+            activityCount += r.filter(x => x.created_at && x.created_at.startsWith(key)).length;
+        }
+        set('activity', activityCount ? `${activityCount} rating${activityCount === 1 ? '' : 's'} in the last 14 days` : 'Rate more beers to see this chart', !activityCount);
+
+        // Top Rated Beers
+        const beerMap = {};
+        r.forEach(x => { beerMap[x.beer_name] = (beerMap[x.beer_name] || 0) + 1; });
+        const topCount = Object.keys(beerMap).length;
+        set('topBeers', topCount ? `Top ${Math.min(8, topCount)} by avg rating` : 'Rate more beers to see this chart', !topCount);
+
+        // Ratings by Style
+        const styleCounts = Utils.countBy(r, 'style');
+        const topStyle = Object.entries(styleCounts).sort((a, b) => b[1] - a[1])[0];
+        set('styles', topStyle ? `Most rated: ${topStyle[0]}` : 'Rate more beers to see this chart', !topStyle);
+
+        // Rating Distribution
+        const distCount = r.filter(x => x.rating >= 1 && x.rating <= 5).length;
+        set('distribution', distCount ? 'Spread across 1–5 stars' : 'Rate more beers to see this chart', !distCount);
+
+        // YG Distribution
+        const ygVals = r.map(x => x.yg_value).filter(v => v != null && Number.isFinite(v));
+        set('ygDist', ygVals.length ? `${ygVals.length} rating${ygVals.length === 1 ? '' : 's'} with YG values` : 'Rate more beers to see this chart', !ygVals.length);
+
+        // Monthly Activity
+        const byMonth = {};
+        r.forEach(x => { if (x.created_at) byMonth[x.created_at.slice(0, 7)] = (byMonth[x.created_at.slice(0, 7)] || 0) + 1; });
+        const monthCount = Object.keys(byMonth).length;
+        set('monthly', monthCount >= 2 ? `${monthCount} months of data` : 'Rate more beers to see this chart', monthCount < 2);
+    },
+
+    renderChartIfNeeded(chartId, ratings) {
+        if (this.instances[chartId]) return;
+        const r = ratings || [];
+        switch (chartId) {
+            case 'activity': this.renderActivity(r); break;
+            case 'topBeers': this.renderTopBeers(r); break;
+            case 'styles': this.renderStylesChart(r); break;
+            case 'distribution': this.renderDistribution(r); break;
+            case 'monthly': this.renderMonthly(r); break;
+            case 'ygDist': this.renderYgDistribution(r); break;
+            default: break;
+        }
+    },
 
     renderDashboard(ratings) {
-        this.renderTopBeers(ratings);
-        this.renderStylesChart(ratings);
-        this.renderDistribution(ratings);
-        this.renderMonthly(ratings);
-        this.renderActivity(ratings);
-        this.renderYgDistribution(ratings);
+        this.setDashboardSummaries(ratings);
     },
 
     // ========== PROFILE MODAL CHARTS (scoped to user ratings) ==========

@@ -153,89 +153,135 @@
             </div>
 
             <div class="stats-grid" id="stats-grid">
-                <div class="stat-card">
-                    <div class="stat-icon">🍺</div>
-                    <div class="stat-info">
-                        <span class="stat-value" id="stat-beers">0</span>
-                        <span class="stat-label">Beers Rated</span>
-                    </div>
+                <div class="stat-tile">
+                    <span class="stat-tile__icon" aria-hidden="true">🍺</span>
+                    <span class="stat-tile__value" id="stat-beers">0</span>
+                    <span class="stat-tile__label">Beers Rated</span>
                 </div>
-                <div class="stat-card">
-                    <div class="stat-icon">⭐</div>
-                    <div class="stat-info">
-                        <span class="stat-value" id="stat-avg">0.0</span>
-                        <span class="stat-label">Avg Rating</span>
-                    </div>
+                <div class="stat-tile">
+                    <span class="stat-tile__icon" aria-hidden="true">⭐</span>
+                    <span class="stat-tile__value" id="stat-avg">0.0</span>
+                    <span class="stat-tile__label">Avg Rating</span>
                 </div>
-                <div class="stat-card">
-                    <div class="stat-icon">👥</div>
-                    <div class="stat-info">
-                        <span class="stat-value" id="stat-users">0</span>
-                        <span class="stat-label">Reviewers</span>
-                    </div>
+                <div class="stat-tile">
+                    <span class="stat-tile__icon" aria-hidden="true">👥</span>
+                    <span class="stat-tile__value" id="stat-users">0</span>
+                    <span class="stat-tile__label">Reviewers</span>
                 </div>
-                <div class="stat-card">
-                    <div class="stat-icon">📝</div>
-                    <div class="stat-info">
-                        <span class="stat-value" id="stat-reviews">0</span>
-                        <span class="stat-label">Total Reviews</span>
-                    </div>
+                <div class="stat-tile">
+                    <span class="stat-tile__icon" aria-hidden="true">📝</span>
+                    <span class="stat-tile__value" id="stat-reviews">0</span>
+                    <span class="stat-tile__label">Total Reviews</span>
                 </div>
-                <div class="stat-card">
-                    <div class="stat-icon">📍</div>
-                    <div class="stat-info">
-                        <span class="stat-value" id="stat-venues">0</span>
-                        <span class="stat-label">Venues Discovered</span>
-                    </div>
+                <div class="stat-tile">
+                    <span class="stat-tile__icon" aria-hidden="true">📍</span>
+                    <span class="stat-tile__value" id="stat-venues">0</span>
+                    <span class="stat-tile__label">Venues Discovered</span>
                 </div>
-                <div class="stat-card">
-                    <div class="stat-icon">🍻</div>
-                    <div class="stat-info">
-                        <span class="stat-value" id="stat-avg-yg">—</span>
-                        <span class="stat-label">Community Avg YG</span>
-                    </div>
+                <div class="stat-tile">
+                    <span class="stat-tile__icon" aria-hidden="true">🍻</span>
+                    <span class="stat-tile__value" id="stat-avg-yg">—</span>
+                    <span class="stat-tile__label">Community Avg YG</span>
                 </div>
-                <div class="stat-card stat-botw">
-                    <div class="stat-icon">🏆</div>
-                    <div class="stat-info">
-                        <span class="stat-value stat-botw-name" id="stat-botw">—</span>
-                        <span class="stat-label">Beer of the Week</span>
-                    </div>
+                <div class="stat-tile stat-tile--botw" id="stat-tile-botw">
+                    <span class="stat-tile__icon" aria-hidden="true">🏆</span>
+                    <span class="stat-tile__value stat-tile__value--botw" id="stat-botw">—</span>
+                    <span class="stat-tile__label">Beer of the Week</span>
                 </div>
             </div>
 
-            <div class="charts-grid">
-                <div class="chart-card">
-                    <h3>Top Rated Beers</h3>
-                    <canvas id="chart-top-beers"></canvas>
-                </div>
-                <div class="chart-card">
-                    <h3>Ratings by Style</h3>
-                    <canvas id="chart-styles"></canvas>
-                </div>
-                <div class="chart-card">
-                    <h3>Rating Distribution</h3>
-                    <div class="chart-wrapper">
-                        <canvas id="chart-distribution"></canvas>
-                        <div class="chart-empty" id="chart-distribution-empty">📊 Not enough data for this chart yet.</div>
+            <div class="charts-list" id="dashboard-charts">
+                <div class="chart-card" data-chart-id="activity" id="chart-card-activity">
+                    <div class="chart-card__header">
+                        <div>
+                            <h3 class="chart-card__title">Recent Activity</h3>
+                            <p class="chart-card__summary" id="chart-summary-activity">—</p>
+                        </div>
+                        <span class="chart-card__chevron" aria-hidden="true">▸</span>
+                    </div>
+                    <div class="chart-card__body">
+                        <div class="chart-card__body-inner">
+                            <canvas id="chart-activity"></canvas>
+                        </div>
                     </div>
                 </div>
-                <div class="chart-card">
-                    <h3>Monthly Activity</h3>
-                    <div class="chart-wrapper">
-                        <canvas id="chart-monthly"></canvas>
-                        <div class="chart-empty" id="chart-monthly-empty">📊 Not enough data for this chart yet.</div>
+                <div class="chart-card" data-chart-id="topBeers" id="chart-card-top-beers">
+                    <div class="chart-card__header">
+                        <div>
+                            <h3 class="chart-card__title">Top Rated Beers</h3>
+                            <p class="chart-card__summary" id="chart-summary-top-beers">—</p>
+                        </div>
+                        <span class="chart-card__chevron" aria-hidden="true">▸</span>
+                    </div>
+                    <div class="chart-card__body">
+                        <div class="chart-card__body-inner">
+                            <canvas id="chart-top-beers"></canvas>
+                        </div>
                     </div>
                 </div>
-                <div class="chart-card">
-                    <h3>Recent Activity (14 days)</h3>
-                    <canvas id="chart-activity"></canvas>
+                <div class="chart-card" data-chart-id="styles" id="chart-card-styles">
+                    <div class="chart-card__header">
+                        <div>
+                            <h3 class="chart-card__title">Ratings by Style</h3>
+                            <p class="chart-card__summary" id="chart-summary-styles">—</p>
+                        </div>
+                        <span class="chart-card__chevron" aria-hidden="true">▸</span>
+                    </div>
+                    <div class="chart-card__body">
+                        <div class="chart-card__body-inner">
+                            <canvas id="chart-styles"></canvas>
+                        </div>
+                    </div>
                 </div>
-                <div class="chart-card">
-                    <h3>YG Distribution</h3>
-                    <div class="chart-wrapper">
-                        <canvas id="chart-yg"></canvas>
-                        <div class="chart-empty" id="chart-yg-empty">📈 No YG values yet. Start rating beers with YG values to see the exchange!</div>
+                <div class="chart-card" data-chart-id="distribution" id="chart-card-distribution">
+                    <div class="chart-card__header">
+                        <div>
+                            <h3 class="chart-card__title">Rating Distribution</h3>
+                            <p class="chart-card__summary" id="chart-summary-distribution">—</p>
+                        </div>
+                        <span class="chart-card__chevron" aria-hidden="true">▸</span>
+                    </div>
+                    <div class="chart-card__body">
+                        <div class="chart-card__body-inner">
+                            <div class="chart-wrapper">
+                                <canvas id="chart-distribution"></canvas>
+                                <div class="chart-empty" id="chart-distribution-empty">📊 Not enough data for this chart yet.</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="chart-card" data-chart-id="ygDist" id="chart-card-yg">
+                    <div class="chart-card__header">
+                        <div>
+                            <h3 class="chart-card__title">YG Distribution</h3>
+                            <p class="chart-card__summary" id="chart-summary-yg">—</p>
+                        </div>
+                        <span class="chart-card__chevron" aria-hidden="true">▸</span>
+                    </div>
+                    <div class="chart-card__body">
+                        <div class="chart-card__body-inner">
+                            <div class="chart-wrapper">
+                                <canvas id="chart-yg"></canvas>
+                                <div class="chart-empty" id="chart-yg-empty">📈 No YG values yet. Start rating beers with YG values to see the exchange!</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="chart-card" data-chart-id="monthly" id="chart-card-monthly">
+                    <div class="chart-card__header">
+                        <div>
+                            <h3 class="chart-card__title">Monthly Activity</h3>
+                            <p class="chart-card__summary" id="chart-summary-monthly">—</p>
+                        </div>
+                        <span class="chart-card__chevron" aria-hidden="true">▸</span>
+                    </div>
+                    <div class="chart-card__body">
+                        <div class="chart-card__body-inner">
+                            <div class="chart-wrapper">
+                                <canvas id="chart-monthly"></canvas>
+                                <div class="chart-empty" id="chart-monthly-empty">📊 Not enough data for this chart yet.</div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>

@@ -283,6 +283,22 @@ const App = {
             tab.addEventListener('click', () => this.navigate(tab.dataset.view));
         });
 
+        // Dashboard chart cards: accordion (one expanded at a time), lazy render on expand
+        document.getElementById('dashboard-charts')?.addEventListener('click', (e) => {
+            const card = e.target.closest('.chart-card');
+            if (!card || card.classList.contains('chart-card--empty')) return;
+            e.preventDefault();
+            const chartId = card.dataset.chartId;
+            if (!chartId) return;
+            const wasExpanded = card.classList.contains('expanded');
+            document.querySelectorAll('#dashboard-charts .chart-card.expanded').forEach(c => c.classList.remove('expanded'));
+            if (!wasExpanded) {
+                card.classList.add('expanded');
+                Charts.renderChartIfNeeded(chartId, this.allRatings || []);
+                setTimeout(() => { Charts.instances[chartId]?.resize(); }, 350);
+            }
+        });
+
         // Beer detail: delegate clicks on beer-name links
         document.body.addEventListener('click', (e) => {
             const link = e.target.closest('[data-beer-name]');
@@ -1563,7 +1579,10 @@ const App = {
             const [venuesCount, botw] = await Promise.all([DB.getVenuesCount(), DB.getBeerOfTheWeek()]);
             document.getElementById('stat-venues').textContent = venuesCount ?? 0;
             const botwEl = document.getElementById('stat-botw');
-            if (botwEl) botwEl.textContent = (botw && (botw.beer_name || botw.name)) ? (botw.beer_name || botw.name) : '—';
+            const botwName = (botw && (botw.beer_name || botw.name)) ? (botw.beer_name || botw.name) : '—';
+            if (botwEl) botwEl.textContent = botwName;
+            const botwTile = document.getElementById('stat-tile-botw');
+            if (botwTile) botwTile.setAttribute('data-empty', botwName === '—' ? 'true' : 'false');
 
             Charts.renderDashboard(this.allRatings);
             this.renderRecentReviews();
