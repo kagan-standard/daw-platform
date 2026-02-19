@@ -245,6 +245,107 @@ app.get('/api/catalog/beer/:id', async (req, res) => {
   }
 });
 
+// ---------- Phase 3.9: Brewery map (no auth — public) ----------
+// GET /api/breweries/map?bounds=sw_lat,sw_lng,ne_lat,ne_lng — breweries in viewport, max 500
+app.get('/api/breweries/map', async (req, res) => {
+  const boundsStr = (req.query.bounds || '').trim();
+  const limit = 500;
+  try {
+    let path = '/breweries?latitude=not.is.null&longitude=not.is.null&brewery_type=not.in.(closed,planning)';
+    path += '&select=id,name,latitude,longitude,brewery_type,city,state,state_province,website_url,phone';
+    path += `&limit=${limit}`;
+
+    if (boundsStr) {
+      const parts = boundsStr.split(',').map((s) => parseFloat(s.trim()));
+      if (parts.length >= 4 && parts.every((n) => Number.isFinite(n))) {
+        const [swLat, swLng, neLat, neLng] = parts;
+        const minLat = Math.min(swLat, neLat);
+        const maxLat = Math.max(swLat, neLat);
+        const minLng = Math.min(swLng, neLng);
+        const maxLng = Math.max(swLng, neLng);
+        path += `&latitude=gte.${minLat}&latitude=lte.${maxLat}&longitude=gte.${minLng}&longitude=lte.${maxLng}`;
+      }
+    }
+
+    const { status, body } = await rest('GET', path);
+    if (status >= 400) {
+      return res.status(status >= 500 ? 502 : status).json(body || { error: 'Breweries fetch failed' });
+    }
+    let list = Array.isArray(body) ? body : [];
+    if (boundsStr) {
+      const parts = boundsStr.split(',').map((s) => parseFloat(s.trim()));
+      if (parts.length >= 4) {
+        const [swLat, swLng, neLat, neLng] = parts;
+        const centerLat = (swLat + neLat) / 2;
+        const centerLng = (swLng + neLng) / 2;
+        const dist = (b) => {
+          const lat = Number(b.latitude);
+          const lng = Number(b.longitude);
+          return (lat - centerLat) ** 2 + (lng - centerLng) ** 2;
+        };
+        list.sort((a, b) => dist(a) - dist(b));
+      }
+    }
+    const data = list.map((b) => ({
+      id: b.id,
+      name: b.name,
+      latitude: b.latitude != null ? Number(b.latitude) : null,
+      longitude: b.longitude != null ? Number(b.longitude) : null,
+      brewery_type: b.brewery_type ?? null,
+      city: b.city ?? null,
+      state: b.state ?? b.state_province ?? null,
+      website_url: b.website_url ?? null,
+      phone: b.phone ?? null,
+    }));
+    res.json({ data });
+  } catch (e) {
+    console.error('Breweries map error:', e);
+    res.status(502).json({ error: 'Breweries map failed' });
+  }
+});
+
+// GET /api/breweries/:id — full brewery detail + linked beers
+app.get('/api/breweries/:id', async (req, res) => {
+  const id = encodeURIComponent(req.params.id);
+  try {
+    const { status: brewStatus, body: brewBody } = await rest('GET', `/breweries?id=eq.${id}&limit=1`);
+    if (brewStatus >= 400) {
+      return res.status(brewStatus >= 500 ? 502 : brewStatus).json(brewBody || { error: 'Upstream error' });
+    }
+    const brewery = Array.isArray(brewBody) && brewBody[0] ? brewBody[0] : null;
+    if (!brewery) return res.status(404).json({ error: 'Brewery not found' });
+
+    const { status: beersStatus, body: beersBody } = await rest('GET',
+      `/beers?brewery_id=eq.${id}&select=name,style,abv&order=name.asc&limit=100`);
+    const beers = (beersStatus < 400 && Array.isArray(beersBody)) ? beersBody : [];
+
+    res.json({
+      id: brewery.id,
+      name: brewery.name,
+      slug: brewery.slug ?? null,
+      street: brewery.street ?? null,
+      city: brewery.city ?? null,
+      state: brewery.state ?? brewery.state_province ?? null,
+      postal_code: brewery.postal_code ?? null,
+      country: brewery.country ?? null,
+      latitude: brewery.latitude != null ? Number(brewery.latitude) : null,
+      longitude: brewery.longitude != null ? Number(brewery.longitude) : null,
+      phone: brewery.phone ?? null,
+      website_url: brewery.website_url ?? null,
+      brewery_type: brewery.brewery_type ?? null,
+      description: brewery.description ?? null,
+      beers: beers.map((b) => ({
+        name: b.name,
+        style: b.style ?? null,
+        abv: b.abv != null ? Number(b.abv) : null,
+      })),
+    });
+  } catch (e) {
+    console.error('Brewery detail error:', e);
+    res.status(502).json({ error: 'Brewery fetch failed' });
+  }
+});
+
 // ---------- Routes ----------
 
 // GET /api/health

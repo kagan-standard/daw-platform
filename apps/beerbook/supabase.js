@@ -762,6 +762,17 @@ const DB = {
         return await this._api('GET', '/api/map');
     },
 
+    async getBreweriesMap(bounds) {
+        if (this.isDemo) return { data: [] };
+        const q = bounds ? `?bounds=${encodeURIComponent(bounds)}` : '';
+        return await this._api('GET', `/api/breweries/map${q}`);
+    },
+
+    async getBrewery(id) {
+        if (this.isDemo) return null;
+        return await this._api('GET', `/api/breweries/${encodeURIComponent(id)}`);
+    },
+
     async getMapUser(userId) {
         if (this.isDemo) return { data: [] };
         return await this._api('GET', `/api/map/user/${encodeURIComponent(userId)}`);

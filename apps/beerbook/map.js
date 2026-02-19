@@ -1,5 +1,6 @@
 /* ============================================
    BeerBook — Beer Map (Leaflet)
+   Phase 3.9: Brewery pins, clustering, layer toggle
    ============================================ */
 
 const MapView = {
@@ -14,21 +15,38 @@ const MapView = {
     initDone: false,
     trailMarkers: [],
     eventsBound: false,
+    breweryCluster: null,
+    breweryData: [],
+    currentLayer: 'ratings',
+    moveEndDebounce: null,
+    BREWERY_CATEGORIES: {
+        brewery: { types: ['micro', 'nano', 'regional', 'large', 'contract', 'proprietor'], icon: '🏭', color: '#F6AD55' },
+        brewpub: { types: ['brewpub'], icon: '🍽️', color: '#ED8936' },
+        bar: { types: ['bar', 'taproom', 'beergarden'], icon: '🍺', color: '#48BB78' },
+        other: { types: ['cidery', 'location'], icon: '📍', color: '#A0AEC0' }
+    },
 
     async onShow() {
         const container = document.getElementById('beer-map');
         if (!container) return;
         if (!this.map) {
             this.map = L.map('beer-map').setView([39.5, -98], 4);
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                attribution: '&copy; OpenStreetMap contributors'
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+                attribution: '&copy; OpenStreetMap &copy; CARTO'
             }).addTo(this.map);
         }
         if (!this.initDone) {
             this.initDone = true;
             this.bindEvents();
         }
+        this.restoreFilterState();
         await this.loadMap();
+        if (this.currentLayer === 'breweries' || this.currentLayer === 'both') {
+            this.loadBreweriesInViewport();
+        }
+        this.updateLayerVisibility();
+        const filtersEl = document.getElementById('map-filters');
+        if (filtersEl) filtersEl.style.display = (this.currentLayer === 'breweries' || this.currentLayer === 'both') ? 'flex' : 'none';
         this.map.invalidateSize();
     },
 
@@ -37,12 +55,323 @@ const MapView = {
         this.eventsBound = true;
         document.getElementById('btn-near-me')?.addEventListener('click', () => this.bestNearMe());
         document.getElementById('btn-my-trail')?.addEventListener('click', () => this.showMyTrail());
+        document.getElementById('map-locate-btn')?.addEventListener('click', () => this.locateForBreweries());
         document.getElementById('map-filter-style')?.addEventListener('change', () => this.applyStyleFilter());
         document.getElementById('beer-map')?.addEventListener('click', (e) => this._onPopupVenueClick(e));
+        document.querySelectorAll('.map-layer-btn').forEach((btn) => {
+            btn.addEventListener('click', () => this.setLayer(btn.dataset.layer));
+        });
+        document.querySelectorAll('.map-filters .filter-chip').forEach((chip) => {
+            chip.addEventListener('click', () => this.toggleBreweryFilter(chip));
+        });
+        document.querySelector('.brewery-bottom-sheet-backdrop')?.addEventListener('click', () => this.closeBrewerySheet());
+        const mapEl = document.getElementById('beer-map');
+        if (mapEl && this.map) {
+            this.map.on('moveend', () => this._onMapMoveEnd());
+        }
         if (DB.currentUser && DB.currentUser.id) {
             const trailBtn = document.getElementById('btn-my-trail');
             if (trailBtn) trailBtn.style.display = 'inline-flex';
         }
+    },
+
+    setLayer(layer) {
+        this.currentLayer = layer;
+        document.querySelectorAll('.map-layer-btn').forEach((btn) => {
+            const active = btn.dataset.layer === layer;
+            btn.classList.toggle('active', active);
+            btn.setAttribute('aria-pressed', active);
+        });
+        const filtersEl = document.getElementById('map-filters');
+        if (filtersEl) filtersEl.style.display = (layer === 'breweries' || layer === 'both') ? 'flex' : 'none';
+        this.updateLayerVisibility();
+        if ((layer === 'breweries' || layer === 'both') && this.breweryData.length === 0) {
+            this.loadBreweriesInViewport();
+        }
+    },
+
+    updateLayerVisibility() {
+        const showRatings = this.currentLayer === 'ratings' || this.currentLayer === 'both';
+        const showBreweries = this.currentLayer === 'breweries' || this.currentLayer === 'both';
+        if (this.markersCluster) {
+            if (showRatings) this.map.addLayer(this.markersCluster);
+            else this.map.removeLayer(this.markersCluster);
+        }
+        if (this.breweryCluster) {
+            if (showBreweries) this.map.addLayer(this.breweryCluster);
+            else this.map.removeLayer(this.breweryCluster);
+        }
+    },
+
+    toggleBreweryFilter(chip) {
+        chip.classList.toggle('active');
+        chip.setAttribute('aria-pressed', chip.classList.contains('active'));
+        this.persistFilterState();
+        this.renderBreweryPins();
+    },
+
+    persistFilterState() {
+        try {
+            const types = [];
+            document.querySelectorAll('.map-filters .filter-chip.active').forEach((c) => types.push(c.dataset.type));
+            sessionStorage.setItem('beerbook_map_brewery_filters', JSON.stringify(types));
+        } catch (_) {}
+    },
+
+    restoreFilterState() {
+        try {
+            const raw = sessionStorage.getItem('beerbook_map_brewery_filters');
+            if (!raw) return;
+            const types = JSON.parse(raw);
+            document.querySelectorAll('.map-filters .filter-chip').forEach((chip) => {
+                const active = types.length === 0 || types.includes(chip.dataset.type);
+                chip.classList.toggle('active', active);
+                chip.setAttribute('aria-pressed', active);
+            });
+        } catch (_) {}
+    },
+
+    getBreweryCategory(breweryType) {
+        const t = (breweryType || '').toLowerCase();
+        for (const [cat, { types }] of Object.entries(this.BREWERY_CATEGORIES)) {
+            if (types.includes(t)) return cat;
+        }
+        return 'other';
+    },
+
+    getBreweryPinStyle(category) {
+        const c = this.BREWERY_CATEGORIES[category] || this.BREWERY_CATEGORIES.other;
+        return { icon: c.icon, color: c.color };
+    },
+
+    isBreweryTypeVisible(category) {
+        const active = document.querySelectorAll('.map-filters .filter-chip.active');
+        if (active.length === 0) return true;
+        if (category === 'other') return true;
+        return Array.from(active).some((c) => c.dataset.type === category);
+    },
+
+    _onMapMoveEnd() {
+        if (this.moveEndDebounce) clearTimeout(this.moveEndDebounce);
+        this.moveEndDebounce = setTimeout(() => {
+            this.moveEndDebounce = null;
+            if (this.currentLayer === 'breweries' || this.currentLayer === 'both') {
+                this.loadBreweriesInViewport();
+            }
+        }, 500);
+    },
+
+    async loadBreweriesInViewport() {
+        if (!this.map) return;
+        const b = this.map.getBounds();
+        const sw = b.getSouthWest();
+        const ne = b.getNorthEast();
+        const bounds = `${sw.lat},${sw.lng},${ne.lat},${ne.lng}`;
+        try {
+            const res = DB.isDemo ? { data: [] } : await DB.getBreweriesMap(bounds);
+            this.breweryData = (res && res.data) ? res.data : [];
+            this.renderBreweryPins();
+        } catch (err) {
+            console.error('Breweries map load failed:', err);
+        }
+    },
+
+    createBreweryIcon(b) {
+        const category = this.getBreweryCategory(b.brewery_type);
+        const { icon, color } = this.getBreweryPinStyle(category);
+        return L.divIcon({
+            className: 'brewery-pin',
+            html: `<span class="brewery-pin-circle" style="background-color:${color}">${icon}</span>`,
+            iconSize: [28, 28],
+            iconAnchor: [14, 14]
+        });
+    },
+
+    renderBreweryPins() {
+        if (this.breweryCluster) {
+            this.map.removeLayer(this.breweryCluster);
+            this.breweryCluster = null;
+        }
+        const markers = [];
+        this.breweryData.forEach((b) => {
+            const category = this.getBreweryCategory(b.brewery_type);
+            if (!this.isBreweryTypeVisible(category)) return;
+            const lat = b.latitude;
+            const lng = b.longitude;
+            if (lat == null || lng == null) return;
+            const m = L.marker([lat, lng], { icon: this.createBreweryIcon(b) });
+            m.breweryId = b.id;
+            m.brewerySummary = b;
+            const isMobile = typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches;
+            m.on('click', () => this.openBreweryDetail(b.id, isMobile));
+            const cityState = [b.city, b.state].filter(Boolean).join(', ');
+            m.bindPopup(`
+                <div class="map-popup map-popup-brewery">
+                    <strong>${Utils.escapeHtml(b.name)}</strong><br>
+                    Type: ${Utils.escapeHtml(b.brewery_type || '')} | ${Utils.escapeHtml(cityState || '')}<br>
+                    <button type="button" class="btn btn-sm btn-primary map-popup-brewery-detail" data-brewery-id="${b.id}">View details</button>
+                </div>
+            `);
+            m.on('popupopen', () => {
+                m.getPopup().getElement().querySelector('.map-popup-brewery-detail')?.addEventListener('click', () => {
+                    this.openBreweryDetail(b.id, window.matchMedia('(max-width: 768px)').matches);
+                });
+            });
+            markers.push(m);
+        });
+        this.breweryCluster = L.markerClusterGroup({
+            iconCreateFunction: (cluster) => {
+                const count = cluster.getChildCount();
+                return L.divIcon({
+                    className: 'brewery-cluster',
+                    html: `<span class="brewery-cluster-count">${count}</span>`,
+                    iconSize: [40, 40],
+                    iconAnchor: [20, 20]
+                });
+            }
+        });
+        markers.forEach((m) => this.breweryCluster.addLayer(m));
+        if (this.currentLayer === 'breweries' || this.currentLayer === 'both') {
+            this.map.addLayer(this.breweryCluster);
+        }
+    },
+
+    openBreweryDetail(breweryId, useBottomSheet) {
+        if (useBottomSheet) {
+            this.showBreweryBottomSheet(breweryId);
+        } else {
+            this.fetchAndShowBreweryPopup(breweryId);
+        }
+    },
+
+    async fetchAndShowBreweryPopup(breweryId) {
+        try {
+            const b = await DB.getBrewery(breweryId);
+            if (!b) return;
+            const html = this.buildBreweryDetailHtml(b);
+            const popup = L.popup().setContent(html);
+            const summary = this.breweryData.find((x) => x.id === breweryId);
+            if (summary && summary.latitude != null && summary.longitude != null) {
+                popup.setLatLng([summary.latitude, summary.longitude]).openOn(this.map);
+            }
+            this._bindBreweryDetailButtons(popup.getElement(), b);
+        } catch (err) {
+            console.error('Brewery detail failed:', err);
+            if (typeof App !== 'undefined') App.toast('Could not load brewery', 'error');
+        }
+    },
+
+    buildBreweryDetailHtml(b) {
+        const cityState = [b.city, b.state].filter(Boolean).join(', ');
+        const typeLabel = b.brewery_type || 'Brewery';
+        const beers = b.beers || [];
+        const beerList = beers.length === 0
+            ? '<p>No beers cataloged yet — rate one to be the first!</p>'
+            : beers.slice(0, 3).map((beer) =>
+                `<li>${Utils.escapeHtml(beer.name)} (${Utils.escapeHtml(beer.style || '')}${beer.abv != null ? ', ' + beer.abv + '%' : ''})</li>`
+            ).join('') + (beers.length > 3 ? `<li><a href="#" class="brewery-see-all" data-brewery-id="${b.id}">See all →</a></li>` : '');
+        return `
+            <div class="map-popup brewery-detail-popup">
+                <strong>${Utils.escapeHtml(b.name)}</strong><br>
+                Type: ${Utils.escapeHtml(typeLabel)} | ${Utils.escapeHtml(cityState)}<br>
+                ${b.phone ? `📞 ${Utils.escapeHtml(b.phone)}<br>` : ''}
+                ${b.website_url ? `<a href="${Utils.escapeHtml(b.website_url)}" target="_blank" rel="noopener">🌐 Visit Website →</a><br>` : ''}
+                <p><strong>Beers in catalog:</strong> ${beers.length}</p>
+                <ul>${beerList}</ul>
+                <a href="#" class="brewery-rate-link" data-brewery-id="${b.id}">⭐ Rate a beer from here →</a>
+            </div>
+        `;
+    },
+
+    _bindBreweryDetailButtons(container, b) {
+        if (!container) return;
+        container.querySelector('.brewery-rate-link')?.addEventListener('click', (e) => {
+            e.preventDefault();
+            try { sessionStorage.setItem('beerbook_rate_brewery_name', b.name || ''); } catch (_) {}
+            if (typeof App !== 'undefined' && App.navigate) App.navigate('rate');
+        });
+    },
+
+    async showBreweryBottomSheet(breweryId) {
+        const sheet = document.getElementById('brewery-bottom-sheet');
+        const body = document.getElementById('brewery-bottom-sheet-body');
+        if (!sheet || !body) return;
+        body.innerHTML = '<p class="brewery-sheet-loading">Loading…</p>';
+        sheet.setAttribute('aria-hidden', 'false');
+        sheet.classList.add('open');
+        try {
+            const b = await DB.getBrewery(breweryId);
+            if (!b) {
+                body.innerHTML = '<p>Brewery not found.</p>';
+                return;
+            }
+            const cityState = [b.city, b.state].filter(Boolean).join(', ');
+            const beers = b.beers || [];
+            const beerList = beers.length === 0
+                ? '<p>No beers cataloged yet — rate one to be the first!</p>'
+                : '<ul>' + beers.slice(0, 3).map((beer) =>
+                    `<li>${Utils.escapeHtml(beer.name)} (${Utils.escapeHtml(beer.style || '')}${beer.abv != null ? ', ' + beer.abv + '%' : ''})</li>`
+                ).join('') + (beers.length > 3 ? '<li><a href="#" class="brewery-see-all">See all →</a></li>' : '') + '</ul>';
+            body.innerHTML = `
+                <h3>${Utils.escapeHtml(b.name)}</h3>
+                <p>Type: ${Utils.escapeHtml(b.brewery_type || '')} | ${cityState}</p>
+                ${b.phone ? `<p>📞 ${Utils.escapeHtml(b.phone)}</p>` : ''}
+                ${b.website_url ? `<p><a href="${Utils.escapeHtml(b.website_url)}" target="_blank" rel="noopener">🌐 Visit Website →</a></p>` : ''}
+                <p><strong>Beers in catalog:</strong> ${beers.length}</p>
+                ${beerList}
+                <p><a href="#" class="brewery-rate-link">⭐ Rate a beer from here →</a></p>
+            `;
+            body.querySelector('.brewery-rate-link')?.addEventListener('click', (e) => {
+                e.preventDefault();
+                try { sessionStorage.setItem('beerbook_rate_brewery_name', b.name || ''); } catch (_) {}
+                this.closeBrewerySheet();
+                if (typeof App !== 'undefined' && App.navigate) App.navigate('rate');
+            });
+        } catch (err) {
+            body.innerHTML = '<p>Could not load brewery.</p>';
+        }
+    },
+
+    closeBrewerySheet() {
+        const sheet = document.getElementById('brewery-bottom-sheet');
+        if (sheet) {
+            sheet.classList.remove('open');
+            sheet.setAttribute('aria-hidden', 'true');
+        }
+    },
+
+    locateForBreweries() {
+        if (!navigator.geolocation) {
+            if (typeof App !== 'undefined') App.toast('Geolocation not supported', 'error');
+            return;
+        }
+        const btn = document.getElementById('map-locate-btn');
+        if (btn) btn.disabled = true;
+        navigator.geolocation.getCurrentPosition(
+            (pos) => {
+                const lat = pos.coords.latitude;
+                const lng = pos.coords.longitude;
+                this.map.setView([lat, lng], 13);
+                if (this.userMarker) this.map.removeLayer(this.userMarker);
+                this.userMarker = L.circleMarker([lat, lng], {
+                    radius: 10,
+                    fillColor: '#42a5f5',
+                    color: '#fff',
+                    weight: 2,
+                    fillOpacity: 0.9
+                }).addTo(this.map);
+                this.userMarker.bindPopup('You are here');
+                if (this.currentLayer === 'breweries' || this.currentLayer === 'both') {
+                    this.loadBreweriesInViewport();
+                }
+                if (btn) btn.disabled = false;
+            },
+            () => {
+                if (typeof App !== 'undefined') App.toast('Enable location to find nearby breweries', 'info');
+                if (btn) btn.disabled = false;
+            },
+            { enableHighAccuracy: false, timeout: 15000 }
+        );
     },
 
     async loadMap() {

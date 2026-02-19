@@ -1613,6 +1613,16 @@ const App = {
         if (viewId === 'map' && typeof MapView !== 'undefined' && typeof MapView.onShow === 'function') {
             setTimeout(() => MapView.onShow(), 100);
         }
+        if (viewId === 'rate') {
+            try {
+                const breweryName = sessionStorage.getItem('beerbook_rate_brewery_name');
+                if (breweryName) {
+                    const breweryInput = document.getElementById('beer-brewery');
+                    if (breweryInput) breweryInput.value = breweryName;
+                    sessionStorage.removeItem('beerbook_rate_brewery_name');
+                }
+            } catch (_) {}
+        }
     },
 
     // ========== RENDERS ==========

@@ -2277,7 +2277,155 @@ input, select, textarea, button {
     gap: var(--space-md);
     margin-bottom: var(--space-lg);
     flex-wrap: wrap;
+    align-items: center;
 }
+.map-layer-toggle {
+    display: flex;
+    gap: var(--space-xs);
+    margin-bottom: var(--space-sm);
+}
+.map-layer-btn {
+    padding: var(--space-xs) var(--space-md);
+    border: 1px solid var(--dark-600);
+    border-radius: var(--radius-sm);
+    background: var(--dark-800);
+    color: var(--foam-cream);
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s;
+}
+.map-layer-btn:hover { background: var(--dark-700); border-color: var(--dark-500); }
+.map-layer-btn.active {
+    background: var(--amber-600);
+    border-color: var(--amber-500);
+    color: var(--dark-900);
+}
+.map-filters {
+    display: flex;
+    gap: var(--space-sm);
+    margin-bottom: var(--space-md);
+    flex-wrap: wrap;
+}
+.map-filters .filter-chip {
+    padding: var(--space-xs) var(--space-md);
+    border: 1px solid var(--dark-600);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--foam-cream);
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s, opacity 0.2s;
+}
+.map-filters .filter-chip:hover { border-color: var(--dark-500); }
+.map-filters .filter-chip.active {
+    border-color: transparent;
+    opacity: 1;
+}
+.map-filters .filter-chip[data-type="brewery"].active { background: #F6AD55; color: var(--dark-900); }
+.map-filters .filter-chip[data-type="brewpub"].active { background: #ED8936; color: var(--dark-900); }
+.map-filters .filter-chip[data-type="bar"].active { background: #48BB78; color: var(--dark-900); }
+.map-filters .filter-chip:not(.active) { opacity: 0.7; }
+.map-locate-btn {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: 1px solid var(--dark-600);
+    background: var(--dark-800);
+    color: var(--foam-cream);
+    font-size: 1.2rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s, transform 0.2s;
+}
+.map-locate-btn:hover { background: var(--dark-700); transform: scale(1.05); }
+.map-locate-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.brewery-pin { background: none !important; border: none !important; }
+.brewery-pin-circle {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    box-shadow: var(--shadow-md);
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+.brewery-pin:hover .brewery-pin-circle {
+    width: 32px;
+    height: 32px;
+    margin: -2px 0 0 -2px;
+    box-shadow: var(--shadow-lg);
+}
+.brewery-cluster {
+    background: var(--amber-500) !important;
+    color: var(--dark-900);
+    border: 2px solid var(--amber-400);
+    border-radius: 50%;
+    font-weight: 700;
+    font-size: 0.85rem;
+}
+.brewery-cluster-count {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+}
+.map-popup-brewery .map-popup-brewery-detail { margin-top: var(--space-sm); }
+.brewery-detail-popup ul { margin: var(--space-xs) 0; padding-left: var(--space-lg); }
+.brewery-bottom-sheet {
+    position: fixed;
+    inset: 0;
+    z-index: 1100;
+    pointer-events: none;
+    visibility: hidden;
+    transition: visibility 0.2s;
+}
+.brewery-bottom-sheet.open { pointer-events: auto; visibility: visible; }
+.brewery-bottom-sheet-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+.brewery-bottom-sheet.open .brewery-bottom-sheet-backdrop { opacity: 1; }
+.brewery-bottom-sheet-panel {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    max-height: 70vh;
+    background: var(--dark-800);
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    box-shadow: 0 -4px 24px rgba(0,0,0,0.4);
+    transform: translateY(100%);
+    transition: transform 0.25s var(--ease-out);
+}
+.brewery-bottom-sheet.open .brewery-bottom-sheet-panel { transform: translateY(0); }
+.brewery-bottom-sheet-drag {
+    width: 36px;
+    height: 4px;
+    background: var(--dark-600);
+    border-radius: 2px;
+    margin: var(--space-sm) auto;
+}
+.brewery-bottom-sheet-body {
+    padding: var(--space-lg);
+    padding-top: 0;
+    overflow-y: auto;
+    max-height: calc(70vh - 32px);
+}
+.brewery-bottom-sheet-body h3 {
+    font-family: var(--font-display);
+    color: var(--amber-200);
+    margin-bottom: var(--space-sm);
+}
+.brewery-bottom-sheet-body ul { margin: var(--space-sm) 0; padding-left: var(--space-lg); }
+.brewery-sheet-loading { color: var(--amber-600); }
 .map-sidebar {
     background: var(--dark-800);
     border: 1px solid var(--dark-700);
