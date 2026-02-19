@@ -17,6 +17,8 @@
   --bg-surface-hover:   #162338;   /* Card hover state */
   --bg-elevated:        #1A2940;   /* Inputs, modals, dropdowns */
   --bg-overlay:         rgba(11, 19, 32, 0.85); /* Modal overlay */
+  --bg-overlay-strong:  rgba(11, 19, 32, 0.95); /* Topbar, dropdown */
+  --bg-surface-fade:    rgba(17, 28, 46, 0.85); /* Card inner gradient end */
 
   /* Borders */
   --border-subtle:      rgba(255, 255, 255, 0.06);  /* Card edges */
@@ -68,6 +70,8 @@
   --status-coming-soon: rgba(255, 255, 255, 0.25);
   --status-error:       #EF4444;
   --status-success:     #6EE7B7;
+  --status-warning:     #F59E0B;
+  --status-info:        #3B82F6;
 
 
   /* ──────────────────────────────────────────────
@@ -136,6 +140,8 @@
   --transition-fast:   150ms ease;
   --transition-base:   250ms ease;
   --transition-slow:   400ms ease;
+  --ease-out:          cubic-bezier(0.33, 1, 0.68, 1);
+  --ease-spring:       cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 
