@@ -132,40 +132,17 @@
                 <span id="user-greeting" class="user-greeting"></span>
                 <button id="logout-btn" class="btn btn-ghost btn-sm">Sign Out</button>
             </div>
-            <button type="button" id="mobile-menu-btn" class="mobile-menu-btn" aria-label="Open menu" aria-expanded="false">☰</button>
+            <button type="button" id="mobile-menu-btn" class="hamburger-menu-btn" aria-label="Open menu" aria-expanded="false">☰</button>
         </header>
-        <div id="mobile-menu-overlay" class="mobile-menu-overlay" aria-hidden="true"></div>
-        <div id="mobile-menu-dropdown" class="mobile-menu-dropdown" aria-hidden="true">
-            <button type="button" class="mobile-nav-item active" data-view="dashboard">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-                <span>Dashboard</span>
-            </button>
-            <button type="button" class="mobile-nav-item" data-view="rate">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-                <span>Rate a Beer</span>
-            </button>
-            <button type="button" class="mobile-nav-item" data-view="browse">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                <span>Browse</span>
-            </button>
-            <button type="button" class="mobile-nav-item" data-view="exchange">
-                <span>📈 Exchange</span>
-            </button>
-            <button type="button" class="mobile-nav-item" data-view="map">
-                <span>🗺️ Map</span>
-            </button>
-            <button type="button" class="mobile-nav-item" data-view="leaderboard">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>
-                <span>Leaderboard</span>
-            </button>
-            <button type="button" class="mobile-nav-item" data-view="profile">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                <span>Profile</span>
-            </button>
-            <button type="button" class="mobile-nav-item mobile-nav-signout" data-action="signout">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-                <span>Sign Out</span>
-            </button>
+        <div id="mobile-menu-overlay" class="hamburger-menu-overlay" aria-hidden="true"></div>
+        <div id="mobile-menu-dropdown" class="hamburger-menu-dropdown" aria-hidden="true">
+            <div class="hamburger-menu-header">
+                <button type="button" id="hamburger-menu-close" class="hamburger-menu-close" aria-label="Close menu">✕</button>
+            </div>
+            <button type="button" class="hamburger-nav-item" data-view="browse">Browse</button>
+            <button type="button" class="hamburger-nav-item" data-view="map">Map</button>
+            <button type="button" class="hamburger-nav-item" data-view="rate">Rate</button>
+            <button type="button" class="hamburger-nav-item" data-view="profile">Profile</button>
         </div>
 
         <!-- ========== DASHBOARD VIEW ========== -->
@@ -524,18 +501,18 @@
 
         <!-- ========== MAP VIEW ========== -->
         <main id="view-map" class="view view-map">
-            <div class="view-header view-map-header">
-                <h2 class="view-map-title">🗺️ Beer Map</h2>
-                <!-- Tagline for later: "Find the best beer for your buck" → button when pricing data available -->
+            <div class="view-header view-map-header view-map-header-breathe">
+                <h2 class="view-map-title">Beer Map</h2>
+                <p class="view-map-subheader">Discover what the crew is drinking</p>
             </div>
             <div class="map-toggle" role="group" aria-label="Map mode">
-                <button type="button" class="map-toggle-btn active" data-layer="discover" aria-pressed="true">🍺 Discover</button>
-                <button type="button" class="map-toggle-btn" data-layer="mymap" aria-pressed="false">📍 My Map</button>
+                <button type="button" class="map-toggle-btn active" data-layer="discover" aria-pressed="true">Discover</button>
+                <button type="button" class="map-toggle-btn" data-layer="mymap" aria-pressed="false">My Map</button>
             </div>
             <div class="map-filters" id="map-filters" aria-label="Brewery type filters">
-                <button type="button" class="filter-chip active" data-type="brewery" aria-pressed="true">🏭 Breweries</button>
-                <button type="button" class="filter-chip active" data-type="brewpub" aria-pressed="true">🍻 Brewpubs</button>
-                <button type="button" class="filter-chip active" data-type="bar" aria-pressed="true">🍺 Bars</button>
+                <button type="button" class="filter-chip active" data-type="brewery" aria-pressed="true"><span class="filter-chip-emoji">🏭</span> Breweries</button>
+                <button type="button" class="filter-chip active" data-type="brewpub" aria-pressed="true"><span class="filter-chip-emoji">🍻</span> Brewpubs</button>
+                <button type="button" class="filter-chip active" data-type="bar" aria-pressed="true"><span class="filter-chip-emoji">🍺</span> Bars</button>
             </div>
             <div class="map-controls">
                 <button class="btn btn-primary" id="btn-near-me">🍺 Best Beer Near Me</button>

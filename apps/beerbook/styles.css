@@ -20,7 +20,7 @@ html {
 
 body {
     font-family: var(--font-body);
-    background: var(--bg-base);
+    background: linear-gradient(180deg, #0B1320 0%, #0E1829 100%);
     color: var(--text-primary);
     line-height: 1.6;
     min-height: 100vh;
@@ -418,7 +418,7 @@ input, select, textarea, button {
     font-weight: 500;
     border-radius: var(--radius-sm);
     cursor: pointer;
-    transition: all 0.2s var(--ease-out);
+    transition: all var(--transition-base);
     white-space: nowrap;
 }
 
@@ -448,25 +448,33 @@ input, select, textarea, button {
     color: var(--gold);
 }
 
-/* Mobile menu (hamburger) — visible only below 520px */
-.mobile-menu-btn {
-    display: none;
+/* Hamburger menu (global) — top-right on every page */
+.hamburger-menu-btn {
+    display: flex;
     align-items: center;
     justify-content: center;
-    width: 32px;
-    height: 32px;
+    width: 40px;
+    height: 40px;
     padding: 0;
     background: transparent;
     border: none;
-    color: var(--gold);
+    color: var(--text-primary);
     font-size: 1.5rem;
     line-height: 1;
     cursor: pointer;
-    margin-left: auto;
+    margin-left: var(--space-md);
+    flex-shrink: 0;
+    border-radius: var(--radius-sm);
+    transition: color 0.2s var(--ease-out), background 0.2s var(--ease-out);
 }
 
-.mobile-menu-overlay {
-    display: none;
+.hamburger-menu-btn:hover {
+    color: var(--gold);
+    background: var(--bg-surface);
+}
+
+.hamburger-menu-overlay {
+    display: block;
     position: fixed;
     inset: 0;
     z-index: 10000;
@@ -474,33 +482,70 @@ input, select, textarea, button {
     pointer-events: none;
 }
 
-.mobile-menu-dropdown {
-    display: none;
+.hamburger-menu-dropdown {
     position: fixed;
     top: 60px;
-    left: 0;
-    right: 0;
+    right: var(--space-md);
     z-index: 10001;
-    background: var(--bg-overlay-strong);
-    backdrop-filter: blur(16px);
-    border-bottom: 1px solid var(--border-subtle);
-    max-height: 0;
+    min-width: 200px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-card);
     overflow: hidden;
-    transition: max-height 200ms var(--ease-out);
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-8px);
+    transition: opacity 200ms var(--ease-out), transform 200ms var(--ease-out), visibility 200ms;
 }
 
-.mobile-nav-item {
+body.mobile-menu-open .hamburger-menu-overlay {
+    pointer-events: auto;
+}
+
+body.mobile-menu-open .hamburger-menu-dropdown {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+
+.hamburger-menu-header {
+    display: flex;
+    justify-content: flex-end;
+    padding: var(--space-sm) var(--space-sm) 0;
+}
+
+.hamburger-menu-close {
     display: flex;
     align-items: center;
-    gap: var(--space-md);
-    width: 100%;
-    min-height: 48px;
-    padding: 0 var(--space-xl);
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    padding: 0;
     background: transparent;
     border: none;
-    border-left: 3px solid transparent;
-    color: var(--text-muted);
-    font-size: 0.95rem;
+    color: var(--text-primary);
+    font-size: 1.25rem;
+    line-height: 1;
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+    transition: color 0.2s var(--ease-out), background 0.2s var(--ease-out);
+}
+
+.hamburger-menu-close:hover,
+.hamburger-menu-close:active {
+    color: var(--gold);
+    background: var(--bg-elevated);
+}
+
+.hamburger-nav-item {
+    display: block;
+    width: 100%;
+    padding: 14px 20px;
+    background: transparent;
+    border: none;
+    color: var(--text-primary);
+    font-size: var(--text-base);
     font-weight: 500;
     font-family: var(--font-body);
     cursor: pointer;
@@ -508,27 +553,15 @@ input, select, textarea, button {
     transition: background 0.15s, color 0.15s;
 }
 
-.mobile-nav-item:hover {
-    background: var(--bg-surface);
+.hamburger-nav-item:hover,
+.hamburger-nav-item:active {
     color: var(--gold);
+    background: var(--bg-elevated);
 }
 
-.mobile-nav-item.active {
+.hamburger-nav-item.active {
     color: var(--gold);
-    border-left-color: var(--gold);
-}
-
-.mobile-nav-item.mobile-nav-signout {
-    color: var(--status-error);
-}
-
-.mobile-nav-item.mobile-nav-signout:hover {
-    color: var(--status-error);
-    background: var(--bg-surface);
-}
-
-.mobile-nav-item svg {
-    flex-shrink: 0;
+    background: var(--bg-elevated);
 }
 
 /* ============ VIEWS ============ */
@@ -2117,21 +2150,8 @@ input, select, textarea, button {
     .topbar-right {
         display: none !important;
     }
-    .mobile-menu-btn {
-        display: flex;
-    }
-    .mobile-menu-overlay,
-    .mobile-menu-dropdown {
-        display: block;
-    }
     body.mobile-menu-open {
         overflow: hidden;
-    }
-    body.mobile-menu-open .mobile-menu-overlay {
-        pointer-events: auto;
-    }
-    body.mobile-menu-open .mobile-menu-dropdown {
-        max-height: 80vh;
     }
 }
 
@@ -2247,6 +2267,17 @@ input, select, textarea, button {
     min-height: 0;
     padding-bottom: 0;
 }
+/* Map view header: subheader + breathing room (20px between header and toggle) */
+.view-map-header-breathe {
+    margin-bottom: 20px;
+}
+.view-map-subheader {
+    color: var(--text-secondary);
+    font-size: var(--text-sm);
+    margin: var(--space-xs) 0 0;
+    font-weight: 400;
+}
+
 .view-map .map-wrapper {
     position: relative;
     flex: 1;
@@ -2257,36 +2288,42 @@ input, select, textarea, button {
 .beer-map-container {
     height: 500px;
     width: 100%;
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-xl);
+    overflow: hidden;
     background: var(--bg-surface);
     flex: 1;
     min-height: 300px;
+    box-shadow: var(--shadow-card);
+    border: 1px solid var(--border-subtle);
+    margin-top: var(--space-lg);
+    transition: box-shadow var(--transition-base), border-color var(--transition-base);
 }
 .view-map .beer-map-container {
     margin-bottom: 0;
 }
+/* Near Me: bottom-right, circular 48px, gold gradient */
 .map-locate-float {
     position: absolute;
-    bottom: var(--space-md);
-    left: var(--space-md);
-    z-index: 1000;
-    min-width: 44px;
-    min-height: 44px;
-    padding: 0 var(--space-md);
+    bottom: var(--space-lg);
+    right: var(--space-lg);
+    left: auto;
+    width: 48px;
+    height: 48px;
+    min-width: 48px;
+    min-height: 48px;
+    padding: 0;
     border-radius: var(--radius-full);
-    background: var(--bg-overlay);
-    border: 1px solid var(--border-default);
-    color: var(--text-primary);
-    font-size: 0.9rem;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: var(--space-xs);
-    -webkit-tap-highlight-color: transparent;
-    transition: background 0.2s, transform 0.2s;
+    background: linear-gradient(180deg, var(--gold-hover) 0%, var(--gold) 100%);
+    border: none;
+    box-shadow: var(--shadow-gold-btn);
+    color: var(--text-inverse);
+    font-size: 1.25rem;
+    transition: transform var(--transition-base), box-shadow var(--transition-base);
 }
-.map-locate-float:hover { background: var(--bg-overlay-strong); transform: scale(1.02); }
+.map-locate-float:hover {
+    transform: scale(1.08);
+    background: linear-gradient(180deg, var(--gold-hover) 0%, var(--gold) 100%);
+}
 .map-locate-float:disabled { opacity: 0.6; cursor: not-allowed; }
 .map-controls {
     display: flex;
@@ -2297,9 +2334,10 @@ input, select, textarea, button {
 }
 /* Segmented control: Discover / My Map */
 .map-toggle {
-    display: flex;
+    display: inline-flex;
     gap: 0;
     background: var(--bg-surface);
+    border: 1px solid var(--border-default);
     border-radius: var(--radius-full);
     padding: 4px;
     margin-bottom: 8px;
@@ -2313,19 +2351,22 @@ input, select, textarea, button {
     border: none;
     border-radius: var(--radius-full);
     background: transparent;
-    color: var(--gold);
-    font-size: 0.95rem;
-    font-weight: 600;
+    color: var(--text-secondary);
+    font-size: var(--text-sm);
+    font-weight: 500;
     cursor: pointer;
-    transition: background 0.2s, color 0.2s;
+    transition: all var(--transition-base);
     -webkit-tap-highlight-color: transparent;
 }
-.map-toggle-btn:hover {
-    color: var(--gold);
+.map-toggle-btn:hover:not(.active) {
+    background: var(--bg-elevated);
+    color: var(--text-primary);
 }
 .map-toggle-btn.active {
-    background: var(--gold);
-    color: var(--bg-base);
+    background: linear-gradient(180deg, var(--amber) 0%, var(--gold) 100%);
+    color: var(--text-inverse);
+    font-weight: 600;
+    box-shadow: 0 2px 8px var(--amber-glow);
 }
 /* Filter chips: 8px gap below toggle; visibility controlled by JS (Discover only) */
 .map-filters {
@@ -2338,25 +2379,32 @@ input, select, textarea, button {
 .view-map .map-toggle { margin-bottom: 8px; }
 .view-map .map-filters { margin-top: 0; }
 .map-filters .filter-chip {
-    padding: var(--space-xs) var(--space-md);
-    border: 1px solid var(--border-default);
+    padding: 10px var(--space-md);
+    border: 1px solid var(--border-subtle);
     border-radius: var(--radius-full);
-    background: transparent;
-    color: var(--text-primary);
-    font-size: 0.85rem;
+    background: var(--bg-surface);
+    color: var(--text-secondary);
+    font-size: var(--text-sm);
     cursor: pointer;
-    transition: background 0.2s, border-color 0.2s, opacity 0.2s;
+    transition: all var(--transition-base);
     -webkit-tap-highlight-color: transparent;
 }
-.map-filters .filter-chip:hover { border-color: var(--text-muted); }
-.map-filters .filter-chip.active {
-    border-color: transparent;
-    opacity: 1;
+.filter-chip-emoji {
+    font-size: 0.7em;
+    vertical-align: middle;
+    margin-right: 2px;
 }
-.map-filters .filter-chip[data-type="brewery"].active { background: var(--amber); color: var(--text-inverse); }
-.map-filters .filter-chip[data-type="brewpub"].active { background: var(--gold); color: var(--text-inverse); }
-.map-filters .filter-chip[data-type="bar"].active { background: var(--status-success); color: var(--text-inverse); }
-.map-filters .filter-chip:not(.active) { opacity: 0.7; }
+.map-filters .filter-chip:hover:not(.active) {
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+    border-color: var(--border-default);
+}
+.map-filters .filter-chip.active {
+    background: var(--gold);
+    color: var(--text-inverse);
+    border-color: var(--gold);
+}
+.map-filters .filter-chip:not(.active) { opacity: 1; }
 .map-locate-btn {
     min-width: 44px;
     min-height: 44px;
@@ -2514,9 +2562,35 @@ input, select, textarea, button {
 .map-popup .btn { margin-top: var(--space-sm); }
 .leaflet-popup-content-wrapper { background: var(--bg-surface); color: var(--text-primary); border-radius: var(--radius-sm); }
 .leaflet-popup-tip { background: var(--bg-surface); }
+
+/* Leaflet zoom controls: dark navy, gold text, rounded */
+.leaflet-control-zoom {
+    border: 1px solid var(--border-subtle) !important;
+    border-radius: var(--radius-md) !important;
+    overflow: hidden;
+    box-shadow: var(--shadow-card);
+}
+.leaflet-control-zoom a {
+    background: var(--bg-surface) !important;
+    color: var(--gold) !important;
+    border: none !important;
+    width: 36px !important;
+    height: 36px !important;
+    line-height: 36px !important;
+    font-size: 20px !important;
+    transition: background var(--transition-base), color var(--transition-base);
+}
+.leaflet-control-zoom a:hover {
+    background: var(--bg-elevated) !important;
+    color: var(--gold) !important;
+}
+.leaflet-control-zoom a + a {
+    border-top: 1px solid var(--border-subtle) !important;
+}
 @media (max-width: 768px) {
     .view-map-header .view-map-title,
-    .view-map-header .view-desc { display: none !important; }
+    .view-map-header .view-desc,
+    .view-map-header .view-map-subheader { display: none !important; }
     .view-map .view-header { margin-bottom: var(--space-sm); }
     .view-map {
         padding-bottom: 0;
@@ -2548,11 +2622,15 @@ input, select, textarea, button {
         margin-bottom: 0;
     }
     .view-map .map-locate-float {
-        bottom: var(--space-md);
-        left: var(--space-md);
-        min-height: 44px;
+        bottom: var(--space-lg);
+        right: var(--space-lg);
+        left: auto;
+        width: 48px;
+        height: 48px;
+        min-height: 48px;
         border-radius: var(--radius-full);
-        background: var(--bg-overlay);
+        background: linear-gradient(180deg, var(--gold-hover) 0%, var(--gold) 100%);
+        box-shadow: var(--shadow-gold-btn);
     }
     .beer-map-container { height: 400px; }
     .map-sidebar {
@@ -2769,6 +2847,7 @@ input, select, textarea, button {
     border-top: 1px solid var(--border-subtle);
     align-items: flex-start;
     justify-content: space-around;
+    gap: 4px;
 }
 
 .bottom-tab-nav .tab-item {
@@ -2776,13 +2855,13 @@ input, select, textarea, button {
     flex-direction: column;
     align-items: center;
     gap: 2px;
-    padding: 4px 0;
-    min-width: 56px;
+    padding: 4px 4px;
+    min-width: 60px;
     background: none;
     border: none;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
-    transition: transform 0.15s var(--ease-out);
+    transition: transform var(--transition-base);
     font-family: var(--font-body);
 }
 
@@ -2794,8 +2873,8 @@ input, select, textarea, button {
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: 8px;
-    transition: all 0.2s var(--ease-out);
+    border-radius: var(--radius-md);
+    transition: all var(--transition-base);
     color: var(--text-muted);
     font-size: 18px;
 }
@@ -2813,7 +2892,7 @@ input, select, textarea, button {
     font-weight: 600;
     letter-spacing: 0.02em;
     color: var(--text-muted);
-    transition: color 0.2s var(--ease-out);
+    transition: color var(--transition-base);
     line-height: 1;
 }
 
@@ -2825,19 +2904,20 @@ input, select, textarea, button {
 .bottom-tab-nav .tab-item.active .tab-label { color: var(--gold); }
 
 .bottom-tab-nav .tab-item.tab-rate .tab-icon {
-    width: 44px;
-    height: 44px;
+    width: 52px;
+    height: 52px;
     margin-top: -14px;
-    border-radius: var(--radius-lg);
+    border-radius: var(--radius-full);
     background: linear-gradient(180deg, var(--gold-hover) 0%, var(--gold) 100%);
     color: var(--text-inverse);
-    font-size: 24px;
+    font-size: 22px;
     font-weight: 700;
-    box-shadow: var(--shadow-gold-btn);
+    box-shadow: 0 0 16px rgba(244, 178, 35, 0.25);
+    transition: transform var(--transition-base), box-shadow var(--transition-base);
 }
 
 .bottom-tab-nav .tab-item.tab-rate:active .tab-icon {
-    box-shadow: var(--shadow-card);
+    box-shadow: 0 0 12px rgba(244, 178, 35, 0.2);
 }
 
 .bottom-tab-nav .tab-item.tab-rate .tab-label { color: var(--gold); margin-top: 2px; }
@@ -2853,14 +2933,6 @@ input, select, textarea, button {
     .topbar-logo { height: 40px; width: auto; }
     .topbar-nav { display: none !important; }
     .topbar-right { display: none !important; }
-    .mobile-menu-btn { display: none !important; }
-    .mobile-menu-overlay, .mobile-menu-dropdown { display: none !important; }
     .toast-container { bottom: 96px; }
     .map-sidebar { bottom: 82px; }
-}
-
-@media (max-width: 519px) {
-    .topbar-nav, .topbar-right { display: none !important; }
-    .mobile-menu-btn { display: none !important; }
-    .mobile-menu-overlay, .mobile-menu-dropdown { display: none !important; }
 }

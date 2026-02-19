@@ -312,7 +312,7 @@ const App = {
             await this.handleCheersClick(btn, ratingId);
         });
 
-        // Mobile menu (below 520px)
+        // Hamburger menu (global, top-right)
         const mobileMenuBtn = document.getElementById('mobile-menu-btn');
         const mobileOverlay = document.getElementById('mobile-menu-overlay');
         const mobileDropdown = document.getElementById('mobile-menu-dropdown');
@@ -337,16 +337,14 @@ const App = {
         if (mobileOverlay) {
             mobileOverlay.addEventListener('click', closeMobileMenu);
         }
-        document.querySelectorAll('.mobile-nav-item').forEach(item => {
+        const hamburgerClose = document.getElementById('hamburger-menu-close');
+        if (hamburgerClose) {
+            hamburgerClose.addEventListener('click', closeMobileMenu);
+        }
+        document.querySelectorAll('.hamburger-nav-item').forEach(item => {
             item.addEventListener('click', () => {
                 if (item.dataset.view) {
                     this.navigate(item.dataset.view);
-                    closeMobileMenu();
-                } else if (item.dataset.action === 'signout') {
-                    DB.signOut().then(() => {
-                        document.getElementById('app').style.display = 'none';
-                        document.getElementById('auth-screen').style.display = 'flex';
-                    });
                     closeMobileMenu();
                 }
             });
@@ -1593,12 +1591,12 @@ const App = {
 
         const view = document.getElementById(`view-${viewId}`);
         const btn = document.querySelector(`.nav-btn[data-view="${viewId}"]`);
-        const mobileBtn = document.querySelector(`.mobile-nav-item[data-view="${viewId}"]`);
+        const hamburgerBtn = document.querySelector(`.hamburger-nav-item[data-view="${viewId}"]`);
 
         if (view) { view.classList.add('active'); view.style.animation = 'none'; view.offsetHeight; view.style.animation = ''; }
         if (btn) btn.classList.add('active');
-        document.querySelectorAll('.mobile-nav-item[data-view]').forEach(b => b.classList.remove('active'));
-        if (mobileBtn) mobileBtn.classList.add('active');
+        document.querySelectorAll('.hamburger-nav-item[data-view]').forEach(b => b.classList.remove('active'));
+        if (hamburgerBtn) hamburgerBtn.classList.add('active');
         // Sync bottom tab nav active state
         document.querySelectorAll('#bottom-tab-nav .tab-item').forEach(t => t.classList.remove('active'));
         const bottomTab = document.querySelector(`#bottom-tab-nav .tab-item[data-view="${viewId}"]`);
