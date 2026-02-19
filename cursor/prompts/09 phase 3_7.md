@@ -826,7 +826,9 @@ python scripts/build_beer_catalog.py
 **STOP. Verify. Commit pipeline and output CSVs.**
 
 ---
+## Scope for this session
 
+Execute Workstreams 1 and 2 only. STOP after Workstream 2 success criteria are verified. Workstreams 3 and 4 will be a separate session.
 ## Workstream 3: Data Loading
 
 Create `scripts/load_catalog_to_db.sh` — loads CSVs into Postgres.
