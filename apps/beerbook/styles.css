@@ -3,6 +3,7 @@
    Warm craft brewery aesthetic
    ============================================ */
 
+   @import './beerbook-design-tokens.css';
 :root {
     /* Core palette - warm amber/mahogany pub tones */
     --amber-50: #fefaf3;
