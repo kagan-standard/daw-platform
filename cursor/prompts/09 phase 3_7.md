@@ -1,4 +1,4 @@
-# Phase 3.1 — Beer Catalog: Schema, Pipeline & Seed Data
+# Phase 3.7 — Beer Catalog: Schema, Pipeline & Seed Data
 
 Apply `cursor/prompts/00_system.md` rules.
 
