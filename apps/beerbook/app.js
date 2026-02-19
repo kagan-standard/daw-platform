@@ -2,6 +2,117 @@
    BeerBook — Main Application (Keycloak SSO)
    ============================================ */
 
+const CHEERS_LIST = [
+    { word: "Cheers", lang: "English" },
+    { word: "Prost", lang: "German" },
+    { word: "Salud", lang: "Spanish" },
+    { word: "Santé", lang: "French" },
+    { word: "Cin cin", lang: "Italian" },
+    { word: "Skål", lang: "Swedish" },
+    { word: "Saúde", lang: "Portuguese" },
+    { word: "Na zdraví", lang: "Czech" },
+    { word: "Kampai", lang: "Japanese" },
+    { word: "Gānbēi", lang: "Mandarin Chinese" },
+    { word: "건배", lang: "Korean" },
+    { word: "За здоровье", lang: "Russian" },
+    { word: "Budmo", lang: "Ukrainian" },
+    { word: "Na zdrowie", lang: "Polish" },
+    { word: "Egészségedre", lang: "Hungarian" },
+    { word: "Şerefe", lang: "Turkish" },
+    { word: "يحسلا", lang: "Arabic" },
+    { word: "Mabuhay", lang: "Filipino" },
+    { word: "Chúc sức khỏe", lang: "Vietnamese" },
+    { word: "ชนแก้ว", lang: "Thai" },
+    { word: "Chok dee", lang: "Thai (informal)" },
+    { word: "Sláinte", lang: "Irish Gaelic" },
+    { word: "Iechyd da", lang: "Welsh" },
+    { word: "Tagay", lang: "Cebuano" },
+    { word: "Fenékig", lang: "Hungarian (informal)" },
+    { word: "Noroc", lang: "Romanian" },
+    { word: "Živjeli", lang: "Croatian" },
+    { word: "Nazdravlje", lang: "Serbian" },
+    { word: "Наздраве", lang: "Bulgarian" },
+    { word: "Terviseks", lang: "Estonian" },
+    { word: "Priekā", lang: "Latvian" },
+    { word: "Į sveikatą", lang: "Lithuanian" },
+    { word: "Kippis", lang: "Finnish" },
+    { word: "Skál", lang: "Icelandic" },
+    { word: "Skál", lang: "Faroese" },
+    { word: "Skål", lang: "Danish" },
+    { word: "Skål", lang: "Norwegian" },
+    { word: "Proost", lang: "Dutch" },
+    { word: "Op uw gezondheid", lang: "Flemish" },
+    { word: "Zum Wohl", lang: "Austrian German" },
+    { word: "Gesondheid", lang: "Afrikaans" },
+    { word: "Maisha marefu", lang: "Swahili" },
+    { word: "Oogy wawa", lang: "Zulu" },
+    { word: "Viva", lang: "Cape Verdean" },
+    { word: "Txin txin", lang: "Basque" },
+    { word: "Salut", lang: "Catalan" },
+    { word: "Saude", lang: "Galician" },
+    { word: "Υγεία", lang: "Greek" },
+    { word: "לחיים", lang: "Hebrew" },
+    { word: "Sawasdi", lang: "Lao" },
+    { word: "Tā moko", lang: "Māori" },
+    { word: "Okole maluna", lang: "Hawaiian" },
+    { word: "Serefe", lang: "Kurdish" },
+    { word: "Nuostabiai", lang: "Samoan" },
+    { word: "Chimo", lang: "Inuit" },
+    { word: "Biba", lang: "Papiamento" },
+    { word: "Saluti", lang: "Corsican" },
+    { word: "Arriba", lang: "Mexican Spanish (informal)" },
+    { word: "Tim tim", lang: "Brazilian Portuguese" },
+    { word: "Ura", lang: "Fijian" },
+    { word: "Topa", lang: "Quechua" },
+    { word: "Asikhulume", lang: "Xhosa" },
+    { word: "Nkemcho", lang: "Igbo" },
+    { word: "A wo nkwa", lang: "Akan" },
+    { word: "Ogeni", lang: "Yoruba" },
+    { word: "Bismillah", lang: "Hausa" },
+    { word: "Fee sahtik", lang: "Lebanese Arabic" },
+    { word: "Sherefe", lang: "Persian" },
+    { word: "Salamati", lang: "Dari" },
+    { word: "Tanshin", lang: "Mongolian" },
+    { word: "Gom bui", lang: "Cantonese" },
+    { word: "Ho̍k", lang: "Hokkien" },
+    { word: "Manuia", lang: "Tongan" },
+    { word: "Hauoli", lang: "Hawaiian (informal)" },
+    { word: "Salute", lang: "Maltese" },
+    { word: "Evviva", lang: "Sardinian" },
+    { word: "Nā mua", lang: "Tahitian" },
+    { word: "Chahiya", lang: "Nepali" },
+    { word: "Subha kamana", lang: "Hindi" },
+    { word: "Jai", lang: "Punjabi" },
+    { word: "Cheeria", lang: "Sinhalese" },
+    { word: "ဝမ်းသာပါ", lang: "Burmese" },
+    { word: "សុខភាព", lang: "Khmer" },
+    { word: "Sokhphiep", lang: "Khmer (romanized)" },
+    { word: "Caipi", lang: "Guaraní" },
+    { word: "Bersulang", lang: "Malay" },
+    { word: "Sulang", lang: "Indonesian (informal)" },
+    { word: "Mālama", lang: "Samoan" },
+    { word: "Yam seng", lang: "Singaporean" },
+    { word: "Tagay", lang: "Ilocano" },
+    { word: "乾杯", lang: "Japanese (kanji)" },
+    { word: "干杯", lang: "Chinese (simplified)" },
+    { word: "Trăiască", lang: "Romanian (celebratory)" },
+    { word: "Ahoj", lang: "Slovak" },
+    { word: "Na zdravje", lang: "Slovenian" },
+    { word: "Gëzuar", lang: "Albanian" },
+    { word: "Gaudeamus", lang: "Latin" },
+    { word: "Salus", lang: "Latin (classical)" },
+];
+
+function getRandomCheers() {
+    let stored = sessionStorage.getItem('beerbook_cheers');
+    if (stored) {
+        return JSON.parse(stored);
+    }
+    const pick = CHEERS_LIST[Math.floor(Math.random() * CHEERS_LIST.length)];
+    sessionStorage.setItem('beerbook_cheers', JSON.stringify(pick));
+    return pick;
+}
+
 const STYLE_GUIDE = {
     'IPA': { desc: 'American-style India Pale Ale, hop-forward with citrus and pine.', abv: '5.5–7.5%' },
     'Double IPA': { desc: 'Stronger, more intense IPA with bold hop character.', abv: '7.5–10%' },
@@ -1532,9 +1643,13 @@ const App = {
         document.getElementById('auth-screen').style.display = 'none';
         document.getElementById('app').style.display = 'block';
 
-        const greeting = document.getElementById('user-greeting');
-        if (greeting && DB.currentUser) {
-            greeting.textContent = `Hey, ${DB.currentUser.display_name}!`;
+        const cheersLine = document.getElementById('user-greeting-cheers');
+        const langLine = document.getElementById('user-greeting-lang');
+        if ((cheersLine || langLine) && DB.currentUser) {
+            const cheers = getRandomCheers();
+            const name = DB.currentUser.display_name || 'Guest';
+            if (cheersLine) cheersLine.textContent = `${cheers.word}, ${name}!`;
+            if (langLine) langLine.textContent = cheers.lang;
         }
 
         await this.loadAllData();
