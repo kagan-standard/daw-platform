@@ -34,6 +34,7 @@ const MapView = {
             L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
                 attribution: '&copy; OpenStreetMap &copy; CARTO'
             }).addTo(this.map);
+            this.map.on('moveend', () => this._onMapMoveEnd());
         }
         if (!this.initDone) {
             this.initDone = true;
@@ -65,10 +66,6 @@ const MapView = {
             chip.addEventListener('click', () => this.toggleBreweryFilter(chip));
         });
         document.querySelector('.brewery-bottom-sheet-backdrop')?.addEventListener('click', () => this.closeBrewerySheet());
-        const mapEl = document.getElementById('beer-map');
-        if (mapEl && this.map) {
-            this.map.on('moveend', () => this._onMapMoveEnd());
-        }
         if (DB.currentUser && DB.currentUser.id) {
             const trailBtn = document.getElementById('btn-my-trail');
             if (trailBtn) trailBtn.style.display = 'inline-flex';
@@ -152,6 +149,7 @@ const MapView = {
     },
 
     _onMapMoveEnd() {
+        console.log('MapView: moveend fired', this.currentLayer);
         if (this.moveEndDebounce) clearTimeout(this.moveEndDebounce);
         this.moveEndDebounce = setTimeout(() => {
             this.moveEndDebounce = null;
