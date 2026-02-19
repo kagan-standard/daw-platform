@@ -1,5 +1,8 @@
 # Large data files (not committed, placed manually)
+# Source data in data/
 data/*.xlsx
 data/*.csv
 data/*.txt
+# Pipeline output (generated CSVs)
 data/output/
+data/output/*.csv
