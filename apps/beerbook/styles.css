@@ -389,6 +389,13 @@ input, select, textarea, button {
     flex-shrink: 0;
 }
 
+.topbar-right {
+    position: relative;
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+}
+
 .topbar-logo {
     height: 32px;
     width: auto;
@@ -406,135 +413,101 @@ input, select, textarea, button {
     flex: 1;
 }
 
-.top-bar__cheers-line {
+#user-greeting {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    line-height: 1.2;
+}
+
+.greeting-phrase {
+    font-size: 0.85rem;
+    font-weight: 600;
     color: var(--gold);
-    font-size: var(--text-sm);
-    font-weight: var(--weight-semibold);
-    margin: 0;
 }
 
-.top-bar__cheers-lang {
-    color: var(--text-muted);
-    font-size: var(--text-xs);
+.greeting-lang {
+    font-size: 0.6rem;
     font-style: italic;
-    margin: 0;
+    color: var(--text-muted);
+    opacity: 0.9;
+    letter-spacing: 0.05em;
 }
 
-.top-bar__hamburger,
-.hamburger-menu-btn {
+/* Hamburger button (icon swap in-place) */
+.hamburger-btn {
     display: flex;
     align-items: center;
     justify-content: center;
     width: 40px;
     height: 40px;
-    padding: var(--space-sm);
+    padding: 0.3rem 0.6rem;
     margin-left: var(--space-sm);
     background: none;
-    border: none;
-    color: var(--text-primary);
-    font-size: 24px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    color: var(--gold);
+    font-size: 1.4rem;
     line-height: 1;
     cursor: pointer;
     flex-shrink: 0;
-    border-radius: var(--radius-sm);
     transition: color 0.2s var(--ease-out), background 0.2s var(--ease-out);
 }
 
-.top-bar__hamburger:hover,
-.hamburger-menu-btn:hover {
+.hamburger-btn:hover {
     color: var(--gold);
     background: var(--bg-surface);
 }
 
-.hamburger-menu-overlay {
-    display: block;
-    position: fixed;
-    inset: 0;
-    z-index: 10000;
-    background: transparent;
-    pointer-events: none;
+.hamburger-btn .hamburger-icon,
+.hamburger-btn .close-icon {
+    position: absolute;
 }
 
-.hamburger-menu-dropdown {
-    position: fixed;
-    top: 60px;
-    right: var(--space-md);
-    z-index: 10001;
-    min-width: 200px;
+/* Compact dropdown panel (anchored below topbar) */
+.hamburger-dropdown {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    width: 220px;
     background: var(--bg-surface);
     border: 1px solid var(--border-subtle);
-    border-radius: var(--radius-lg);
+    border-radius: 0 0 var(--radius-md) var(--radius-md);
     box-shadow: var(--shadow-card);
-    overflow: hidden;
-    opacity: 0;
-    visibility: hidden;
-    transform: translateY(-8px);
-    transition: opacity 200ms var(--ease-out), transform 200ms var(--ease-out), visibility 200ms;
+    z-index: 1000;
+    padding: 0.5rem 0;
 }
 
-body.mobile-menu-open .hamburger-menu-overlay {
-    pointer-events: auto;
-}
-
-body.mobile-menu-open .hamburger-menu-dropdown {
-    opacity: 1;
-    visibility: visible;
-    transform: translateY(0);
-}
-
-.hamburger-menu-header {
+.hamburger-nav {
     display: flex;
-    justify-content: flex-end;
-    padding: var(--space-sm) var(--space-sm) 0;
+    flex-direction: column;
 }
 
-.hamburger-menu-close {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 36px;
-    height: 36px;
-    padding: 0;
-    background: transparent;
-    border: none;
-    color: var(--text-primary);
-    font-size: 1.25rem;
-    line-height: 1;
-    cursor: pointer;
-    border-radius: var(--radius-sm);
-    transition: color 0.2s var(--ease-out), background 0.2s var(--ease-out);
-}
-
-.hamburger-menu-close:hover,
-.hamburger-menu-close:active {
-    color: var(--gold);
-    background: var(--bg-elevated);
-}
-
-.hamburger-nav-item {
+.ham-link {
     display: block;
-    width: 100%;
-    padding: 14px 20px;
-    background: transparent;
-    border: none;
+    padding: 0.6rem 1rem;
+    font-size: 0.9rem;
     color: var(--text-primary);
-    font-size: var(--text-base);
-    font-weight: 500;
-    font-family: var(--font-body);
+    text-decoration: none;
     cursor: pointer;
-    text-align: left;
-    transition: background 0.15s, color 0.15s;
+    transition: background 0.15s;
 }
 
-.hamburger-nav-item:hover,
-.hamburger-nav-item:active {
+.ham-link:hover,
+.ham-link:active {
+    background: var(--amber-subtle);
     color: var(--gold);
-    background: var(--bg-elevated);
 }
 
-.hamburger-nav-item.active {
+.ham-link.active {
     color: var(--gold);
-    background: var(--bg-elevated);
+    background: var(--amber-subtle);
+}
+
+.ham-divider {
+    border: none;
+    border-top: 1px solid var(--border-subtle);
+    margin: 0.25rem 0;
 }
 
 /* ============ VIEWS ============ */

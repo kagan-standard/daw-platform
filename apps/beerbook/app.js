@@ -439,42 +439,49 @@ const App = {
             await this.handleCheersClick(btn, ratingId);
         });
 
-        // Hamburger menu (global, top-right)
-        const mobileMenuBtn = document.getElementById('mobile-menu-btn');
-        const mobileOverlay = document.getElementById('mobile-menu-overlay');
-        const mobileDropdown = document.getElementById('mobile-menu-dropdown');
-        const closeMobileMenu = () => {
-            document.body.classList.remove('mobile-menu-open');
-            if (mobileMenuBtn) mobileMenuBtn.setAttribute('aria-expanded', 'false');
-            if (mobileDropdown) mobileDropdown.setAttribute('aria-hidden', 'true');
-            if (mobileOverlay) mobileOverlay.setAttribute('aria-hidden', 'true');
-        };
-        const openMobileMenu = () => {
-            document.body.classList.add('mobile-menu-open');
-            if (mobileMenuBtn) mobileMenuBtn.setAttribute('aria-expanded', 'true');
-            if (mobileDropdown) mobileDropdown.setAttribute('aria-hidden', 'false');
-            if (mobileOverlay) mobileOverlay.setAttribute('aria-hidden', 'false');
-        };
-        if (mobileMenuBtn) {
-            mobileMenuBtn.addEventListener('click', () => {
-                if (document.body.classList.contains('mobile-menu-open')) closeMobileMenu();
-                else openMobileMenu();
+        // Hamburger menu (compact dropdown, icon swap)
+        const menuToggle = document.getElementById('menu-toggle');
+        const menuDropdown = document.getElementById('hamburger-menu');
+        const hamIcon = menuToggle?.querySelector('.hamburger-icon');
+        const closeIcon = menuToggle?.querySelector('.close-icon');
+        if (menuToggle && menuDropdown) {
+            menuToggle.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const isOpen = menuDropdown.style.display !== 'none';
+                menuDropdown.style.display = isOpen ? 'none' : 'block';
+                menuDropdown.setAttribute('aria-hidden', isOpen ? 'true' : 'false');
+                if (hamIcon) hamIcon.style.display = isOpen ? '' : 'none';
+                if (closeIcon) closeIcon.style.display = isOpen ? 'none' : '';
+                menuToggle.setAttribute('aria-expanded', isOpen ? 'false' : 'true');
             });
         }
-        if (mobileOverlay) {
-            mobileOverlay.addEventListener('click', closeMobileMenu);
-        }
-        const hamburgerClose = document.getElementById('hamburger-menu-close');
-        if (hamburgerClose) {
-            hamburgerClose.addEventListener('click', closeMobileMenu);
-        }
-        document.querySelectorAll('.hamburger-nav-item').forEach(item => {
-            item.addEventListener('click', () => {
-                if (item.dataset.view) {
-                    this.navigate(item.dataset.view);
-                    closeMobileMenu();
-                }
+        document.addEventListener('click', (e) => {
+            if (menuToggle && menuDropdown && !menuToggle.contains(e.target) && !menuDropdown.contains(e.target)) {
+                menuDropdown.style.display = 'none';
+                menuDropdown.setAttribute('aria-hidden', 'true');
+                if (hamIcon) hamIcon.style.display = '';
+                if (closeIcon) closeIcon.style.display = 'none';
+                if (menuToggle) menuToggle.setAttribute('aria-expanded', 'false');
+            }
+        });
+        document.querySelectorAll('.ham-link[data-view]').forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                menuDropdown.style.display = 'none';
+                if (hamIcon) hamIcon.style.display = '';
+                if (closeIcon) closeIcon.style.display = 'none';
+                if (menuToggle) menuToggle.setAttribute('aria-expanded', 'false');
+                menuDropdown.setAttribute('aria-hidden', 'true');
+                this.navigate(link.dataset.view);
             });
+        });
+        document.getElementById('ham-logout')?.addEventListener('click', (e) => {
+            e.preventDefault();
+            if (menuDropdown) menuDropdown.style.display = 'none';
+            if (hamIcon) hamIcon.style.display = '';
+            if (closeIcon) closeIcon.style.display = 'none';
+            if (menuToggle) menuToggle.setAttribute('aria-expanded', 'false');
+            document.getElementById('logout-btn')?.click();
         });
 
         // Star rating (Task 1: pulse, keyboard)
@@ -1643,35 +1650,36 @@ const App = {
         document.getElementById('auth-screen').style.display = 'none';
         document.getElementById('app').style.display = 'block';
 
-        const cheersLine = document.getElementById('user-greeting-cheers');
-        const langLine = document.getElementById('user-greeting-lang');
-        if ((cheersLine || langLine) && DB.currentUser) {
+        const greeting = document.getElementById('user-greeting');
+        if (greeting && DB.currentUser) {
             const name = (DB.currentUser.display_name || '').trim() || 'Beer Lover';
             const greetings = [
-                `🍻 Cheers, ${name}!`,
-                `🍺 Prost, ${name}!`,
-                `🥂 Salud, ${name}!`,
-                `🍻 Sláinte, ${name}!`,
-                `🍺 Cin cin, ${name}!`,
-                `🍻 Skål, ${name}!`,
-                `🥂 干杯, ${name}!`,
-                `🍺 건배, ${name}!`,
-                `🍻 Na zdraví, ${name}!`,
-                `🍺 Kampai, ${name}!`,
-                `🥂 Santé, ${name}!`,
-                `🍻 Proost, ${name}!`,
-                `🍺 Zum Wohl, ${name}!`,
-                `🥂 Saúde, ${name}!`,
-                `🍻 Şerefe, ${name}!`,
-                `🍺 L'chaim, ${name}!`,
-                `🥂 Yamas, ${name}!`,
-                `🍻 Na zdrowie, ${name}!`,
-                `🍺 Egészségedre, ${name}!`,
-                `🥂 Noroc, ${name}!`,
+                { phrase: `Cheers, ${name}!`, lang: 'English', emoji: '🍻' },
+                { phrase: `Prost, ${name}!`, lang: 'German', emoji: '🍺' },
+                { phrase: `Salud, ${name}!`, lang: 'Spanish', emoji: '🥂' },
+                { phrase: `Sláinte, ${name}!`, lang: 'Irish', emoji: '🍻' },
+                { phrase: `Cin cin, ${name}!`, lang: 'Italian', emoji: '🍺' },
+                { phrase: `Skål, ${name}!`, lang: 'Swedish', emoji: '🍻' },
+                { phrase: `干杯, ${name}!`, lang: 'Mandarin', emoji: '🥂' },
+                { phrase: `건배, ${name}!`, lang: 'Korean', emoji: '🍺' },
+                { phrase: `Na zdraví, ${name}!`, lang: 'Czech', emoji: '🍻' },
+                { phrase: `乾杯, ${name}!`, lang: 'Japanese', emoji: '🍺' },
+                { phrase: `Santé, ${name}!`, lang: 'French', emoji: '🥂' },
+                { phrase: `Proost, ${name}!`, lang: 'Dutch', emoji: '🍻' },
+                { phrase: `Saúde, ${name}!`, lang: 'Portuguese', emoji: '🥂' },
+                { phrase: `Şerefe, ${name}!`, lang: 'Turkish', emoji: '🍻' },
+                { phrase: `L'chaim, ${name}!`, lang: 'Hebrew', emoji: '🍺' },
+                { phrase: `Yamas, ${name}!`, lang: 'Greek', emoji: '🥂' },
+                { phrase: `Na zdrowie, ${name}!`, lang: 'Polish', emoji: '🍻' },
+                { phrase: `Noroc, ${name}!`, lang: 'Romanian', emoji: '🥂' },
+                { phrase: `Chok dee, ${name}!`, lang: 'Thai', emoji: '🍺' },
+                { phrase: `Mabuhay, ${name}!`, lang: 'Filipino', emoji: '🍻' },
             ];
-            const greetingText = greetings[Math.floor(Math.random() * greetings.length)];
-            if (cheersLine) cheersLine.textContent = greetingText;
-            if (langLine) langLine.textContent = '';
+            const g = greetings[Math.floor(Math.random() * greetings.length)];
+            greeting.innerHTML = `
+                <span class="greeting-phrase">${g.emoji} ${g.phrase}</span>
+                <span class="greeting-lang">${g.lang}</span>
+            `;
         }
 
         await this.loadAllData();
@@ -1747,11 +1755,11 @@ const App = {
 
         const view = document.getElementById(`view-${viewId}`);
         const btn = document.querySelector(`.nav-btn[data-view="${viewId}"]`);
-        const hamburgerBtn = document.querySelector(`.hamburger-nav-item[data-view="${viewId}"]`);
+        const hamburgerBtn = document.querySelector(`.ham-link[data-view="${viewId}"]`);
 
         if (view) { view.classList.add('active'); view.style.animation = 'none'; view.offsetHeight; view.style.animation = ''; }
         if (btn) btn.classList.add('active');
-        document.querySelectorAll('.hamburger-nav-item[data-view]').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.ham-link[data-view]').forEach(b => b.classList.remove('active'));
         if (hamburgerBtn) hamburgerBtn.classList.add('active');
         // Sync bottom tab nav active state
         document.querySelectorAll('#bottom-tab-nav .tab-item').forEach(t => t.classList.remove('active'));

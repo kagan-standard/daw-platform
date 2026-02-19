@@ -101,24 +101,25 @@
                 <img src="top_bar_bb.png" alt="BeerBook" class="topbar-logo">
             </div>
             <div class="top-bar__greeting">
-                <p id="user-greeting-cheers" class="top-bar__cheers-line"></p>
-                <p id="user-greeting-lang" class="top-bar__cheers-lang"></p>
+                <div id="user-greeting"></div>
             </div>
-            <button type="button" id="mobile-menu-btn" class="hamburger-menu-btn top-bar__hamburger" aria-label="Open menu" aria-expanded="false">☰</button>
+            <div class="topbar-right">
+                <button type="button" class="hamburger-btn" id="menu-toggle" aria-label="Menu" aria-expanded="false">
+                    <span class="hamburger-icon">☰</span>
+                    <span class="close-icon" style="display:none;">✕</span>
+                </button>
+                <div id="hamburger-menu" class="hamburger-dropdown" style="display:none;" aria-hidden="true">
+                    <nav class="hamburger-nav">
+                        <a class="ham-link" data-view="dashboard" href="#">📰 Activity Feed</a>
+                        <a class="ham-link" data-view="leaderboard" href="#">🏆 Leaderboard</a>
+                        <a class="ham-link" data-view="exchange" href="#">💱 YG Exchange</a>
+                        <hr class="ham-divider">
+                        <a class="ham-link" data-view="profile" href="#">👤 Profile &amp; Stats</a>
+                        <a class="ham-link" id="ham-logout" href="#">🚪 Sign Out</a>
+                    </nav>
+                </div>
+            </div>
         </header>
-        <div id="mobile-menu-overlay" class="hamburger-menu-overlay" aria-hidden="true"></div>
-        <div id="mobile-menu-dropdown" class="hamburger-menu-dropdown" aria-hidden="true">
-            <div class="hamburger-menu-header">
-                <button type="button" id="hamburger-menu-close" class="hamburger-menu-close" aria-label="Close menu">✕</button>
-            </div>
-            <button type="button" class="hamburger-nav-item" data-view="dashboard">Home</button>
-            <button type="button" class="hamburger-nav-item" data-view="browse">Browse</button>
-            <button type="button" class="hamburger-nav-item" data-view="rate">Rate</button>
-            <button type="button" class="hamburger-nav-item" data-view="map">Map</button>
-            <button type="button" class="hamburger-nav-item" data-view="leaderboard">Leaderboard</button>
-            <button type="button" class="hamburger-nav-item" data-view="exchange">YG Exchange</button>
-            <button type="button" class="hamburger-nav-item" data-view="profile">Profile</button>
-        </div>
 
         <!-- ========== DASHBOARD VIEW ========== -->
         <main id="view-dashboard" class="view active">
