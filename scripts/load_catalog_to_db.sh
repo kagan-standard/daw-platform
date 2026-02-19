@@ -28,36 +28,48 @@ docker exec "$DB_CONTAINER" pg_dump -U postgres -d postgres > "$BACKUP_DIR/pre-c
 echo "1. Loading beer_styles..."
 docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres -c "
     COPY beer_styles(name, category, description, abv_min, abv_max, ibu_min, ibu_max)
-    FROM STDIN WITH (FORMAT csv, HEADER true, NULL '');
+    FROM STDIN WITH (FORMAT csv, HEADER true, NULL '', QUOTE '\"');
 " < "$DATA_DIR/beer_styles.csv"
 
-# 2. Load breweries (temp table + COPY + INSERT in one session)
+# 2. Load breweries (real staging table, 3 separate docker exec calls)
 echo "2. Loading breweries..."
-{
-    echo "CREATE TEMP TABLE tmp_breweries (name TEXT, slug TEXT, normalized_name TEXT, source TEXT, source_id TEXT);"
-    echo "COPY tmp_breweries FROM STDIN WITH (FORMAT csv, HEADER true, NULL '');"
-    cat "$DATA_DIR/breweries.csv"
-    echo '\.'
-    echo "INSERT INTO breweries (name, slug, normalized_name, source, source_id, import_batch_id) SELECT name, slug, normalized_name, source, source_id, '$BATCH_ID' FROM tmp_breweries ON CONFLICT (slug) DO NOTHING;"
-    echo "DROP TABLE tmp_breweries;"
-} | docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres
+docker exec "$DB_CONTAINER" psql -U postgres -d postgres -c "
+    DROP TABLE IF EXISTS tmp_breweries;
+    CREATE TABLE tmp_breweries (name TEXT, slug TEXT, normalized_name TEXT, source TEXT, source_id TEXT);
+"
+docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres -c "
+    COPY tmp_breweries FROM STDIN WITH (FORMAT csv, HEADER true, NULL '', QUOTE '\"');
+" < "$DATA_DIR/breweries.csv"
+docker exec "$DB_CONTAINER" psql -U postgres -d postgres -c "
+    INSERT INTO breweries (name, slug, normalized_name, source, source_id, import_batch_id)
+    SELECT name, slug, normalized_name, source, source_id, '$BATCH_ID' FROM tmp_breweries
+    ON CONFLICT (slug) DO NOTHING;
+    DROP TABLE tmp_breweries;
+"
 
-# 3. Load beers (temp table + COPY + INSERT with brewery_id JOIN in one session)
+# 3. Load beers (real staging table, 3 separate docker exec calls)
 echo "3. Loading beers (this is the big one)..."
-{
-    echo "CREATE TEMP TABLE tmp_beers (name TEXT, slug TEXT, normalized_name TEXT, brewery_normalized_name TEXT, brewery_name TEXT, style TEXT, style_category TEXT, abv DECIMAL, ibu_min INTEGER, ibu_max INTEGER, flavor_astringency INTEGER, flavor_body INTEGER, flavor_alcohol INTEGER, flavor_bitter INTEGER, flavor_sweet INTEGER, flavor_sour INTEGER, flavor_salty INTEGER, flavor_fruity INTEGER, flavor_hoppy INTEGER, flavor_spicy INTEGER, flavor_malty INTEGER, review_aroma DECIMAL, review_appearance DECIMAL, review_palate DECIMAL, review_taste DECIMAL, review_overall DECIMAL, review_count INTEGER, description TEXT, source TEXT, source_id TEXT, source_brewery_id TEXT);"
-    echo "COPY tmp_beers FROM STDIN WITH (FORMAT csv, HEADER true, NULL '');"
-    cat "$DATA_DIR/beers.csv"
-    echo '\.'
-    echo "INSERT INTO beers (name, slug, normalized_name, brewery_id, brewery_name, style, style_category, abv, ibu_min, ibu_max, flavor_astringency, flavor_body, flavor_alcohol, flavor_bitter, flavor_sweet, flavor_sour, flavor_salty, flavor_fruity, flavor_hoppy, flavor_spicy, flavor_malty, review_aroma, review_appearance, review_palate, review_taste, review_overall, review_count, description, source, source_id, source_brewery_id, import_batch_id) SELECT t.name, t.slug, t.normalized_name, br.id, t.brewery_name, t.style, t.style_category, t.abv, t.ibu_min, t.ibu_max, t.flavor_astringency, t.flavor_body, t.flavor_alcohol, t.flavor_bitter, t.flavor_sweet, t.flavor_sour, t.flavor_salty, t.flavor_fruity, t.flavor_hoppy, t.flavor_spicy, t.flavor_malty, t.review_aroma, t.review_appearance, t.review_palate, t.review_taste, t.review_overall, t.review_count, t.description, t.source, t.source_id, t.source_brewery_id, '$BATCH_ID' FROM tmp_beers t LEFT JOIN breweries br ON br.normalized_name = t.brewery_normalized_name ON CONFLICT (brewery_id, normalized_name) DO NOTHING;"
-    echo "DROP TABLE tmp_beers;"
-} | docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres
+docker exec "$DB_CONTAINER" psql -U postgres -d postgres -c "
+    DROP TABLE IF EXISTS tmp_beers;
+    CREATE TABLE tmp_beers (name TEXT, slug TEXT, normalized_name TEXT, brewery_normalized_name TEXT, brewery_name TEXT, style TEXT, style_category TEXT, abv DECIMAL, ibu_min INTEGER, ibu_max INTEGER, flavor_astringency INTEGER, flavor_body INTEGER, flavor_alcohol INTEGER, flavor_bitter INTEGER, flavor_sweet INTEGER, flavor_sour INTEGER, flavor_salty INTEGER, flavor_fruity INTEGER, flavor_hoppy INTEGER, flavor_spicy INTEGER, flavor_malty INTEGER, review_aroma DECIMAL, review_appearance DECIMAL, review_palate DECIMAL, review_taste DECIMAL, review_overall DECIMAL, review_count INTEGER, description TEXT, source TEXT, source_id TEXT, source_brewery_id TEXT);
+"
+docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres -c "
+    COPY tmp_beers FROM STDIN WITH (FORMAT csv, HEADER true, NULL '', QUOTE '\"');
+" < "$DATA_DIR/beers.csv"
+docker exec "$DB_CONTAINER" psql -U postgres -d postgres -c "
+    INSERT INTO beers (name, slug, normalized_name, brewery_id, brewery_name, style, style_category, abv, ibu_min, ibu_max, flavor_astringency, flavor_body, flavor_alcohol, flavor_bitter, flavor_sweet, flavor_sour, flavor_salty, flavor_fruity, flavor_hoppy, flavor_spicy, flavor_malty, review_aroma, review_appearance, review_palate, review_taste, review_overall, review_count, description, source, source_id, source_brewery_id, import_batch_id)
+    SELECT t.name, t.slug, t.normalized_name, br.id, t.brewery_name, t.style, t.style_category, t.abv, t.ibu_min, t.ibu_max, t.flavor_astringency, t.flavor_body, t.flavor_alcohol, t.flavor_bitter, t.flavor_sweet, t.flavor_sour, t.flavor_salty, t.flavor_fruity, t.flavor_hoppy, t.flavor_spicy, t.flavor_malty, t.review_aroma, t.review_appearance, t.review_palate, t.review_taste, t.review_overall, t.review_count, t.description, t.source, t.source_id, t.source_brewery_id, '$BATCH_ID'
+    FROM tmp_beers t
+    LEFT JOIN breweries br ON br.normalized_name = t.brewery_normalized_name
+    ON CONFLICT (brewery_id, normalized_name) DO NOTHING;
+    DROP TABLE tmp_beers;
+"
 
 # 4. Load flavor_descriptors
 echo "4. Loading flavor_descriptors..."
 docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres -c "
     COPY flavor_descriptors(category, keyword, impact)
-    FROM STDIN WITH (FORMAT csv, HEADER true, NULL '');
+    FROM STDIN WITH (FORMAT csv, HEADER true, NULL '', QUOTE '\"');
 " < "$DATA_DIR/flavor_descriptors.csv"
 
 # 5. Analyze
