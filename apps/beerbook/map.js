@@ -17,7 +17,7 @@ const MapView = {
     eventsBound: false,
     breweryCluster: null,
     breweryData: [],
-    currentLayer: 'ratings',
+    currentLayer: 'breweries',
     moveEndDebounce: null,
     BREWERY_CATEGORIES: {
         brewery: { types: ['micro', 'nano', 'regional', 'large', 'contract', 'proprietor'], icon: '🏭', color: '#F6AD55' },
@@ -60,7 +60,11 @@ const MapView = {
         document.getElementById('map-filter-style')?.addEventListener('change', () => this.applyStyleFilter());
         document.getElementById('beer-map')?.addEventListener('click', (e) => this._onPopupVenueClick(e));
         document.querySelectorAll('.map-layer-btn').forEach((btn) => {
-            btn.addEventListener('click', () => this.setLayer(btn.dataset.layer));
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.setLayer(btn.dataset.layer);
+            });
         });
         document.querySelectorAll('.map-filters .filter-chip').forEach((chip) => {
             chip.addEventListener('click', () => this.toggleBreweryFilter(chip));

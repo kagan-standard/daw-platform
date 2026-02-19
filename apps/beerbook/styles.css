@@ -598,6 +598,10 @@ input, select, textarea, button {
     display: block;
 }
 
+.view-map.active {
+    display: flex;
+}
+
 @keyframes fadeIn {
     from { opacity: 0; transform: translateY(12px); }
     to { opacity: 1; transform: translateY(0); }
@@ -2265,17 +2269,64 @@ input, select, textarea, button {
 .exchange-parity-text { color: var(--amber-600); font-size: 0.95rem; }
 
 /* ============ MAP VIEW ============ */
+#btn-near-me {
+    /* Hidden until happy hour / specials data is available; code kept for re-enable */
+    display: none !important;
+}
+#map-filter-style {
+    /* TODO: Re-enable when beer-to-brewery linkage is more complete */
+    display: none !important;
+}
+.view-map {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+.view-map .map-wrapper {
+    position: relative;
+    flex: 1;
+    min-height: 300px;
+    display: flex;
+    flex-direction: column;
+}
 .beer-map-container {
     height: 500px;
     width: 100%;
     border-radius: var(--radius-md);
     background: var(--dark-800);
-    margin-bottom: var(--space-lg);
+    flex: 1;
+    min-height: 300px;
 }
+.view-map .beer-map-container {
+    margin-bottom: 0;
+}
+.map-locate-float {
+    position: absolute;
+    bottom: var(--space-md);
+    left: var(--space-md);
+    z-index: 1000;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0 var(--space-md);
+    border-radius: var(--radius-md);
+    background: rgba(26, 16, 6, 0.85);
+    border: 1px solid var(--dark-600);
+    color: var(--foam-cream);
+    font-size: 0.9rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-xs);
+    -webkit-tap-highlight-color: transparent;
+    transition: background 0.2s, transform 0.2s;
+}
+.map-locate-float:hover { background: var(--dark-700); transform: scale(1.02); }
+.map-locate-float:disabled { opacity: 0.6; cursor: not-allowed; }
 .map-controls {
     display: flex;
     gap: var(--space-md);
-    margin-bottom: var(--space-lg);
+    margin-bottom: var(--space-md);
     flex-wrap: wrap;
     align-items: center;
 }
@@ -2293,6 +2344,7 @@ input, select, textarea, button {
     font-size: 0.9rem;
     cursor: pointer;
     transition: background 0.2s, border-color 0.2s;
+    -webkit-tap-highlight-color: transparent;
 }
 .map-layer-btn:hover { background: var(--dark-700); border-color: var(--dark-500); }
 .map-layer-btn.active {
@@ -2315,6 +2367,7 @@ input, select, textarea, button {
     font-size: 0.85rem;
     cursor: pointer;
     transition: background 0.2s, border-color 0.2s, opacity 0.2s;
+    -webkit-tap-highlight-color: transparent;
 }
 .map-filters .filter-chip:hover { border-color: var(--dark-500); }
 .map-filters .filter-chip.active {
@@ -2326,20 +2379,22 @@ input, select, textarea, button {
 .map-filters .filter-chip[data-type="bar"].active { background: #48BB78; color: var(--dark-900); }
 .map-filters .filter-chip:not(.active) { opacity: 0.7; }
 .map-locate-btn {
-    width: 44px;
-    height: 44px;
-    border-radius: 50%;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0 var(--space-sm);
+    border-radius: var(--radius-md);
     border: 1px solid var(--dark-600);
     background: var(--dark-800);
     color: var(--foam-cream);
-    font-size: 1.2rem;
+    font-size: 0.9rem;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
+    gap: var(--space-xs);
     transition: background 0.2s, transform 0.2s;
 }
-.map-locate-btn:hover { background: var(--dark-700); transform: scale(1.05); }
+.map-locate-btn:hover { background: var(--dark-700); transform: scale(1.02); }
 .map-locate-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 .brewery-pin { background: none !important; border: none !important; }
 .brewery-pin-circle {
@@ -2481,6 +2536,41 @@ input, select, textarea, button {
 .leaflet-popup-content-wrapper { background: var(--dark-800); color: var(--foam-cream); border-radius: var(--radius-sm); }
 .leaflet-popup-tip { background: var(--dark-800); }
 @media (max-width: 768px) {
+    .view-map-header .view-map-title { display: none; }
+    .view-map-header .view-desc {
+        font-size: 0.9rem;
+        margin-bottom: var(--space-sm);
+        color: var(--amber-600);
+    }
+    .view-map {
+        padding-bottom: 0;
+        display: flex;
+        flex-direction: column;
+        height: calc(100vh - 52px - 82px);
+        min-height: 0;
+    }
+    .view-map .view-header { margin-bottom: var(--space-sm); }
+    .view-map .map-layer-toggle { margin-bottom: var(--space-xs); }
+    .view-map .map-filters { margin-bottom: var(--space-xs); }
+    .view-map .map-controls {
+        margin-bottom: var(--space-sm);
+        display: none;
+    }
+    .view-map .map-wrapper {
+        flex: 1;
+        min-height: 0;
+    }
+    .view-map .beer-map-container {
+        height: 100%;
+        min-height: 200px;
+        border-radius: 0;
+    }
+    .view-map .map-sidebar {
+        margin-bottom: 0;
+    }
+    .view-map {
+        padding-bottom: 0;
+    }
     .beer-map-container { height: 400px; }
     .map-sidebar {
         position: fixed;
