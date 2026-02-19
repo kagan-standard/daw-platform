@@ -526,16 +526,15 @@
         <main id="view-map" class="view view-map">
             <div class="view-header view-map-header">
                 <h2 class="view-map-title">🗺️ Beer Map</h2>
-                <p class="view-desc">Find the best beer for your buck</p>
+                <!-- Tagline for later: "Find the best beer for your buck" → button when pricing data available -->
             </div>
-            <div class="map-layer-toggle" role="group" aria-label="Map layers">
-                <button type="button" class="map-layer-btn" data-layer="ratings" aria-pressed="false">My Ratings</button>
-                <button type="button" class="map-layer-btn active" data-layer="breweries" aria-pressed="true">Breweries</button>
-                <button type="button" class="map-layer-btn" data-layer="both" aria-pressed="false">Both</button>
+            <div class="map-toggle" role="group" aria-label="Map mode">
+                <button type="button" class="map-toggle-btn active" data-layer="discover" aria-pressed="true">🍺 Discover</button>
+                <button type="button" class="map-toggle-btn" data-layer="mymap" aria-pressed="false">📍 My Map</button>
             </div>
             <div class="map-filters" id="map-filters" aria-label="Brewery type filters">
                 <button type="button" class="filter-chip active" data-type="brewery" aria-pressed="true">🏭 Breweries</button>
-                <button type="button" class="filter-chip active" data-type="brewpub" aria-pressed="true">🍽️ Brewpubs</button>
+                <button type="button" class="filter-chip active" data-type="brewpub" aria-pressed="true">🍻 Brewpubs</button>
                 <button type="button" class="filter-chip active" data-type="bar" aria-pressed="true">🍺 Bars</button>
             </div>
             <div class="map-controls">

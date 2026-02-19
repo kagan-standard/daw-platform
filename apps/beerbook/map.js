@@ -17,7 +17,7 @@ const MapView = {
     eventsBound: false,
     breweryCluster: null,
     breweryData: [],
-    currentLayer: 'breweries',
+    currentLayer: 'discover',
     moveEndDebounce: null,
     BREWERY_CATEGORIES: {
         brewery: { types: ['micro', 'nano', 'regional', 'large', 'contract', 'proprietor'], icon: '🏭', color: '#F6AD55' },
@@ -41,13 +41,15 @@ const MapView = {
             this.bindEvents();
         }
         this.restoreFilterState();
+        const viewMap = document.getElementById('view-map');
+        if (viewMap) viewMap.classList.toggle('map-mode-mymap', this.currentLayer === 'mymap');
         await this.loadMap();
-        if (this.currentLayer === 'breweries' || this.currentLayer === 'both') {
+        if (this.currentLayer === 'discover') {
             this.loadBreweriesInViewport();
         }
         this.updateLayerVisibility();
         const filtersEl = document.getElementById('map-filters');
-        if (filtersEl) filtersEl.style.display = (this.currentLayer === 'breweries' || this.currentLayer === 'both') ? 'flex' : 'none';
+        if (filtersEl) filtersEl.style.display = this.currentLayer === 'discover' ? 'flex' : 'none';
         this.map.invalidateSize();
     },
 
@@ -59,7 +61,7 @@ const MapView = {
         document.getElementById('map-locate-btn')?.addEventListener('click', () => this.locateForBreweries());
         document.getElementById('map-filter-style')?.addEventListener('change', () => this.applyStyleFilter());
         document.getElementById('beer-map')?.addEventListener('click', (e) => this._onPopupVenueClick(e));
-        document.querySelectorAll('.map-layer-btn').forEach((btn) => {
+        document.querySelectorAll('.map-toggle-btn').forEach((btn) => {
             btn.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
@@ -78,22 +80,26 @@ const MapView = {
 
     setLayer(layer) {
         this.currentLayer = layer;
-        document.querySelectorAll('.map-layer-btn').forEach((btn) => {
+        document.querySelectorAll('.map-toggle-btn').forEach((btn) => {
             const active = btn.dataset.layer === layer;
             btn.classList.toggle('active', active);
             btn.setAttribute('aria-pressed', active);
         });
         const filtersEl = document.getElementById('map-filters');
-        if (filtersEl) filtersEl.style.display = (layer === 'breweries' || layer === 'both') ? 'flex' : 'none';
+        if (filtersEl) filtersEl.style.display = layer === 'discover' ? 'flex' : 'none';
+        const viewMap = document.getElementById('view-map');
+        if (viewMap) {
+            viewMap.classList.toggle('map-mode-mymap', layer === 'mymap');
+        }
         this.updateLayerVisibility();
-        if ((layer === 'breweries' || layer === 'both') && this.breweryData.length === 0) {
+        if (layer === 'discover' && this.breweryData.length === 0) {
             this.loadBreweriesInViewport();
         }
     },
 
     updateLayerVisibility() {
-        const showRatings = this.currentLayer === 'ratings' || this.currentLayer === 'both';
-        const showBreweries = this.currentLayer === 'breweries' || this.currentLayer === 'both';
+        const showRatings = this.currentLayer === 'mymap';
+        const showBreweries = this.currentLayer === 'discover';
         if (this.markersCluster) {
             if (showRatings) this.map.addLayer(this.markersCluster);
             else this.map.removeLayer(this.markersCluster);
@@ -157,7 +163,7 @@ const MapView = {
         if (this.moveEndDebounce) clearTimeout(this.moveEndDebounce);
         this.moveEndDebounce = setTimeout(() => {
             this.moveEndDebounce = null;
-            if (this.currentLayer === 'breweries' || this.currentLayer === 'both') {
+            if (this.currentLayer === 'discover') {
                 this.loadBreweriesInViewport();
             }
         }, 500);
@@ -233,7 +239,7 @@ const MapView = {
             }
         });
         markers.forEach((m) => this.breweryCluster.addLayer(m));
-        if (this.currentLayer === 'breweries' || this.currentLayer === 'both') {
+        if (this.currentLayer === 'discover') {
             this.map.addLayer(this.breweryCluster);
         }
     },
@@ -363,7 +369,7 @@ const MapView = {
                     fillOpacity: 0.9
                 }).addTo(this.map);
                 this.userMarker.bindPopup('You are here');
-                if (this.currentLayer === 'breweries' || this.currentLayer === 'both') {
+                if (this.currentLayer === 'discover') {
                     this.loadBreweriesInViewport();
                 }
                 if (btn) btn.disabled = false;
