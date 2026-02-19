@@ -251,20 +251,27 @@ app.get('/api/breweries/map', async (req, res) => {
   const boundsStr = (req.query.bounds || '').trim();
   const limit = 500;
   try {
-    let path = '/breweries?latitude=not.is.null&longitude=not.is.null&brewery_type=not.in.(closed,planning)';
-    path += '&select=id,name,latitude,longitude,brewery_type,city,state,state_province,website_url,phone';
+    const hasBounds = (() => {
+      if (!boundsStr) return false;
+      const parts = boundsStr.split(',').map((s) => parseFloat(s.trim()));
+      return parts.length >= 4 && parts.every((n) => Number.isFinite(n));
+    })();
+
+    let path = '/breweries?brewery_type=not.in.(closed,planning)';
+    if (!hasBounds) {
+      path += '&latitude=not.is.null&longitude=not.is.null';
+    }
+    path += '&select=id,name,latitude,longitude,brewery_type,city,state,website_url,phone';
     path += `&limit=${limit}`;
 
-    if (boundsStr) {
+    if (hasBounds) {
       const parts = boundsStr.split(',').map((s) => parseFloat(s.trim()));
-      if (parts.length >= 4 && parts.every((n) => Number.isFinite(n))) {
-        const [swLat, swLng, neLat, neLng] = parts;
-        const minLat = Math.min(swLat, neLat);
-        const maxLat = Math.max(swLat, neLat);
-        const minLng = Math.min(swLng, neLng);
-        const maxLng = Math.max(swLng, neLng);
-        path += `&latitude=gte.${minLat}&latitude=lte.${maxLat}&longitude=gte.${minLng}&longitude=lte.${maxLng}`;
-      }
+      const [swLat, swLng, neLat, neLng] = parts;
+      const minLat = Math.min(swLat, neLat);
+      const maxLat = Math.max(swLat, neLat);
+      const minLng = Math.min(swLng, neLng);
+      const maxLng = Math.max(swLng, neLng);
+      path += `&latitude=gte.${minLat}&latitude=lte.${maxLat}&longitude=gte.${minLng}&longitude=lte.${maxLng}`;
     }
 
     const { status, body } = await rest('GET', path);
