@@ -1646,10 +1646,32 @@ const App = {
         const cheersLine = document.getElementById('user-greeting-cheers');
         const langLine = document.getElementById('user-greeting-lang');
         if ((cheersLine || langLine) && DB.currentUser) {
-            const cheers = getRandomCheers();
-            const name = DB.currentUser.display_name || 'Guest';
-            if (cheersLine) cheersLine.textContent = `${cheers.word}, ${name}!`;
-            if (langLine) langLine.textContent = cheers.lang;
+            const name = (DB.currentUser.display_name || '').trim() || 'Beer Lover';
+            const greetings = [
+                `🍻 Cheers, ${name}!`,
+                `🍺 Prost, ${name}!`,
+                `🥂 Salud, ${name}!`,
+                `🍻 Sláinte, ${name}!`,
+                `🍺 Cin cin, ${name}!`,
+                `🍻 Skål, ${name}!`,
+                `🥂 干杯, ${name}!`,
+                `🍺 건배, ${name}!`,
+                `🍻 Na zdraví, ${name}!`,
+                `🍺 Kampai, ${name}!`,
+                `🥂 Santé, ${name}!`,
+                `🍻 Proost, ${name}!`,
+                `🍺 Zum Wohl, ${name}!`,
+                `🥂 Saúde, ${name}!`,
+                `🍻 Şerefe, ${name}!`,
+                `🍺 L'chaim, ${name}!`,
+                `🥂 Yamas, ${name}!`,
+                `🍻 Na zdrowie, ${name}!`,
+                `🍺 Egészségedre, ${name}!`,
+                `🥂 Noroc, ${name}!`,
+            ];
+            const greetingText = greetings[Math.floor(Math.random() * greetings.length)];
+            if (cheersLine) cheersLine.textContent = greetingText;
+            if (langLine) langLine.textContent = '';
         }
 
         await this.loadAllData();

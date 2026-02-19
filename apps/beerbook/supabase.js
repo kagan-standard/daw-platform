@@ -163,6 +163,7 @@ const DB = {
         if (!this.oidc.authEndpoint && !(await this._discoverOIDC())) {
             Utils.toast('Cannot connect to Keycloak.', 'error'); return;
         }
+        Utils.storage.remove('sso_silent_attempted');
         const { verifier, challenge } = await this._generatePKCE();
         const state = Utils.uid();
         Utils.storage.set('oidc_verifier', verifier);
@@ -179,6 +180,7 @@ const DB = {
         if (!this.oidc.authEndpoint && !(await this._discoverOIDC())) {
             Utils.toast('Cannot connect to Keycloak.', 'error'); return;
         }
+        Utils.storage.remove('sso_silent_attempted');
         const { verifier, challenge } = await this._generatePKCE();
         const state = Utils.uid();
         Utils.storage.set('oidc_verifier', verifier);
@@ -197,13 +199,13 @@ const DB = {
         const state = params.get('state');
         const error = params.get('error');
         if (error) {
+            window.history.replaceState({}, '', this.oidc.redirectUri);
             if (error === 'login_required' || error === 'interaction_required') {
-                // Silent SSO check found no session — this is expected, not an error
-                window.history.replaceState({}, '', this.oidc.redirectUri);
+                Utils.storage.remove('oidc_verifier');
+                Utils.storage.remove('oidc_state');
                 return null;
             }
             Utils.toast(`Login error: ${params.get('error_description') || error}`, 'error');
-            window.history.replaceState({}, '', this.oidc.redirectUri);
             return null;
         }
         if (!code) return null;
@@ -241,7 +243,7 @@ const DB = {
             window.history.replaceState({}, '', this.oidc.redirectUri);
             Utils.storage.remove('oidc_verifier');
             Utils.storage.remove('oidc_state');
-            sessionStorage.removeItem('oidc_silent_checked'); // Clear silent check flag on successful login
+            Utils.storage.remove('sso_silent_attempted');
             this.currentUser = user;
             return user;
         } catch (e) {
@@ -300,49 +302,70 @@ const DB = {
             if (demo) { this.currentUser = demo; this.isDemo = true; return demo; }
             return null;
         }
+
         const cbUser = await this.handleOIDCCallback();
         if (cbUser) return cbUser;
+
         const tokens = Utils.storage.get('oidc_tokens');
-        if (!tokens) {
-            // Silent SSO check — if user has an active Keycloak session, authenticate without showing login
-            const alreadyTriedSilent = sessionStorage.getItem('oidc_silent_checked');
-            if (!alreadyTriedSilent && this.oidc.authEndpoint) {
-                sessionStorage.setItem('oidc_silent_checked', '1');
-                const { verifier, challenge } = await this._generatePKCE();
-                const state = Utils.uid();
-                Utils.storage.set('oidc_verifier', verifier);
-                Utils.storage.set('oidc_state', state);
-                const params = new URLSearchParams({
-                    response_type: 'code',
-                    client_id: this.oidc.clientId,
-                    redirect_uri: this.oidc.redirectUri,
-                    scope: this.oidc.scopes,
-                    state,
-                    code_challenge: challenge,
-                    code_challenge_method: 'S256',
-                    prompt: 'none',
-                });
-                window.location.href = `${this.oidc.authEndpoint}?${params}`;
-                return new Promise(() => {}); // Never resolves — page is navigating
+        if (tokens) {
+            if (tokens.expires_at && Date.now() > tokens.expires_at - 60000) {
+                const refreshed = await this._refreshToken();
+                if (!refreshed) {
+                    Utils.storage.remove('oidc_tokens');
+                    // Fall through to silent SSO check
+                } else {
+                    const updatedTokens = Utils.storage.get('oidc_tokens');
+                    const user = await this._getUserInfo(updatedTokens.access_token);
+                    this.currentUser = user;
+                    return user;
+                }
+            } else {
+                try {
+                    const user = await this._getUserInfo(tokens.access_token);
+                    this.currentUser = user;
+                    return user;
+                } catch {
+                    if (await this._refreshToken()) {
+                        const t = Utils.storage.get('oidc_tokens');
+                        this.currentUser = await this._getUserInfo(t.access_token);
+                        return this.currentUser;
+                    }
+                    Utils.storage.remove('oidc_tokens');
+                    // Fall through to silent SSO check
+                }
             }
-            return null;
         }
-        if (tokens.expires_at && Date.now() > tokens.expires_at - 60000) {
-            if (!(await this._refreshToken())) { Utils.storage.remove('oidc_tokens'); return null; }
-            const t = Utils.storage.get('oidc_tokens');
-            this.currentUser = await this._getUserInfo(t.access_token);
-            return this.currentUser;
-        }
+
+        return await this._silentSSOCheck();
+    },
+
+    async _silentSSOCheck() {
+        if (Utils.storage.get('sso_silent_attempted')) return null;
+        Utils.storage.set('sso_silent_attempted', true);
+
         try {
-            this.currentUser = await this._getUserInfo(tokens.access_token);
-            return this.currentUser;
-        } catch {
-            if (await this._refreshToken()) {
-                const t = Utils.storage.get('oidc_tokens');
-                this.currentUser = await this._getUserInfo(t.access_token);
-                return this.currentUser;
-            }
-            Utils.storage.remove('oidc_tokens');
+            if (!this.oidc.authEndpoint && !(await this._discoverOIDC())) return null;
+
+            const { verifier, challenge } = await this._generatePKCE();
+            const state = Utils.uid();
+            Utils.storage.set('oidc_verifier', verifier);
+            Utils.storage.set('oidc_state', state);
+
+            const params = new URLSearchParams({
+                response_type: 'code',
+                client_id: this.oidc.clientId,
+                redirect_uri: this.oidc.redirectUri,
+                scope: this.oidc.scopes,
+                state,
+                code_challenge: challenge,
+                code_challenge_method: 'S256',
+                prompt: 'none',
+            });
+
+            window.location.href = `${this.oidc.authEndpoint}?${params}`;
+            return null;
+        } catch (e) {
+            console.warn('Silent SSO check failed:', e.message);
             return null;
         }
     },
@@ -356,6 +379,7 @@ const DB = {
         Utils.storage.remove('oidc_verifier');
         Utils.storage.remove('oidc_state');
         Utils.storage.remove('demo_user');
+        Utils.storage.remove('sso_silent_attempted');
         if (this.oidc.endSessionEndpoint && tokens?.id_token) {
             const params = new URLSearchParams({
                 id_token_hint: tokens.id_token,
