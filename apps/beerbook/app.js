@@ -1106,7 +1106,8 @@ const App = {
                         const icon = this._venueIcon(v.type);
                         const distText = v.distance < 1000 ? `${Math.round(v.distance)}m away` : `${(v.distance / 1000).toFixed(1)} km away`;
                         const addressText = v.address ? ` · ${Utils.escapeHtml(v.address)}` : '';
-                        return `<div class="venue-suggestion" data-osm-id="${v.osm_id}" data-name="${Utils.escapeHtml(v.name)}" data-lat="${v.latitude}" data-lng="${v.longitude}" data-type="${Utils.escapeHtml(v.type)}">
+                        const addressAttr = (v.address || '').replace(/"/g, '&quot;');
+                        return `<div class="venue-suggestion" data-osm-id="${v.osm_id}" data-name="${Utils.escapeHtml(v.name)}" data-lat="${v.latitude}" data-lng="${v.longitude}" data-type="${Utils.escapeHtml(v.type)}" data-address="${addressAttr}">
                             <span class="venue-icon">${icon}</span>
                             <div class="venue-info">
                                 <div class="venue-name">${Utils.escapeHtml(v.name)}</div>
@@ -1115,9 +1116,16 @@ const App = {
                         </div>`;
                     }).join('');
                     
-                    // Add click handlers
+                    // Add click handlers (await async _selectVenue and catch errors)
                     venueSuggestions.querySelectorAll('.venue-suggestion').forEach(el => {
-                        el.addEventListener('click', () => this._selectVenue(el));
+                        el.addEventListener('click', async () => {
+                            try {
+                                await this._selectVenue(el);
+                            } catch (err) {
+                                console.error('Venue selection failed:', err);
+                                App.toast('Could not select venue', 'error');
+                            }
+                        });
                     });
                 } else {
                     venueSuggestions.innerHTML = '<p class="empty-state">No nearby venues found</p>';
@@ -1175,10 +1183,11 @@ const App = {
             console.warn('Venue matching failed:', e);
         }
         
-        // Store venue data for creation on submit if no match
+        // Store venue data for creation on submit if no match (use data-address for clean address)
         if (!venueId) {
+            const address = el.dataset.address || '';
             document.getElementById('rating-venue-id').setAttribute('data-pending-venue', JSON.stringify({
-                name, latitude: lat, longitude: lng, address: el.querySelector('.venue-meta')?.textContent || ''
+                name, latitude: lat, longitude: lng, address: address || null
             }));
         } else {
             document.getElementById('rating-venue-id').value = venueId;
