@@ -391,6 +391,7 @@ const DB = {
             location_name: rating.location_name ?? null,
             venue_id: rating.venue_id ?? null,
             photo_url: rating.photo_url ?? null,
+            beer_id: rating.beer_id ?? null,
         };
         if (this.isDemo) {
             const rev = {
@@ -402,7 +403,8 @@ const DB = {
                 flavor_fruity: record.flavors?.fruity || 0,
                 notes: record.notes || '', created_at: new Date().toISOString(),
                 yg_value: record.yg_value, latitude: record.latitude, longitude: record.longitude,
-                location_name: record.location_name, venue_id: record.venue_id, photo_url: record.photo_url
+                location_name: record.location_name, venue_id: record.venue_id, photo_url: record.photo_url,
+                beer_id: record.beer_id || null
             };
             const reviews = Utils.storage.get('reviews', []);
             reviews.unshift(rev);
@@ -427,6 +429,7 @@ const DB = {
             location_name: record.location_name,
             venue_id: record.venue_id,
             photo_url: record.photo_url,
+            beer_id: record.beer_id,
         };
         const data = await this._api('POST', '/api/ratings', { body: JSON.stringify(body) });
         invalidateCache('');
@@ -526,6 +529,21 @@ const DB = {
             const out = await this._api('GET', `/api/beers/search?q=${encodeURIComponent(q)}`);
             return (out && out.data) ? out.data : [];
         });
+    },
+
+    async searchCatalog(q, limit = 10) {
+        if (this.isDemo) return [];
+        if (!q || typeof q !== 'string' || q.trim().length < 2) return [];
+        const query = q.trim();
+        const out = await this._api('GET', `/api/catalog/search?q=${encodeURIComponent(query)}&limit=${Math.min(Math.max(Number(limit) || 10, 1), 50)}`);
+        return (out && out.data) ? out.data : [];
+    },
+
+    async getCatalogBeer(beerId) {
+        if (this.isDemo || !beerId) return null;
+        try {
+            return await this._api('GET', `/api/catalog/beer/${encodeURIComponent(beerId)}`);
+        } catch { return null; }
     },
 
     async searchBeersExternal(q) {

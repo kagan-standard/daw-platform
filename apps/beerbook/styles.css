@@ -1043,6 +1043,13 @@ input, select, textarea, button {
     font-size: 0.75rem;
 }
 
+.autocomplete-hint {
+    color: var(--amber-600);
+    font-size: 0.8rem;
+    padding: 4px 8px;
+    margin-top: 4px;
+}
+
 .brewery-autocomplete-wrap { position: relative; }
 
 /* YG slider — clickable beer glasses 0–12, no range input */
@@ -1605,6 +1612,35 @@ input, select, textarea, button {
     text-underline-offset: 2px;
 }
 .beer-name-link:hover { color: var(--amber-200); }
+
+/* Catalog info card (beer detail when rating has beer_id) */
+.catalog-info {
+    margin-bottom: var(--space-lg);
+    padding: var(--space-md);
+    background: var(--dark-850);
+    border: 1px solid var(--dark-700);
+    border-radius: var(--radius-md);
+}
+.catalog-info .catalog-badge {
+    display: inline-block;
+    font-size: 0.8rem;
+    color: var(--amber-500);
+    margin-bottom: var(--space-sm);
+}
+.catalog-info .catalog-desc {
+    font-size: 0.9rem;
+    color: var(--foam-cream);
+    opacity: 0.9;
+    line-height: 1.5;
+    margin-bottom: var(--space-sm);
+}
+.catalog-info .catalog-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-md);
+    font-size: 0.85rem;
+    color: var(--amber-400);
+}
 
 /* Style tooltips */
 .style-tooltip { cursor: help; text-decoration: underline; text-underline-offset: 2px; }

@@ -297,7 +297,9 @@
                     <div class="form-group flex-2 beer-autocomplete-wrap">
                         <label for="beer-name">Beer Name *</label>
                         <input type="text" id="beer-name" placeholder="e.g. Pliny the Elder" required autocomplete="off">
+                        <input type="hidden" id="rating-beer-id" value="">
                         <div id="beer-autocomplete" class="autocomplete-dropdown" aria-hidden="true"></div>
+                        <div id="autocomplete-hint" class="autocomplete-hint" aria-live="polite" style="display:none;">Don't see your beer? Just type the name — you can rate anything!</div>
                     </div>
                     <div class="form-group flex-1 brewery-autocomplete-wrap">
                         <label for="beer-brewery">Brewery</label>

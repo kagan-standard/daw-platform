@@ -186,6 +186,65 @@ app.use('/api/leaderboard', leaderboardRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/highlights', highlightsRoutes);
 
+// ---------- Phase 3.2: Catalog (no auth — public catalog) ----------
+// GET /api/catalog/search?q=<query>&limit=<n>
+app.get('/api/catalog/search', async (req, res) => {
+  const q = (req.query.q || '').trim();
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 50);
+  if (q.length < 2) {
+    return res.json({ data: [] });
+  }
+  try {
+    const { status, body } = await rest('POST', '/rpc/search_beer_catalog', {
+      body: JSON.stringify({ search_term: q, max_results: limit }),
+    });
+    if (status >= 400) {
+      return res.status(status >= 500 ? 502 : status).json(body || { error: 'Catalog search failed' });
+    }
+    const rows = Array.isArray(body) ? body : [];
+    const data = rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      brewery_name: r.brewery_name ?? null,
+      style: r.style ?? null,
+      abv: r.abv != null ? Number(r.abv) : null,
+      description: r.description ?? null,
+      review_overall: r.review_overall != null ? Number(r.review_overall) : null,
+      review_count: r.review_count != null ? Number(r.review_count) : null,
+    }));
+    res.json({ data });
+  } catch (e) {
+    console.error('Catalog search error:', e);
+    res.status(502).json({ error: 'Catalog search failed' });
+  }
+});
+
+// GET /api/catalog/beer/:id — single catalog beer (for detail view)
+app.get('/api/catalog/beer/:id', async (req, res) => {
+  const id = encodeURIComponent(req.params.id);
+  try {
+    const { status, body } = await rest('GET', `/beers?id=eq.${id}&select=id,name,brewery_name,style,abv,description,review_overall,review_count&limit=1`);
+    if (status >= 400) {
+      return res.status(status >= 500 ? 502 : status).json(body || { error: 'Upstream error' });
+    }
+    const row = Array.isArray(body) && body[0] ? body[0] : null;
+    if (!row) return res.status(404).json({ error: 'Beer not found' });
+    res.json({
+      id: row.id,
+      name: row.name,
+      brewery_name: row.brewery_name ?? null,
+      style: row.style ?? null,
+      abv: row.abv != null ? Number(row.abv) : null,
+      description: row.description ?? null,
+      review_overall: row.review_overall != null ? Number(row.review_overall) : null,
+      review_count: row.review_count != null ? Number(row.review_count) : null,
+    });
+  } catch (e) {
+    console.error('Catalog beer error:', e);
+    res.status(502).json({ error: 'Catalog fetch failed' });
+  }
+});
+
 // ---------- Routes ----------
 
 // GET /api/health
@@ -266,6 +325,7 @@ app.post('/api/ratings', authMiddleware, async (req, res) => {
     location_name: b.location_name ?? b.locationName ?? null,
     venue_id: b.venue_id ?? b.venueId ?? null,
     photo_url: b.photo_url ?? b.photoUrl ?? null,
+    beer_id: b.beer_id ?? b.beerId ?? null,
   };
   if (!record.beer_name || !record.style || !record.rating) {
     return res.status(400).json({ error: 'beer_name, style, and rating required' });

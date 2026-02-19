@@ -288,7 +288,7 @@ const App = {
             const link = e.target.closest('[data-beer-name]');
             if (link) {
                 e.preventDefault();
-                this.openBeerDetail(link.dataset.beerName, link.dataset.beerBrewery || '', link.dataset.beerStyle || '');
+                this.openBeerDetail(link.dataset.beerName, link.dataset.beerBrewery || '', link.dataset.beerStyle || '', link.dataset.beerId || null);
             }
         });
         document.getElementById('beer-detail-back')?.addEventListener('click', () => this.closeBeerDetail());
@@ -450,12 +450,14 @@ const App = {
                 }
             }
 
+            const beerIdVal = document.getElementById('rating-beer-id')?.value?.trim() || null;
             const rating = {
                 beerName: document.getElementById('beer-name').value.trim(),
                 brewery: document.getElementById('beer-brewery').value.trim(),
                 style: document.getElementById('beer-style').value,
                 abv: parseFloat(document.getElementById('beer-abv').value) || null,
                 rating: ratingVal,
+                beer_id: beerIdVal || null,
                 flavors: {
                     hoppy: parseInt(document.getElementById('flavor-hoppy').value) || 0,
                     malty: parseInt(document.getElementById('flavor-malty').value) || 0,
@@ -656,6 +658,8 @@ const App = {
     bindBeerAutocomplete() {
         const input = document.getElementById('beer-name');
         const dropdown = document.getElementById('beer-autocomplete');
+        const hintEl = document.getElementById('autocomplete-hint');
+        const beerIdInput = document.getElementById('rating-beer-id');
         if (!input || !dropdown) return;
         let debounceTimer;
         input.addEventListener('input', () => {
@@ -663,132 +667,131 @@ const App = {
             const q = input.value.trim();
             dropdown.setAttribute('aria-hidden', 'true');
             dropdown.innerHTML = '';
+            if (hintEl) hintEl.style.display = 'none';
+            if (beerIdInput) beerIdInput.value = '';
             if (q.length < 2) return;
             debounceTimer = setTimeout(async () => {
-                const localList = await DB.searchBeers(q);
-                const localResults = (localList || []).slice(0, 10);
-                
-                let externalResults = [];
-                if (localResults.length < 3 && q.length >= 3) {
-                    externalResults = await DB.searchBeersExternal(q);
-                }
-                
-                // Sort external results by relevance: name matches first, then category-only matches
-                const query = q.toLowerCase();
-                externalResults.sort((a, b) => {
-                    const aName = (a.beer_name || '').toLowerCase();
-                    const bName = (b.beer_name || '').toLowerCase();
-                    const aNameMatch = aName.includes(query);
-                    const bNameMatch = bName.includes(query);
-                    
-                    // Exact name start > name contains > category-only match
-                    const aStartsWith = aName.startsWith(query);
-                    const bStartsWith = bName.startsWith(query);
-                    
-                    if (aStartsWith && !bStartsWith) return -1;
-                    if (bStartsWith && !aStartsWith) return 1;
-                    if (aNameMatch && !bNameMatch) return -1;
-                    if (bNameMatch && !aNameMatch) return 1;
-                    return 0; // preserve original order for ties
-                });
-                
-                // Deduplicate by normalized beer name
-                const seen = new Set();
-                const normalized = (name) => (name || '').toLowerCase().trim();
-                
-                const allResults = [];
-                
-                // Add local results first
-                if (localResults.length > 0) {
-                    allResults.push({ type: 'group', label: 'From your crew' });
-                    localResults.forEach(b => {
-                        const name = normalized(b.beer_name || b.name || '');
-                        if (!seen.has(name)) {
-                            seen.add(name);
-                            allResults.push({
-                                type: 'item',
-                                beer_name: b.beer_name || b.name || '',
-                                brewery: b.brewery || '',
-                                style: b.style || '',
-                                abv: b.abv || '',
-                                source: 'local'
-                            });
-                        }
-                    });
-                }
-                
-                // Add external results
-                if (externalResults.length > 0) {
-                    allResults.push({ type: 'group', label: 'From beer database' });
-                    externalResults.forEach(b => {
-                        const name = normalized(b.beer_name || '');
-                        if (!seen.has(name)) {
-                            seen.add(name);
-                            allResults.push({
-                                type: 'item',
-                                beer_name: b.beer_name || '',
-                                brewery: b.brewery || '',
-                                style: b.style || '',
-                                abv: b.abv || '',
-                                source: b.source || 'openfoodfacts'
-                            });
-                        }
-                    });
-                }
-                
-                // Render dropdown
-                dropdown.innerHTML = allResults.map(item => {
-                    if (item.type === 'group') {
-                        return `<div class="autocomplete-group-label">${Utils.escapeHtml(item.label)}</div>`;
-                    } else {
-                        const label = `${Utils.escapeHtml(item.beer_name)} — ${Utils.escapeHtml(item.brewery)} (${Utils.escapeHtml(item.style || '')})`;
-                        return `<div class="autocomplete-item" data-source="${Utils.escapeHtml(item.source)}" data-name="${Utils.escapeHtml(item.beer_name)}" data-brewery="${Utils.escapeHtml(item.brewery)}" data-style="${Utils.escapeHtml(item.style)}" data-abv="${Utils.escapeHtml(item.abv || '')}">${label}</div>`;
+                if (DB.isDemo) {
+                    const localList = await DB.searchBeers(q);
+                    const localResults = (localList || []).slice(0, 10);
+                    let externalResults = [];
+                    if (localResults.length < 3 && q.length >= 3) {
+                        externalResults = await DB.searchBeersExternal(q);
                     }
-                }).join('');
-                
-                if (dropdown.children.length) {
-                    dropdown.setAttribute('aria-hidden', 'false');
-                    dropdown.querySelectorAll('.autocomplete-item').forEach((el) => {
-                        el.addEventListener('click', () => {
-                            document.getElementById('beer-name').value = el.dataset.name;
-                            document.getElementById('beer-brewery').value = el.dataset.brewery || '';
-                            
-                            // Map style to dropdown value
-                            const rawStyle = el.dataset.style || '';
-                            const mappedStyle = App._mapStyleToDropdown(rawStyle);
-                            if (mappedStyle) {
-                                document.getElementById('beer-style').value = mappedStyle;
-                            }
-                            
-                            // Set ABV if available from the selected result
-                            const abv = el.dataset.abv;
-                            if (abv && parseFloat(abv) > 0) {
-                                document.getElementById('beer-abv').value = parseFloat(abv).toFixed(1);
-                            } else {
-                                // If no ABV from data, try STYLE_GUIDE default
-                                if (mappedStyle) {
-                                    const guide = STYLE_GUIDE?.[mappedStyle];
-                                    if (guide && guide.abv) {
-                                        // Parse ABV range like "5.5–7.5%" and use midpoint
-                                        const match = guide.abv.match(/([\d.]+)[–-]([\d.]+)/);
-                                        if (match) {
-                                            const mid = ((parseFloat(match[1]) + parseFloat(match[2])) / 2).toFixed(1);
-                                            document.getElementById('beer-abv').value = mid;
-                                        }
-                                    }
-                                }
-                            }
-                            
-                            dropdown.innerHTML = '';
-                            dropdown.setAttribute('aria-hidden', 'true');
-                        });
+                    const query = q.toLowerCase();
+                    externalResults.sort((a, b) => {
+                        const aName = (a.beer_name || '').toLowerCase();
+                        const bName = (b.beer_name || '').toLowerCase();
+                        const aNameMatch = aName.includes(query);
+                        const bNameMatch = bName.includes(query);
+                        const aStartsWith = aName.startsWith(query);
+                        const bStartsWith = bName.startsWith(query);
+                        if (aStartsWith && !bStartsWith) return -1;
+                        if (bStartsWith && !aStartsWith) return 1;
+                        if (aNameMatch && !bNameMatch) return -1;
+                        if (bNameMatch && !aNameMatch) return 1;
+                        return 0;
                     });
+                    const seen = new Set();
+                    const normalized = (name) => (name || '').toLowerCase().trim();
+                    const allResults = [];
+                    if (localResults.length > 0) {
+                        allResults.push({ type: 'group', label: 'From your crew' });
+                        localResults.forEach(b => {
+                            const name = normalized(b.beer_name || b.name || '');
+                            if (!seen.has(name)) {
+                                seen.add(name);
+                                allResults.push({ type: 'item', beer_name: b.beer_name || b.name || '', brewery: b.brewery || '', style: b.style || '', abv: b.abv || '', source: 'local', beer_id: null });
+                            }
+                        });
+                    }
+                    if (externalResults.length > 0) {
+                        allResults.push({ type: 'group', label: 'From beer database' });
+                        externalResults.forEach(b => {
+                            const name = normalized(b.beer_name || '');
+                            if (!seen.has(name)) {
+                                seen.add(name);
+                                allResults.push({ type: 'item', beer_name: b.beer_name || '', brewery: b.brewery || '', style: b.style || '', abv: b.abv || '', source: b.source || 'openfoodfacts', beer_id: null });
+                            }
+                        });
+                    }
+                    App._renderBeerAutocompleteDropdown(dropdown, allResults, false);
+                    return;
                 }
+                const catalogResults = await DB.searchCatalog(q, 10);
+                if (hintEl && q.length >= 3 && (!catalogResults || catalogResults.length === 0)) {
+                    hintEl.style.display = 'block';
+                }
+                if (!catalogResults || catalogResults.length === 0) return;
+                const items = catalogResults.map((r) => ({
+                    type: 'item',
+                    beer_name: r.name || '',
+                    brewery: r.brewery_name || '',
+                    style: r.style || '',
+                    abv: r.abv != null ? String(r.abv) : '',
+                    beer_id: r.id || null,
+                }));
+                App._renderBeerAutocompleteDropdown(dropdown, items, true);
             }, 300);
         });
-        input.addEventListener('blur', () => { setTimeout(() => { dropdown.innerHTML = ''; dropdown.setAttribute('aria-hidden', 'true'); }, 150); });
+        input.addEventListener('blur', () => {
+            setTimeout(() => {
+                dropdown.innerHTML = '';
+                dropdown.setAttribute('aria-hidden', 'true');
+                if (hintEl) hintEl.style.display = 'none';
+            }, 150);
+        });
         input.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') { dropdown.innerHTML = ''; dropdown.setAttribute('aria-hidden', 'true'); }
+            if (e.key === 'Escape') {
+                dropdown.innerHTML = '';
+                dropdown.setAttribute('aria-hidden', 'true');
+                if (hintEl) hintEl.style.display = 'none';
+            }
+        });
+    },
+
+    _renderBeerAutocompleteDropdown(dropdown, allResults, isCatalog) {
+        dropdown.innerHTML = allResults.map(item => {
+            if (item.type === 'group') {
+                return `<div class="autocomplete-group-label">${Utils.escapeHtml(item.label)}</div>`;
+            }
+            const parts = [Utils.escapeHtml(item.beer_name)];
+            if (item.brewery) parts.push(' — ' + Utils.escapeHtml(item.brewery));
+            if (item.style) parts.push(' (' + Utils.escapeHtml(item.style) + ')');
+            if (item.abv && parseFloat(item.abv) > 0) parts.push(' ' + parseFloat(item.abv).toFixed(1) + '%');
+            const label = parts.join('');
+            const beerId = item.beer_id || '';
+            return `<div class="autocomplete-item" data-name="${Utils.escapeHtml(item.beer_name)}" data-brewery="${Utils.escapeHtml(item.brewery || '')}" data-style="${Utils.escapeHtml(item.style || '')}" data-abv="${Utils.escapeHtml(item.abv || '')}" data-beer-id="${Utils.escapeHtml(beerId)}">${label}</div>`;
+        }).join('');
+        if (!dropdown.children.length) return;
+        dropdown.setAttribute('aria-hidden', 'false');
+        dropdown.querySelectorAll('.autocomplete-item').forEach((el) => {
+            el.addEventListener('click', () => {
+                document.getElementById('beer-name').value = el.dataset.name || '';
+                document.getElementById('beer-brewery').value = el.dataset.brewery || '';
+                const beerIdInput = document.getElementById('rating-beer-id');
+                if (beerIdInput) beerIdInput.value = el.dataset.beerId || '';
+                const rawStyle = el.dataset.style || '';
+                const mappedStyle = App._mapStyleToDropdown(rawStyle);
+                if (mappedStyle) document.getElementById('beer-style').value = mappedStyle;
+                const abv = el.dataset.abv;
+                if (abv && parseFloat(abv) > 0) {
+                    document.getElementById('beer-abv').value = parseFloat(abv).toFixed(1);
+                } else if (mappedStyle) {
+                    const guide = STYLE_GUIDE?.[mappedStyle];
+                    if (guide && guide.abv) {
+                        const match = guide.abv.match(/([\d.]+)[–-]([\d.]+)/);
+                        if (match) {
+                            const mid = ((parseFloat(match[1]) + parseFloat(match[2])) / 2).toFixed(1);
+                            document.getElementById('beer-abv').value = mid;
+                        }
+                    }
+                }
+                dropdown.innerHTML = '';
+                dropdown.setAttribute('aria-hidden', 'true');
+                const hintEl = document.getElementById('autocomplete-hint');
+                if (hintEl) hintEl.style.display = 'none';
+            });
         });
     },
 
@@ -1355,13 +1358,20 @@ const App = {
         return `<button type="button" class="cheers-btn" data-rating-id="${Utils.escapeHtml(ratingId)}" ${!loggedIn ? 'data-disabled="true" title="Sign in to cheers"' : 'title="Cheers"'}><span class="cheers-icon">🍻</span> <span class="cheers-count">0</span></button>`;
     },
 
-    async openBeerDetail(beerName, brewery, style) {
+    async openBeerDetail(beerName, brewery, style, beerId) {
         if (!beerName) return;
         const modal = document.getElementById('beer-detail-modal');
         const body = document.getElementById('beer-detail-body');
         if (!modal || !body) return;
         body.innerHTML = '<p class="loading-state">Loading…</p>';
         modal.style.display = 'flex';
+
+        let catalogBeer = null;
+        if (beerId && !DB.isDemo) {
+            try {
+                catalogBeer = await DB.getCatalogBeer(beerId);
+            } catch (_) {}
+        }
 
         let beer = null;
         let crossRates = null;
@@ -1418,6 +1428,18 @@ const App = {
             return `<div class="beer-detail-rating" data-rating-id="${Utils.escapeHtml(r.id)}"><span class="beer-detail-rating-stars">${Utils.stars(r.rating)}</span>${ygBadge} — ${Utils.escapeHtml(r.user_name || 'Anonymous')} · ${Utils.timeAgo(r.created_at)}${r.notes ? ` — ${Utils.escapeHtml(Utils.truncate(r.notes, 60))}` : ''} <span class="beer-detail-rating-cheers">${this.cheersButtonHtml(r.id)}</span></div>`;
         }).join('');
 
+        const catalogInfoHtml = (catalogBeer && (catalogBeer.description || catalogBeer.review_overall != null || catalogBeer.abv != null || catalogBeer.style)) ? (() => {
+            const parts = [];
+            if (catalogBeer.description) parts.push(`<p class="catalog-desc">${Utils.escapeHtml(catalogBeer.description)}</p>`);
+            const stats = [];
+            if (catalogBeer.abv != null) stats.push(`<span>ABV: ${Utils.escapeHtml(String(catalogBeer.abv))}%</span>`);
+            if (catalogBeer.review_overall != null) stats.push(`<span>Community: ${Utils.escapeHtml(String(catalogBeer.review_overall))}/5</span>`);
+            if (catalogBeer.style) stats.push(`<span>Style: ${Utils.escapeHtml(catalogBeer.style)}</span>`);
+            if (stats.length) parts.push(`<div class="catalog-stats">${stats.join('')}</div>`);
+            if (parts.length === 0) return '';
+            return `<div class="catalog-info"><span class="catalog-badge">📖 From BeerBook Catalog</span>${parts.join('')}</div>`;
+        })() : '';
+
         body.innerHTML = `
             <h2 class="beer-detail-name">${name}</h2>
             ${brew ? `<div class="beer-detail-brewery">${brew}</div>` : ''}
@@ -1425,6 +1447,7 @@ const App = {
                 ${st ? `<span class="style-tooltip" data-style="${Utils.escapeHtml(beer.style || '')}">${st}</span>` : ''}
                 ${abv ? `<span>${abv}</span>` : ''}
             </div>
+            ${catalogInfoHtml}
             <div class="beer-detail-stats">
                 <span>${avgRating} ★ avg</span>
                 <span>${reviewCount} review${reviewCount !== 1 ? 's' : ''}</span>
@@ -1605,10 +1628,11 @@ const App = {
         container.innerHTML = recent.map(r => {
             const canDelete = currentUserId && r.user_id === currentUserId;
             const ygBadge = (r.yg_value != null && r.yg_value > 0) ? ` <span class="yg-badge-pill">${r.yg_value} YG</span>` : '';
+            const beerIdAttr = (r.beer_id) ? ` data-beer-id="${Utils.escapeHtml(r.beer_id)}"` : '';
             return `<div class="review-card" data-rating-id="${r.id}">
                 <div class="review-rating">${this.ratingEmoji(r.rating)}</div>
                 <div class="review-content">
-                    <div class="review-beer-name"><span class="beer-name-link" data-beer-name="${Utils.escapeHtml(r.beer_name)}" data-beer-brewery="${Utils.escapeHtml(r.brewery || '')}" data-beer-style="${Utils.escapeHtml(r.style || '')}" role="button" tabindex="0">${Utils.escapeHtml(r.beer_name)}</span></div>
+                    <div class="review-beer-name"><span class="beer-name-link" data-beer-name="${Utils.escapeHtml(r.beer_name)}" data-beer-brewery="${Utils.escapeHtml(r.brewery || '')}" data-beer-style="${Utils.escapeHtml(r.style || '')}"${beerIdAttr} role="button" tabindex="0">${Utils.escapeHtml(r.beer_name)}</span></div>
                     <div class="review-meta">${Utils.escapeHtml(r.brewery || '')}${r.brewery && r.style ? ' · ' : ''}${r.style ? `<span class="style-tooltip" data-style="${Utils.escapeHtml(r.style)}">${Utils.escapeHtml(r.style)}</span>` : ''}${r.abv ? ` · ${r.abv}%` : ''}</div>
                     <div class="review-stars">${Utils.stars(r.rating)}${ygBadge}</div>
                     ${r.notes ? `<div class="review-notes">${Utils.escapeHtml(Utils.truncate(r.notes, 150))}</div>` : ''}
@@ -1663,10 +1687,11 @@ const App = {
         }
 
         const showCount = this.browseShownCount || 24;
-        container.innerHTML = filtered.slice(0, showCount).map(r => `
-            <div class="beer-card">
+        container.innerHTML = filtered.slice(0, showCount).map(r => {
+            const beerIdAttr = (r.beer_id) ? ` data-beer-id="${Utils.escapeHtml(r.beer_id)}"` : '';
+            return `<div class="beer-card">
                 <div class="beer-card-header">
-                    <div class="beer-card-name"><span class="beer-name-link" data-beer-name="${Utils.escapeHtml(r.beer_name)}" data-beer-brewery="${Utils.escapeHtml(r.brewery || '')}" data-beer-style="${Utils.escapeHtml(r.style || '')}" role="button" tabindex="0">${Utils.escapeHtml(r.beer_name)}</span></div>
+                    <div class="beer-card-name"><span class="beer-name-link" data-beer-name="${Utils.escapeHtml(r.beer_name)}" data-beer-brewery="${Utils.escapeHtml(r.brewery || '')}" data-beer-style="${Utils.escapeHtml(r.style || '')}"${beerIdAttr} role="button" tabindex="0">${Utils.escapeHtml(r.beer_name)}</span></div>
                     <div class="beer-card-rating">${r.rating.toFixed(1)}</div>
                 </div>
                 ${r.brewery ? `<div class="beer-card-brewery">${Utils.escapeHtml(r.brewery)}</div>` : ''}
@@ -1681,7 +1706,8 @@ const App = {
                     <span>${Utils.timeAgo(r.created_at)}</span>
                 </div>
             </div>
-        `).join('');
+        `;
+        }).join('');
         const sentinel = document.getElementById('browse-sentinel');
         if (sentinel) sentinel.style.display = filtered.length > showCount ? 'block' : 'none';
     },
@@ -1769,7 +1795,8 @@ const App = {
             const ygBadge = (item.yg_value != null && item.yg_value > 0) ? ` <span class="yg-badge-pill">${Number(item.yg_value)} YG</span>` : '';
             const cheers = (item.cheers_count > 0) ? ` · 🍻 ${item.cheers_count} cheers` : '';
             const beerName = item.beer_name || '';
-            const beerLink = beerName ? `<span class="beer-name-link" data-beer-name="${Utils.escapeHtml(beerName)}" data-beer-brewery="${Utils.escapeHtml(item.brewery || '')}" data-beer-style="${Utils.escapeHtml(item.style || '')}" role="button" tabindex="0">${Utils.escapeHtml(beerName)}</span>` : '';
+            const beerIdAttr = item.beer_id ? ` data-beer-id="${Utils.escapeHtml(item.beer_id)}"` : '';
+            const beerLink = beerName ? `<span class="beer-name-link" data-beer-name="${Utils.escapeHtml(beerName)}" data-beer-brewery="${Utils.escapeHtml(item.brewery || '')}" data-beer-style="${Utils.escapeHtml(item.style || '')}"${beerIdAttr} role="button" tabindex="0">${Utils.escapeHtml(beerName)}</span>` : '';
             const cheersBtn = item.id ? `<div class="activity-cheers">${this.cheersButtonHtml(item.id)}</div>` : '';
             return `<div class="activity-item">
                 <div class="activity-avatar">${Utils.escapeHtml(initials)}</div>
@@ -1814,10 +1841,11 @@ const App = {
         }
         container.innerHTML = myRatings.map(r => {
             const ygBadge = (r.yg_value != null && r.yg_value > 0) ? ` <span class="yg-badge-pill">${r.yg_value} YG</span>` : '';
+            const beerIdAttr = (r.beer_id) ? ` data-beer-id="${Utils.escapeHtml(r.beer_id)}"` : '';
             return `<div class="review-card" data-rating-id="${r.id}">
                 <div class="review-rating">${this.ratingEmoji(r.rating)}</div>
                 <div class="review-content">
-                    <div class="review-beer-name"><span class="beer-name-link" data-beer-name="${Utils.escapeHtml(r.beer_name)}" data-beer-brewery="${Utils.escapeHtml(r.brewery || '')}" data-beer-style="${Utils.escapeHtml(r.style || '')}" role="button" tabindex="0">${Utils.escapeHtml(r.beer_name)}</span></div>
+                    <div class="review-beer-name"><span class="beer-name-link" data-beer-name="${Utils.escapeHtml(r.beer_name)}" data-beer-brewery="${Utils.escapeHtml(r.brewery || '')}" data-beer-style="${Utils.escapeHtml(r.style || '')}"${beerIdAttr} role="button" tabindex="0">${Utils.escapeHtml(r.beer_name)}</span></div>
                     <div class="review-meta">${Utils.escapeHtml(r.brewery || '')}${r.brewery && r.style ? ' · ' : ''}${r.style ? `<span class="style-tooltip" data-style="${Utils.escapeHtml(r.style)}">${Utils.escapeHtml(r.style)}</span>` : ''}</div>
                     <div class="review-stars">${Utils.stars(r.rating)}${ygBadge}</div>
                     ${r.notes ? `<div class="review-notes">${Utils.escapeHtml(r.notes)}</div>` : ''}
@@ -1882,6 +1910,8 @@ const App = {
             if (el) el.textContent = '0';
         });
         if (typeof App._ygSetValue === 'function') App._ygSetValue(0);
+        const beerIdInput = document.getElementById('rating-beer-id');
+        if (beerIdInput) beerIdInput.value = '';
         this.clearLocation();
         document.getElementById('venue-chip').style.display = 'none';
         document.getElementById('price-amount').value = '';
