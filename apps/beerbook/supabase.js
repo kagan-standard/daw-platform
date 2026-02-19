@@ -211,8 +211,9 @@ const DB = {
         if (!code) return null;
         const savedState = Utils.storage.get('oidc_state');
         const verifier = Utils.storage.get('oidc_verifier');
-        if (state !== savedState) {
-            Utils.toast('Invalid auth state. Try again.', 'error');
+        if (!state || !savedState || state !== savedState || !verifier) {
+            Utils.storage.remove('oidc_verifier');
+            Utils.storage.remove('oidc_state');
             window.history.replaceState({}, '', this.oidc.redirectUri);
             return null;
         }
@@ -301,6 +302,13 @@ const DB = {
             const demo = Utils.storage.get('demo_user');
             if (demo) { this.currentUser = demo; this.isDemo = true; return demo; }
             return null;
+        }
+
+        // Clean up stale OIDC state if there's no code in the URL (e.g. email verification redirect)
+        const urlParams = new URLSearchParams(window.location.search);
+        if (!urlParams.get('code') && !urlParams.get('error')) {
+            Utils.storage.remove('oidc_verifier');
+            Utils.storage.remove('oidc_state');
         }
 
         const cbUser = await this.handleOIDCCallback();

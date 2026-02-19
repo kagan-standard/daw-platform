@@ -349,19 +349,39 @@
     var code = params.get('code');
     var state = params.get('state');
     var error = params.get('error');
+
+    // Handle errors from Keycloak
     if (error) {
-      setAuthStatus('Login error: ' + (params.get('error_description') || error), true);
       window.history.replaceState({}, '', redirectUri);
+      // 'login_required' and 'interaction_required' are expected from prompt=none
+      // Don't show an error for these — just silently show the login screen
+      if (error === 'login_required' || error === 'interaction_required') {
+        storageRemove('verifier');
+        storageRemove('state');
+        return Promise.resolve(null);
+      }
+      setAuthStatus('Login error: ' + (params.get('error_description') || error), true);
       return Promise.resolve(null);
     }
+
+    // No code in URL = not an OIDC callback, nothing to do
     if (!code) return Promise.resolve(null);
+
+    // Validate state — but if state is missing/mismatched, just clean up
+    // instead of showing a scary error. This happens when:
+    //   - User opened verification link in a different tab
+    //   - sessionStorage was cleared between registration and callback
+    //   - prompt=none redirect and state expired
     var savedState = storageGet('state');
     var verifier = storageGet('verifier');
-    if (state !== savedState) {
-      setAuthStatus('Invalid auth state. Try again.', true);
+
+    if (!state || !savedState || state !== savedState || !verifier) {
+      storageRemove('verifier');
+      storageRemove('state');
       window.history.replaceState({}, '', redirectUri);
       return Promise.resolve(null);
     }
+
     return discoverOIDC().then(function() {
       return fetch(oidc.tokenEndpoint, {
         method: 'POST',
@@ -429,17 +449,33 @@
       return;
     }
 
+    // Clean up stale OIDC state if there's no code in the URL
+    // This prevents "invalid auth state" errors from leftover registration state
+    var urlParams = new URLSearchParams(window.location.search);
+    if (!urlParams.get('code') && !urlParams.get('error')) {
+      storageRemove('verifier');
+      storageRemove('state');
+    }
+
+    // 1. Handle OIDC callback (if returning from Keycloak)
     handleCallback().then(function(user) {
-      if (user) return;
+      if (user) return; // Already logged in via callback
+
+      // 2. Check existing session tokens
       var tokens = storageGet('tokens');
-      if (!tokens || !tokens.access_token) return;
-      if (tokens.expires_at && Date.now() > tokens.expires_at - 60000) {
-        storageRemove('tokens');
-        return;
+      if (tokens && tokens.access_token) {
+        if (tokens.expires_at && Date.now() > tokens.expires_at - 60000) {
+          storageRemove('tokens');
+          return;
+        }
+        return getUserInfo(tokens.access_token).then(function(user) {
+          if (user) showLoggedIn(user);
+        }).catch(function() {
+          storageRemove('tokens');
+        });
       }
-      getUserInfo(tokens.access_token).then(showLoggedIn).catch(function() {
-        storageRemove('tokens');
-      });
+
+      // 3. No tokens, no callback — just show the login screen
     });
   }
 
