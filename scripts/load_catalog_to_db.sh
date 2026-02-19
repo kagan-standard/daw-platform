@@ -24,12 +24,21 @@ mkdir -p "$BACKUP_DIR"
 echo "0. Backing up database..."
 docker exec "$DB_CONTAINER" pg_dump -U postgres -d postgres > "$BACKUP_DIR/pre-catalog-load-$(date +%Y%m%d%H%M%S).sql"
 
-# 1. Load beer_styles
+# 1. Load beer_styles (real staging table, 3 separate docker exec calls)
 echo "1. Loading beer_styles..."
+docker exec "$DB_CONTAINER" psql -U postgres -d postgres -c "
+    DROP TABLE IF EXISTS tmp_beer_styles;
+    CREATE TABLE tmp_beer_styles (name TEXT, category TEXT, description TEXT, abv_min DECIMAL(4,2), abv_max DECIMAL(4,2), ibu_min INTEGER, ibu_max INTEGER);
+"
 docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres -c "
-    COPY beer_styles(name, category, description, abv_min, abv_max, ibu_min, ibu_max)
-    FROM STDIN WITH (FORMAT csv, HEADER true, NULL '', QUOTE '\"');
+    COPY tmp_beer_styles FROM STDIN WITH (FORMAT csv, HEADER true, NULL '', QUOTE '\"');
 " < "$DATA_DIR/beer_styles.csv"
+docker exec "$DB_CONTAINER" psql -U postgres -d postgres -c "
+    INSERT INTO beer_styles (name, category, description, abv_min, abv_max, ibu_min, ibu_max)
+    SELECT name, category, description, abv_min, abv_max, ibu_min, ibu_max FROM tmp_beer_styles
+    ON CONFLICT (name) DO NOTHING;
+    DROP TABLE tmp_beer_styles;
+"
 
 # 2. Load breweries (real staging table, 3 separate docker exec calls)
 echo "2. Loading breweries..."
@@ -65,12 +74,21 @@ docker exec "$DB_CONTAINER" psql -U postgres -d postgres -c "
     DROP TABLE tmp_beers;
 "
 
-# 4. Load flavor_descriptors
+# 4. Load flavor_descriptors (real staging table, 3 separate docker exec calls)
 echo "4. Loading flavor_descriptors..."
+docker exec "$DB_CONTAINER" psql -U postgres -d postgres -c "
+    DROP TABLE IF EXISTS tmp_flavor_descriptors;
+    CREATE TABLE tmp_flavor_descriptors (category TEXT, keyword TEXT, impact INTEGER);
+"
 docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres -c "
-    COPY flavor_descriptors(category, keyword, impact)
-    FROM STDIN WITH (FORMAT csv, HEADER true, NULL '', QUOTE '\"');
+    COPY tmp_flavor_descriptors FROM STDIN WITH (FORMAT csv, HEADER true, NULL '', QUOTE '\"');
 " < "$DATA_DIR/flavor_descriptors.csv"
+docker exec "$DB_CONTAINER" psql -U postgres -d postgres -c "
+    INSERT INTO flavor_descriptors (category, keyword, impact)
+    SELECT category, keyword, impact FROM tmp_flavor_descriptors
+    ON CONFLICT (category, keyword) DO NOTHING;
+    DROP TABLE tmp_flavor_descriptors;
+"
 
 # 5. Analyze
 echo "5. Running ANALYZE..."
