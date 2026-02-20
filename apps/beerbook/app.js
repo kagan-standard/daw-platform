@@ -393,6 +393,13 @@ const App = {
         document.querySelectorAll('#bottom-tab-nav .tab-item').forEach(tab => {
             tab.addEventListener('click', () => this.navigate(tab.dataset.view));
         });
+        // Desktop nav (desktop)
+        document.querySelectorAll('.desktop-nav-link[data-view]').forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                this.navigate(link.dataset.view);
+            });
+        });
 
         // Dashboard chart cards: accordion (one expanded at a time), lazy render on expand
         document.getElementById('dashboard-charts')?.addEventListener('click', (e) => {
@@ -1756,6 +1763,7 @@ const App = {
         const view = document.getElementById(`view-${viewId}`);
         const btn = document.querySelector(`.nav-btn[data-view="${viewId}"]`);
         const hamburgerBtn = document.querySelector(`.ham-link[data-view="${viewId}"]`);
+        const desktopNavLink = document.querySelector(`.desktop-nav-link[data-view="${viewId}"]`);
 
         if (view) { view.classList.add('active'); view.style.animation = 'none'; view.offsetHeight; view.style.animation = ''; }
         if (btn) btn.classList.add('active');
@@ -1765,6 +1773,9 @@ const App = {
         document.querySelectorAll('#bottom-tab-nav .tab-item').forEach(t => t.classList.remove('active'));
         const bottomTab = document.querySelector(`#bottom-tab-nav .tab-item[data-view="${viewId}"]`);
         if (bottomTab) bottomTab.classList.add('active');
+        // Sync desktop nav active state
+        document.querySelectorAll('.desktop-nav-link[data-view]').forEach(link => link.classList.remove('active'));
+        if (desktopNavLink) desktopNavLink.classList.add('active');
 
         if (viewId === 'dashboard' || viewId === 'profile') {
             setTimeout(() => { Object.values(Charts.instances).forEach(c => c.resize()); }, 100);
