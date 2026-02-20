@@ -594,21 +594,39 @@ const DB = {
     },
 
     async searchBeers(q) {
+        const query = String(q || '').trim();
+        if (query.length < 2) return [];
+
+        const mapSearchRow = (row) => ({
+            id: row.id || row.beer_id || null,
+            beer_name: row.beer_name || row.name || '',
+            brewery: row.brewery || row.brewery_name || '',
+            style: row.style || '',
+            abv: row.abv != null ? row.abv : null,
+            review_overall: row.review_overall != null ? Number(row.review_overall) : null,
+            review_count: row.review_count != null ? Number(row.review_count) : 0,
+            source: row.source || 'catalog',
+        });
+
         if (this.isDemo) return [];
-        if (!q || q.length < 2) return [];
-        const key = `beerSearch:${q.toLowerCase().trim()}`;
+
+        const key = `beerSearch:${query.toLowerCase()}`;
         return cachedFetch(key, CACHE_TTL.beerSearch, async () => {
-            const out = await this._api('GET', `/api/beers/search?q=${encodeURIComponent(q)}`);
-            return (out && out.data ? out.data : []).map((row) => ({
-                id: row.id || row.beer_id || null,
-                beer_name: row.beer_name || row.name || '',
-                brewery: row.brewery || row.brewery_name || '',
-                style: row.style || '',
-                abv: row.abv != null ? row.abv : null,
-                review_overall: row.review_overall != null ? Number(row.review_overall) : null,
-                review_count: row.review_count != null ? Number(row.review_count) : 0,
-                source: row.source || 'catalog',
-            }));
+            try {
+                const out = await this._api('GET', `/api/beers/search?q=${encodeURIComponent(query)}`);
+                const data = (out && out.data) ? out.data : [];
+                if (data.length > 0) return data.map(mapSearchRow);
+            } catch (err) {
+                console.warn('Primary beer search failed, using catalog fallback:', err?.message || err);
+            }
+
+            try {
+                const catalog = await this.searchCatalog(query, 10);
+                return (catalog || []).map(mapSearchRow);
+            } catch (err) {
+                console.warn('Catalog fallback search failed:', err?.message || err);
+                return [];
+            }
         });
     },
 
