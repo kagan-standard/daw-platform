@@ -634,7 +634,60 @@ const DB = {
             source: row.source || 'catalog',
         });
 
-        if (this.isDemo) return [];
+        if (this.isDemo) {
+            const needle = query.toLowerCase();
+            const reviews = Utils.storage.get('reviews', []);
+            const byName = new Map();
+            const norm = (v) => String(v || '').toLowerCase().trim().replace(/\s+/g, ' ');
+            const scoreFor = (name) => {
+                const n = String(name || '').toLowerCase();
+                if (n.startsWith(needle)) return 3;
+                if (n.includes(needle)) return 2;
+                return 1;
+            };
+
+            (Array.isArray(reviews) ? reviews : []).forEach((r) => {
+                const beerName = r.beer_name || r.beerName || '';
+                const brewery = r.brewery || '';
+                if (!beerName) return;
+                const key = norm(beerName);
+                if (!key || (!key.includes(needle) && !String(brewery).toLowerCase().includes(needle))) return;
+                if (!byName.has(key)) {
+                    byName.set(key, {
+                        id: r.beer_id || null,
+                        beer_name: beerName,
+                        brewery: brewery,
+                        style: r.style || '',
+                        abv: r.abv != null ? r.abv : null,
+                        review_overall: 0,
+                        review_count: 0,
+                        source: 'local',
+                        _sum: 0,
+                        _score: scoreFor(beerName),
+                    });
+                }
+                const entry = byName.get(key);
+                entry.review_count += 1;
+                entry._sum += Number(r.rating) || 0;
+                if (!entry.id && r.beer_id) entry.id = r.beer_id;
+                if (!entry.style && r.style) entry.style = r.style;
+                if (!entry.brewery && r.brewery) entry.brewery = r.brewery;
+                if (entry.abv == null && r.abv != null) entry.abv = r.abv;
+            });
+
+            return Array.from(byName.values())
+                .map((entry) => ({
+                    ...entry,
+                    review_overall: entry.review_count ? (entry._sum / entry.review_count) : null,
+                }))
+                .sort((a, b) => {
+                    if (b._score !== a._score) return b._score - a._score;
+                    if ((b.review_count || 0) !== (a.review_count || 0)) return (b.review_count || 0) - (a.review_count || 0);
+                    return String(a.beer_name || '').localeCompare(String(b.beer_name || ''));
+                })
+                .slice(0, 10)
+                .map(({ _sum, _score, ...clean }) => clean);
+        }
 
         const key = `beerSearch:${query.toLowerCase()}`;
         return cachedFetch(key, CACHE_TTL.beerSearch, async () => {
