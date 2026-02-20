@@ -499,6 +499,19 @@ input, select, textarea, button {
     color: var(--gold);
 }
 
+/* Hamburger menu — mobile only; hide on desktop */
+@media (min-width: 769px) {
+    .hamburger-btn,
+    #menu-toggle {
+        display: none !important;
+    }
+
+    .hamburger-dropdown,
+    #hamburger-menu {
+        display: none !important;
+    }
+}
+
 .ham-link.active {
     color: var(--gold);
     background: var(--amber-subtle);

@@ -190,7 +190,12 @@ const DB = {
             redirect_uri: this.oidc.redirectUri, scope: this.oidc.scopes,
             state, code_challenge: challenge, code_challenge_method: 'S256',
         });
-        window.location.href = `${this.oidc.authEndpoint}?${params}&kc_action=register`;
+        // Use Keycloak's registrations endpoint so user lands on Create Account form, not Sign In tab
+        const registrationUrl = this.oidc.authEndpoint.replace(
+            '/protocol/openid-connect/auth',
+            '/protocol/openid-connect/registrations'
+        );
+        window.location.href = `${registrationUrl}?${params}`;
     },
 
     async handleOIDCCallback() {
@@ -382,12 +387,16 @@ const DB = {
         this.subscriptions.forEach(s => { if (s && typeof s === 'number') clearInterval(s); });
         this.subscriptions = [];
         const tokens = Utils.storage.get('oidc_tokens');
-        this.currentUser = null;
+
+        // Clear ALL local auth state FIRST
         Utils.storage.remove('oidc_tokens');
         Utils.storage.remove('oidc_verifier');
         Utils.storage.remove('oidc_state');
-        Utils.storage.remove('demo_user');
         Utils.storage.remove('sso_silent_attempted');
+        Utils.storage.remove('demo_user');
+        this.currentUser = null;
+
+        // If we have Keycloak endpoints and an id_token, do a proper Keycloak logout
         if (this.oidc.endSessionEndpoint && tokens?.id_token) {
             const params = new URLSearchParams({
                 id_token_hint: tokens.id_token,
@@ -396,6 +405,12 @@ const DB = {
             window.location.href = `${this.oidc.endSessionEndpoint}?${params}`;
             return;
         }
+
+        // Fallback: just show auth screen (no Keycloak logout)
+        const appEl = document.getElementById('app');
+        const authEl = document.getElementById('auth-screen');
+        if (appEl) appEl.style.display = 'none';
+        if (authEl) authEl.style.display = 'flex';
     },
 
     enterDemoMode() {

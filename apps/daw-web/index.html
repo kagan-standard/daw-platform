@@ -133,8 +133,8 @@
       <div class="front-door-pad">
         <div class="service-grid" id="logged-out-services"></div>
         <div class="auth-buttons">
-          <button type="button" class="btn btn-gold" id="btn-signin" onclick="startLogin()">Sign in with DAW</button>
-          <button type="button" class="btn btn-outline" id="btn-register" onclick="startRegistration()">Create Account</button>
+          <button type="button" class="btn btn-gold" id="btn-register" onclick="startRegistration()">Create Account</button>
+          <button type="button" class="btn btn-outline" id="btn-signin" onclick="startLogin()">Sign in with DAW</button>
         </div>
         <div class="status-msg" id="auth-status"></div>
       </div>
@@ -321,7 +321,9 @@
           code_challenge: pkce.challenge,
           code_challenge_method: 'S256'
         });
-        window.location.href = oidc.authEndpoint + '?' + params + '&kc_action=register';
+        // Use Keycloak's registrations endpoint so user lands on Create Account form, not Sign In tab
+        var registrationUrl = oidc.authEndpoint.replace('/protocol/openid-connect/auth', '/protocol/openid-connect/registrations');
+        window.location.href = registrationUrl + '?' + params;
       });
     });
   };
@@ -342,6 +344,34 @@
           picture: info.picture || null
         };
       });
+  }
+
+  function refreshToken(tokens) {
+    if (!tokens || !tokens.refresh_token) return Promise.resolve(false);
+    return discoverOIDC().then(function(ok) {
+      if (!ok) return false;
+      return fetch(oidc.tokenEndpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          grant_type: 'refresh_token',
+          refresh_token: tokens.refresh_token,
+          client_id: clientId
+        }).toString()
+      }).then(function(r) {
+        if (!r.ok) return false;
+        return r.json();
+      }).then(function(t) {
+        if (!t || !t.access_token) return false;
+        storageSet('tokens', {
+          access_token: t.access_token,
+          refresh_token: t.refresh_token || tokens.refresh_token,
+          id_token: t.id_token,
+          expires_at: Date.now() + (t.expires_in * 1000)
+        });
+        return true;
+      });
+    }).catch(function() { return false; });
   }
 
   function handleCallback() {
@@ -457,25 +487,34 @@
       storageRemove('state');
     }
 
-    // 1. Handle OIDC callback (if returning from Keycloak)
     handleCallback().then(function(user) {
-      if (user) return; // Already logged in via callback
+      if (user) return;
 
-      // 2. Check existing session tokens
       var tokens = storageGet('tokens');
       if (tokens && tokens.access_token) {
         if (tokens.expires_at && Date.now() > tokens.expires_at - 60000) {
+          if (tokens.refresh_token) {
+            return refreshToken(tokens).then(function(success) {
+              if (!success) {
+                storageRemove('tokens');
+                return;
+              }
+              var newTokens = storageGet('tokens');
+              return getUserInfo(newTokens.access_token).then(function(u) {
+                if (u) showLoggedIn(u);
+              });
+            });
+          }
           storageRemove('tokens');
           return;
         }
-        return getUserInfo(tokens.access_token).then(function(user) {
-          if (user) showLoggedIn(user);
-        }).catch(function() {
+        return getUserInfo(tokens.access_token).then(function(u) {
+          if (u) showLoggedIn(u);
+        }).catch(function(err) {
+          console.warn('Session restore failed:', err);
           storageRemove('tokens');
         });
       }
-
-      // 3. No tokens, no callback — just show the login screen
     });
   }
 
