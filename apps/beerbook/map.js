@@ -283,7 +283,7 @@ const MapView = {
                 <strong>${Utils.escapeHtml(b.name)}</strong><br>
                 Type: ${Utils.escapeHtml(typeLabel)} | ${Utils.escapeHtml(cityState)}<br>
                 ${b.phone ? `📞 ${Utils.escapeHtml(b.phone)}<br>` : ''}
-                ${b.website_url ? `<a href="${Utils.escapeHtml(b.website_url)}" target="_blank" rel="noopener">🌐 Visit Website →</a><br>` : ''}
+                ${b.website_url ? `<a href="${Utils.escapeHtml(b.website_url)}" target="_blank" rel="noopener" data-track-type="brewery" data-track-id="${Utils.escapeHtml(b.id || '')}" data-track-name="${Utils.escapeHtml(b.name || 'Unknown Brewery')}" data-track-source="brewery_detail">🌐 Visit Website →</a><br>` : ''}
                 <p><strong>Beers in catalog:</strong> ${beers.length}</p>
                 <ul>${beerList}</ul>
                 <a href="#" class="brewery-rate-link" data-brewery-id="${b.id}">⭐ Rate a beer from here →</a>
@@ -324,7 +324,7 @@ const MapView = {
                 <h3>${Utils.escapeHtml(b.name)}</h3>
                 <p>Type: ${Utils.escapeHtml(b.brewery_type || '')} | ${cityState}</p>
                 ${b.phone ? `<p>📞 ${Utils.escapeHtml(b.phone)}</p>` : ''}
-                ${b.website_url ? `<p><a href="${Utils.escapeHtml(b.website_url)}" target="_blank" rel="noopener">🌐 Visit Website →</a></p>` : ''}
+                ${b.website_url ? `<p><a href="${Utils.escapeHtml(b.website_url)}" target="_blank" rel="noopener" data-track-type="brewery" data-track-id="${Utils.escapeHtml(b.id || '')}" data-track-name="${Utils.escapeHtml(b.name || 'Unknown Brewery')}" data-track-source="brewery_detail">🌐 Visit Website →</a></p>` : ''}
                 <p><strong>Beers in catalog:</strong> ${beers.length}</p>
                 ${beerList}
                 <p><a href="#" class="brewery-rate-link">⭐ Rate a beer from here →</a></p>

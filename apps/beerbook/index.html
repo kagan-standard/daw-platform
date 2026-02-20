@@ -106,6 +106,7 @@
                 <a class="desktop-nav-link" data-view="rate" href="#">Rate</a>
                 <a class="desktop-nav-link" data-view="map" href="#">Map</a>
                 <a class="desktop-nav-link" data-view="profile" href="#">Profile</a>
+                <a class="desktop-nav-link admin-only" data-view="admin" id="nav-admin" href="#" style="display:none;">Admin</a>
                 <a class="desktop-nav-link" data-view="exchange" href="#">YG Exchange</a>
                 <a class="desktop-nav-link" data-view="leaderboard" href="#">Leaderboard</a>
             </nav>
@@ -121,6 +122,7 @@
                     <nav class="hamburger-nav">
                         <a class="ham-link" data-view="dashboard" href="#">📰 Activity Feed</a>
                         <a class="ham-link" data-view="leaderboard" href="#">🏆 Leaderboard</a>
+                        <a class="ham-link admin-only" data-view="admin" id="ham-admin" href="#" style="display:none;">🛠️ Admin</a>
                         <a class="ham-link" data-view="exchange" href="#">💱 YG Exchange</a>
                         <hr class="ham-divider">
                         <a class="ham-link" data-view="profile" href="#">👤 Profile &amp; Stats</a>
@@ -636,6 +638,52 @@
                     <h3>🍻 Most Cheered</h3>
                     <div id="lb-cheers" class="lb-list"></div>
                 </div>
+            </div>
+        </main>
+
+        <!-- ========== ADMIN VIEW ========== -->
+        <main id="view-admin" class="view admin-only" style="display:none;">
+            <div class="view-header">
+                <h2>Admin Dashboard</h2>
+                <p class="view-desc">Platform analytics, users, referrals, and traffic</p>
+            </div>
+            <div class="admin-stats-grid" id="admin-stats"></div>
+            <div class="admin-tabs">
+                <button type="button" class="admin-tab active" data-tab="users">Users</button>
+                <button type="button" class="admin-tab" data-tab="referrals">Referrals</button>
+                <button type="button" class="admin-tab" data-tab="traffic">Traffic</button>
+            </div>
+            <div class="admin-tab-content" id="admin-tab-users">
+                <div class="admin-toolbar">
+                    <input type="text" id="admin-user-search" placeholder="Search users...">
+                    <select id="admin-user-sort">
+                        <option value="last_active">Last Active</option>
+                        <option value="total_ratings">Most Ratings</option>
+                        <option value="created_at">Newest</option>
+                    </select>
+                </div>
+                <div id="admin-users-table"></div>
+            </div>
+            <div class="admin-tab-content" id="admin-tab-referrals" style="display:none;">
+                <div class="admin-toolbar">
+                    <select id="admin-referral-type">
+                        <option value="">All Types</option>
+                        <option value="brewery">Brewery</option>
+                        <option value="venue">Venue</option>
+                        <option value="beer">Beer</option>
+                        <option value="external">External</option>
+                    </select>
+                    <input type="date" id="admin-referral-from">
+                    <input type="date" id="admin-referral-to">
+                    <button type="button" class="btn btn-ghost btn-sm" id="admin-referral-apply">Apply</button>
+                </div>
+                <div id="admin-referral-summary"></div>
+                <div id="admin-referral-top"></div>
+                <div id="admin-referral-log"></div>
+            </div>
+            <div class="admin-tab-content" id="admin-tab-traffic" style="display:none;">
+                <div id="admin-traffic-stats"></div>
+                <div id="admin-traffic-pages"></div>
             </div>
         </main>
 

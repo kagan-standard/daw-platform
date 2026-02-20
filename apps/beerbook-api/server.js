@@ -96,6 +96,8 @@ const routeHelpers = {
   totalFromContentRange,
   parsePagination: () => {}, // set after parsePagination is defined
   authMiddleware: () => {}, // set after authMiddleware is defined
+  softAuthMiddleware: (req, res, next) => next(),
+  adminMiddleware: (req, res, next) => next(),
 };
 
 // ---------- JWKS + auth middleware ----------
@@ -129,6 +131,7 @@ async function authMiddleware(req, res, next) {
       sub: payload.sub,
       preferred_username: payload.preferred_username || payload.sub,
       email: payload.email || '',
+      realm_access: payload.realm_access || { roles: [] },
     };
     next();
   } catch (e) {
@@ -140,6 +143,42 @@ async function authMiddleware(req, res, next) {
     }
     return res.status(401).json({ error: 'Invalid token' });
   }
+}
+
+async function softAuthMiddleware(req, res, next) {
+  const auth = req.headers.authorization;
+  if (!auth || !auth.startsWith('Bearer ')) return next();
+  const token = auth.slice(7);
+  try {
+    const { payload } = await jwtVerify(token, getJwks(), {
+      issuer: KEYCLOAK_ISSUER,
+      clockTolerance: CLOCK_SKEW,
+    });
+    const aud = payload.aud;
+    const azp = payload.azp;
+    const audOk = aud === 'beerbook' || (Array.isArray(aud) && aud.includes('beerbook'));
+    if (!audOk || azp !== 'beerbook') return next();
+    req.claims = {
+      sub: payload.sub,
+      preferred_username: payload.preferred_username || payload.sub,
+      email: payload.email || '',
+      realm_access: payload.realm_access || { roles: [] },
+    };
+    return next();
+  } catch (_) {
+    return next();
+  }
+}
+
+function adminMiddleware(req, res, next) {
+  if (!req.claims) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+  const roles = req.claims.realm_access?.roles || [];
+  if (!roles.includes('beerbook_admin')) {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+  return next();
 }
 
 // ---------- Pagination parse ----------
@@ -166,6 +205,8 @@ function validateSort(req, res, next) {
 // ---------- Phase 2.1 route modules (mount before /api/ratings so /api/ratings/:id/cheers takes precedence) ----------
 routeHelpers.parsePagination = parsePagination;
 routeHelpers.authMiddleware = authMiddleware;
+routeHelpers.softAuthMiddleware = softAuthMiddleware;
+routeHelpers.adminMiddleware = adminMiddleware;
 
 const activityRoutes = require('./routes/activity')({ ...routeHelpers });
 const beersRoutes = require('./routes/beers')({ ...routeHelpers });
@@ -176,6 +217,8 @@ const mapRoutes = require('./routes/map')({ ...routeHelpers });
 const leaderboardRoutes = require('./routes/leaderboard')({ ...routeHelpers });
 const uploadRoutes = require('./routes/upload')({ ...routeHelpers });
 const highlightsRoutes = require('./routes/highlights')({ ...routeHelpers });
+const adminRoutes = require('./routes/admin')({ ...routeHelpers });
+const trackingRoutes = require('./routes/tracking')({ ...routeHelpers });
 
 app.use('/api', activityRoutes);
 app.use('/api/beers', beersRoutes);
@@ -186,6 +229,8 @@ app.use('/api/map', mapRoutes);
 app.use('/api/leaderboard', leaderboardRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/highlights', highlightsRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api', trackingRoutes);
 
 // ---------- Phase 3.2: Catalog (no auth — public catalog) ----------
 function toNumberOrNull(v) {

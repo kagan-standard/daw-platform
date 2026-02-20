@@ -107,6 +107,30 @@ const DB = {
         return tokens?.access_token || null;
     },
 
+    getAccessToken() {
+        return this._getAccessToken();
+    },
+
+    getTokenClaims() {
+        const token = this._getAccessToken();
+        if (!token) return null;
+        try {
+            const payloadPart = token.split('.')[1];
+            if (!payloadPart) return null;
+            const normalized = payloadPart.replace(/-/g, '+').replace(/_/g, '/');
+            const padded = normalized + '='.repeat((4 - (normalized.length % 4 || 4)) % 4);
+            return JSON.parse(atob(padded));
+        } catch (_) {
+            return null;
+        }
+    },
+
+    isAdmin() {
+        const claims = this.getTokenClaims();
+        const roles = claims?.realm_access?.roles || [];
+        return Array.isArray(roles) && roles.includes('beerbook_admin');
+    },
+
     async _api(method, path, opts = {}) {
         const url = `${this.apiBaseUrl}${path}`;
         const headers = { 'Content-Type': 'application/json', ...opts.headers };
@@ -884,5 +908,56 @@ const DB = {
     async addVenueHappyHour(venueId, payload) {
         if (this.isDemo) return {};
         return await this._api('POST', `/api/venues/${encodeURIComponent(venueId)}/happy-hours`, { body: JSON.stringify(payload) });
+    },
+
+    async adminGetUsers(params = {}) {
+        if (this.isDemo) return { data: [], pagination: { total: 0, limit: 50, offset: 0 } };
+        const qs = new URLSearchParams();
+        if (params.sort) qs.set('sort', params.sort);
+        if (params.order) qs.set('order', params.order);
+        if (params.limit != null) qs.set('limit', String(params.limit));
+        if (params.offset != null) qs.set('offset', String(params.offset));
+        if (params.search) qs.set('search', params.search);
+        return await this._api('GET', `/api/admin/users?${qs.toString()}`);
+    },
+
+    async adminGetUser(userId) {
+        if (this.isDemo || !userId) return null;
+        return await this._api('GET', `/api/admin/users/${encodeURIComponent(userId)}`);
+    },
+
+    async adminGetStats() {
+        if (this.isDemo) return {};
+        return await this._api('GET', '/api/admin/stats');
+    },
+
+    async adminGetReferrals(params = {}) {
+        if (this.isDemo) return { data: [], pagination: { total: 0, limit: 50, offset: 0 } };
+        const qs = new URLSearchParams();
+        if (params.target_type) qs.set('target_type', params.target_type);
+        if (params.target_id) qs.set('target_id', params.target_id);
+        if (params.user_id) qs.set('user_id', params.user_id);
+        if (params.from) qs.set('from', params.from);
+        if (params.to) qs.set('to', params.to);
+        if (params.limit != null) qs.set('limit', String(params.limit));
+        if (params.offset != null) qs.set('offset', String(params.offset));
+        return await this._api('GET', `/api/admin/referrals?${qs.toString()}`);
+    },
+
+    async adminGetReferralSummary(params = {}) {
+        if (this.isDemo) return { total_clicks: 0, by_target_type: {}, top_breweries: [], top_venues: [], daily_trend: [] };
+        const qs = new URLSearchParams();
+        if (params.target_type) qs.set('target_type', params.target_type);
+        if (params.from) qs.set('from', params.from);
+        if (params.to) qs.set('to', params.to);
+        return await this._api('GET', `/api/admin/referrals/summary?${qs.toString()}`);
+    },
+
+    async adminGetTraffic(params = {}) {
+        if (this.isDemo) return { total_views: 0, unique_sessions: 0, unique_users: 0, top_pages: [], daily_trend: [] };
+        const qs = new URLSearchParams();
+        if (params.from) qs.set('from', params.from);
+        if (params.to) qs.set('to', params.to);
+        return await this._api('GET', `/api/admin/traffic?${qs.toString()}`);
     }
 };

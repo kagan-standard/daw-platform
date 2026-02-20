@@ -140,8 +140,57 @@ const STYLE_GUIDE = {
     'Other': { desc: 'Other or unspecified beer style.', abv: '—' }
 };
 
+const Tracking = {
+    getSessionId() {
+        try {
+            let id = sessionStorage.getItem('bb_session_id');
+            if (!id) {
+                id = (crypto && typeof crypto.randomUUID === 'function') ? crypto.randomUUID() : Utils.uid();
+                sessionStorage.setItem('bb_session_id', id);
+            }
+            return id;
+        } catch (_) {
+            return Utils.uid();
+        }
+    },
+
+    _send(path, payload) {
+        try {
+            const apiBase = (window.BEERBOOK_CONFIG?.apiBaseUrl || '').replace(/\/+$/, '');
+            if (!apiBase || !navigator.sendBeacon) return;
+            const body = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+            navigator.sendBeacon(`${apiBase}${path}`, body);
+        } catch (_) {
+            // Tracking must never block UX.
+        }
+    },
+
+    trackClick({ targetType, targetId, targetName, destinationUrl, sourcePage, sourceBeerId, sourceBreweryId }) {
+        this._send('/api/track/click', {
+            target_type: targetType,
+            target_id: targetId || null,
+            target_name: targetName || null,
+            destination_url: destinationUrl,
+            source_page: sourcePage || window.location.pathname,
+            source_beer_id: sourceBeerId || null,
+            source_brewery_id: sourceBreweryId || null,
+            referrer_path: window.location.pathname,
+        });
+    },
+
+    trackPageView(pagePath) {
+        this._send('/api/track/pageview', {
+            page_path: pagePath || window.location.pathname,
+            session_id: this.getSessionId(),
+            referrer_url: document.referrer || null,
+        });
+    }
+};
+
 const App = {
     currentView: 'dashboard',
+    isAdmin: false,
+    adminState: { usersSort: 'last_active', usersSearchDebounce: null, activeTab: 'users' },
     allRatings: [],
     cheersCache: {},
     _demoCheersKey: 'beerbook_demo_cheers',
@@ -164,6 +213,7 @@ const App = {
     async init() {
         Charts.init();
         await DB.init();
+        Tracking.trackPageView(window.location.pathname || '/');
 
         // Show config screen if not configured and not demo
         if (!DB.hasConfig()) {
@@ -415,6 +465,30 @@ const App = {
             });
         });
 
+        // Track outbound external link clicks without blocking navigation.
+        document.body.addEventListener('click', (e) => {
+            const link = e.target.closest('a[href]');
+            if (!link) return;
+            const href = link.getAttribute('href') || '';
+            if (!href || href.startsWith('#') || href.startsWith('javascript:')) return;
+            let absolute;
+            try {
+                absolute = new URL(link.href, window.location.href);
+            } catch (_) {
+                return;
+            }
+            if (absolute.origin === window.location.origin) return;
+            Tracking.trackClick({
+                targetType: link.dataset.trackType || 'external',
+                targetId: link.dataset.trackId || null,
+                targetName: (link.dataset.trackName || link.textContent || '').trim() || null,
+                destinationUrl: absolute.toString(),
+                sourcePage: link.dataset.trackSource || this.currentView || window.location.pathname,
+                sourceBeerId: link.dataset.trackBeerId || null,
+                sourceBreweryId: link.dataset.trackBreweryId || null
+            });
+        });
+
         // Dashboard chart cards: accordion (one expanded at a time), lazy render on expand
         document.getElementById('dashboard-charts')?.addEventListener('click', (e) => {
             const card = e.target.closest('.chart-card');
@@ -503,6 +577,22 @@ const App = {
             if (closeIcon) closeIcon.style.display = 'none';
             if (menuToggle) menuToggle.setAttribute('aria-expanded', 'false');
             document.getElementById('logout-btn')?.click();
+        });
+
+        document.querySelectorAll('.admin-tab').forEach((tab) => {
+            tab.addEventListener('click', () => this.setAdminTab(tab.dataset.tab));
+        });
+        document.getElementById('admin-user-sort')?.addEventListener('change', () => {
+            this.adminState.usersSort = document.getElementById('admin-user-sort').value || 'last_active';
+            this.renderAdminUsers();
+        });
+        document.getElementById('admin-user-search')?.addEventListener('input', () => {
+            if (this.adminState.usersSearchDebounce) clearTimeout(this.adminState.usersSearchDebounce);
+            this.adminState.usersSearchDebounce = setTimeout(() => this.renderAdminUsers(), 250);
+        });
+        document.getElementById('admin-referral-apply')?.addEventListener('click', () => {
+            this.renderAdminReferrals();
+            this.renderAdminTraffic();
         });
 
         // Star rating (Task 1: pulse, keyboard)
@@ -1828,6 +1918,7 @@ const App = {
     async enterApp() {
         document.getElementById('auth-screen').style.display = 'none';
         document.getElementById('app').style.display = 'block';
+        this.setupAdminAccess();
 
         const greeting = document.getElementById('user-greeting');
         if (greeting && DB.currentUser) {
@@ -1863,6 +1954,7 @@ const App = {
 
         await this.loadAllData();
         this.navigate('dashboard');
+        Tracking.trackPageView('/dashboard');
     },
 
     // ========== DATA LOADING ==========
@@ -1925,8 +2017,197 @@ const App = {
         }
     },
 
+    setupAdminAccess() {
+        this.isAdmin = !DB.isDemo && typeof DB.isAdmin === 'function' && DB.isAdmin();
+        if (!this.isAdmin) {
+            document.querySelectorAll('.admin-only').forEach((el) => el.remove());
+            if (this.currentView === 'admin') this.currentView = 'dashboard';
+            return;
+        }
+        const navAdmin = document.getElementById('nav-admin');
+        const hamAdmin = document.getElementById('ham-admin');
+        const viewAdmin = document.getElementById('view-admin');
+        if (navAdmin) navAdmin.style.display = '';
+        if (hamAdmin) hamAdmin.style.display = '';
+        if (viewAdmin) viewAdmin.style.display = '';
+    },
+
+    setAdminTab(tabName) {
+        if (!this.isAdmin) return;
+        const tab = ['users', 'referrals', 'traffic'].includes(tabName) ? tabName : 'users';
+        this.adminState.activeTab = tab;
+        document.querySelectorAll('.admin-tab').forEach((btn) => btn.classList.toggle('active', btn.dataset.tab === tab));
+        document.querySelectorAll('.admin-tab-content').forEach((content) => {
+            content.style.display = content.id === `admin-tab-${tab}` ? '' : 'none';
+        });
+        if (tab === 'users') this.renderAdminUsers();
+        if (tab === 'referrals') this.renderAdminReferrals();
+        if (tab === 'traffic') this.renderAdminTraffic();
+    },
+
+    async renderAdminDashboard() {
+        if (!this.isAdmin) return;
+        await this.renderAdminStats();
+        this.setAdminTab(this.adminState.activeTab || 'users');
+    },
+
+    async renderAdminStats() {
+        const container = document.getElementById('admin-stats');
+        if (!container) return;
+        try {
+            const stats = await DB.adminGetStats();
+            container.innerHTML = `
+                <div class="stat-card"><div class="stat-value">${stats.total_users ?? 0}</div><div class="stat-label">Users</div></div>
+                <div class="stat-card"><div class="stat-value">${stats.total_ratings ?? 0}</div><div class="stat-label">Ratings</div></div>
+                <div class="stat-card"><div class="stat-value">${stats.mau ?? 0}</div><div class="stat-label">MAU</div></div>
+                <div class="stat-card"><div class="stat-value">${stats.wau ?? 0}</div><div class="stat-label">WAU</div></div>
+                <div class="stat-card"><div class="stat-value">${stats.dau ?? 0}</div><div class="stat-label">DAU</div></div>
+                <div class="stat-card"><div class="stat-value">${stats.total_referral_clicks ?? 0}</div><div class="stat-label">Referral Clicks</div></div>
+                <div class="stat-card"><div class="stat-value">${stats.new_users_this_week ?? 0}</div><div class="stat-label">New Users (7d)</div></div>
+                <div class="stat-card"><div class="stat-value">${stats.ratings_this_week ?? 0}</div><div class="stat-label">Ratings (7d)</div></div>
+            `;
+        } catch (err) {
+            container.innerHTML = '<p class="empty-state">Failed to load admin stats.</p>';
+        }
+    },
+
+    async renderAdminUsers() {
+        if (!this.isAdmin) return;
+        const table = document.getElementById('admin-users-table');
+        if (!table) return;
+        const sort = document.getElementById('admin-user-sort')?.value || 'last_active';
+        const search = document.getElementById('admin-user-search')?.value || '';
+        try {
+            const out = await DB.adminGetUsers({ sort, search, limit: 50, offset: 0 });
+            const rows = Array.isArray(out?.data) ? out.data : [];
+            table.innerHTML = `
+                <table class="admin-table">
+                    <thead>
+                        <tr>
+                            <th>User</th><th>Email</th><th>Ratings</th><th>Styles</th>
+                            <th>Venues</th><th>Avg Rating</th><th>Last Active</th><th>Joined</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${rows.map((u) => `
+                            <tr>
+                                <td>${Utils.escapeHtml(u.display_name || '—')}</td>
+                                <td>${Utils.escapeHtml(u.email || '—')}</td>
+                                <td>${u.total_ratings ?? 0}</td>
+                                <td>${u.unique_styles ?? 0}</td>
+                                <td>${u.unique_venues ?? 0}</td>
+                                <td>${u.avg_rating ?? '—'}</td>
+                                <td>${u.last_active ? Utils.timeAgo(u.last_active) : 'Never'}</td>
+                                <td>${u.created_at ? Utils.formatDate(u.created_at) : '—'}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+        } catch (err) {
+            table.innerHTML = '<p class="empty-state">Failed to load users.</p>';
+        }
+    },
+
+    async renderAdminReferrals() {
+        if (!this.isAdmin) return;
+        const type = document.getElementById('admin-referral-type')?.value || '';
+        const from = document.getElementById('admin-referral-from')?.value || '';
+        const to = document.getElementById('admin-referral-to')?.value || '';
+        const summaryEl = document.getElementById('admin-referral-summary');
+        const topEl = document.getElementById('admin-referral-top');
+        const logEl = document.getElementById('admin-referral-log');
+        if (!summaryEl || !topEl || !logEl) return;
+
+        try {
+            const [summary, log] = await Promise.all([
+                DB.adminGetReferralSummary({ target_type: type, from, to }),
+                DB.adminGetReferrals({ target_type: type, from, to, limit: 100, offset: 0 }),
+            ]);
+            const byType = summary.by_target_type || {};
+            summaryEl.innerHTML = `
+                <div class="admin-stats-grid">
+                    <div class="stat-card"><div class="stat-value">${summary.total_clicks ?? 0}</div><div class="stat-label">Total Clicks</div></div>
+                    <div class="stat-card"><div class="stat-value">${byType.brewery?.clicks ?? 0}</div><div class="stat-label">Brewery Clicks</div></div>
+                    <div class="stat-card"><div class="stat-value">${byType.venue?.clicks ?? 0}</div><div class="stat-label">Venue Clicks</div></div>
+                    <div class="stat-card"><div class="stat-value">${byType.external?.clicks ?? 0}</div><div class="stat-label">External Clicks</div></div>
+                </div>
+            `;
+            topEl.innerHTML = `
+                <h3>Top Breweries by Clicks</h3>
+                <table class="admin-table">
+                    <thead><tr><th>Brewery</th><th>Clicks</th><th>Unique Users</th></tr></thead>
+                    <tbody>
+                        ${(summary.top_breweries || []).map((b) => `<tr><td>${Utils.escapeHtml(b.target_name || 'Unknown')}</td><td>${b.clicks}</td><td>${b.unique_users}</td></tr>`).join('')}
+                    </tbody>
+                </table>
+                <h3>Top Venues by Clicks</h3>
+                <table class="admin-table">
+                    <thead><tr><th>Venue</th><th>Clicks</th><th>Unique Users</th></tr></thead>
+                    <tbody>
+                        ${(summary.top_venues || []).map((v) => `<tr><td>${Utils.escapeHtml(v.target_name || 'Unknown')}</td><td>${v.clicks}</td><td>${v.unique_users}</td></tr>`).join('')}
+                    </tbody>
+                </table>
+            `;
+            const logRows = Array.isArray(log?.data) ? log.data : [];
+            logEl.innerHTML = `
+                <h3>Recent Referral Clicks</h3>
+                <table class="admin-table">
+                    <thead><tr><th>Time</th><th>Type</th><th>Target</th><th>Destination</th><th>User</th></tr></thead>
+                    <tbody>
+                        ${logRows.map((r) => `<tr>
+                            <td>${r.created_at ? Utils.formatDate(r.created_at) : '—'}</td>
+                            <td>${Utils.escapeHtml(r.target_type || 'external')}</td>
+                            <td>${Utils.escapeHtml(r.target_name || r.target_id || '—')}</td>
+                            <td><a href="${Utils.escapeHtml(r.destination_url || '#')}" target="_blank" rel="noopener">Open</a></td>
+                            <td>${Utils.escapeHtml(r.user_id || 'guest')}</td>
+                        </tr>`).join('')}
+                    </tbody>
+                </table>
+            `;
+        } catch (err) {
+            summaryEl.innerHTML = '<p class="empty-state">Failed to load referral analytics.</p>';
+            topEl.innerHTML = '';
+            logEl.innerHTML = '';
+        }
+    },
+
+    async renderAdminTraffic() {
+        if (!this.isAdmin) return;
+        const from = document.getElementById('admin-referral-from')?.value || '';
+        const to = document.getElementById('admin-referral-to')?.value || '';
+        const statsEl = document.getElementById('admin-traffic-stats');
+        const pagesEl = document.getElementById('admin-traffic-pages');
+        if (!statsEl || !pagesEl) return;
+        try {
+            const traffic = await DB.adminGetTraffic({ from, to });
+            statsEl.innerHTML = `
+                <div class="admin-stats-grid">
+                    <div class="stat-card"><div class="stat-value">${traffic.total_views ?? 0}</div><div class="stat-label">Views</div></div>
+                    <div class="stat-card"><div class="stat-value">${traffic.unique_sessions ?? 0}</div><div class="stat-label">Sessions</div></div>
+                    <div class="stat-card"><div class="stat-value">${traffic.unique_users ?? 0}</div><div class="stat-label">Users</div></div>
+                </div>
+            `;
+            pagesEl.innerHTML = `
+                <h3>Top Pages</h3>
+                <table class="admin-table">
+                    <thead><tr><th>Path</th><th>Views</th><th>Unique Users</th></tr></thead>
+                    <tbody>
+                        ${(traffic.top_pages || []).map((p) => `<tr><td>${Utils.escapeHtml(p.page_path)}</td><td>${p.views}</td><td>${p.unique_users}</td></tr>`).join('')}
+                    </tbody>
+                </table>
+            `;
+        } catch (err) {
+            statsEl.innerHTML = '<p class="empty-state">Failed to load traffic analytics.</p>';
+            pagesEl.innerHTML = '';
+        }
+    },
+
     // ========== NAVIGATION ==========
     navigate(viewId) {
+        if (viewId === 'admin' && !this.isAdmin) {
+            return;
+        }
         this._previousView = this.currentView;
         this.currentView = viewId;
         document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
@@ -1974,6 +2255,10 @@ const App = {
                 }
             } catch (_) {}
         }
+        if (viewId === 'admin' && this.isAdmin) {
+            this.renderAdminDashboard();
+        }
+        Tracking.trackPageView(`/${viewId}`);
     },
 
     // ========== RENDERS ==========
