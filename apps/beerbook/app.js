@@ -581,22 +581,6 @@ const App = {
             document.getElementById('logout-btn')?.click();
         });
 
-        document.querySelectorAll('.admin-tab').forEach((tab) => {
-            tab.addEventListener('click', () => this.setAdminTab(tab.dataset.tab));
-        });
-        document.getElementById('admin-user-sort')?.addEventListener('change', () => {
-            this.adminState.usersSort = document.getElementById('admin-user-sort').value || 'last_active';
-            this.renderAdminUsers();
-        });
-        document.getElementById('admin-user-search')?.addEventListener('input', () => {
-            if (this.adminState.usersSearchDebounce) clearTimeout(this.adminState.usersSearchDebounce);
-            this.adminState.usersSearchDebounce = setTimeout(() => this.renderAdminUsers(), 250);
-        });
-        document.getElementById('admin-referral-apply')?.addEventListener('click', () => {
-            this.renderAdminReferrals();
-            this.renderAdminTraffic();
-        });
-
         // Star rating (Task 1: pulse, keyboard)
         const starContainer = document.getElementById('star-rating');
         if (starContainer) {
@@ -727,6 +711,9 @@ const App = {
                     App.toast(`Rating updated! (previously ${result.previous_rating} ★)`, 'success');
                 } else {
                     App.toast(`Rated "${rating.beerName}" ${Utils.stars(ratingVal)}`, 'success');
+                    if (typeof Tabs !== 'undefined' && Tabs && typeof Tabs.showRatingFeedback === 'function') {
+                        await Tabs.showRatingFeedback(result);
+                    }
                 }
 
                 const priceAmount = document.getElementById('price-amount').value.trim();
@@ -1954,7 +1941,16 @@ const App = {
     async enterApp() {
         document.getElementById('auth-screen').style.display = 'none';
         document.getElementById('app').style.display = 'block';
+        if (typeof DB.hydrateCurrentUserProfile === 'function') {
+            await DB.hydrateCurrentUserProfile();
+        }
         this.setupAdminAccess();
+        if (typeof Tabs !== 'undefined' && Tabs && typeof Tabs.init === 'function') {
+            Tabs.init();
+        }
+        if (typeof Admin !== 'undefined' && Admin && typeof Admin.init === 'function') {
+            Admin.init();
+        }
 
         const greeting = document.getElementById('user-greeting');
         if (greeting && DB.currentUser) {
@@ -2042,6 +2038,13 @@ const App = {
             this.renderBrowse();
             this.renderLeaderboard(period);
             this.renderProfile();
+            if (typeof Tabs !== 'undefined' && Tabs) {
+                if (typeof Tabs.renderDashboardWidget === 'function') await Tabs.renderDashboardWidget();
+                if (typeof Tabs.refreshNotifications === 'function') await Tabs.refreshNotifications();
+                if (typeof Tabs.renderTabsLeaderboard === 'function') await Tabs.renderTabsLeaderboard();
+                if (typeof Tabs.renderProfileTabsSection === 'function') await Tabs.renderProfileTabsSection();
+                if (typeof Tabs.renderMySubmissions === 'function') await Tabs.renderMySubmissions();
+            }
 
             const activityRes = await DB.getActivity();
             this.activityItems = (activityRes && activityRes.data) ? activityRes.data : [];
@@ -2054,18 +2057,16 @@ const App = {
     },
 
     setupAdminAccess() {
-        this.isAdmin = !DB.isDemo && typeof DB.isAdmin === 'function' && DB.isAdmin();
-        if (!this.isAdmin) {
-            document.querySelectorAll('.admin-only').forEach((el) => el.remove());
-            if (this.currentView === 'admin') this.currentView = 'dashboard';
-            return;
-        }
+        this.isAdmin = !DB.isDemo && !!(DB.currentUser && DB.currentUser.isAdmin);
         const navAdmin = document.getElementById('nav-admin');
         const hamAdmin = document.getElementById('ham-admin');
         const viewAdmin = document.getElementById('view-admin');
-        if (navAdmin) navAdmin.style.display = '';
-        if (hamAdmin) hamAdmin.style.display = '';
-        if (viewAdmin) viewAdmin.style.display = '';
+        if (navAdmin) navAdmin.style.display = this.isAdmin ? '' : 'none';
+        if (hamAdmin) hamAdmin.style.display = this.isAdmin ? '' : 'none';
+        if (viewAdmin) viewAdmin.style.display = this.isAdmin ? '' : 'none';
+        if (!this.isAdmin && this.currentView === 'admin') {
+            this.navigate('dashboard');
+        }
     },
 
     setAdminTab(tabName) {
@@ -2083,6 +2084,10 @@ const App = {
 
     async renderAdminDashboard() {
         if (!this.isAdmin) return;
+        if (typeof Admin !== 'undefined' && Admin && typeof Admin.renderDashboard === 'function') {
+            await Admin.renderDashboard();
+            return;
+        }
         await this.renderAdminStats();
         this.setAdminTab(this.adminState.activeTab || 'users');
     },
@@ -2242,6 +2247,9 @@ const App = {
     // ========== NAVIGATION ==========
     navigate(viewId) {
         if (viewId === 'admin' && !this.isAdmin) {
+            if (this.currentView !== 'dashboard') {
+                this.navigate('dashboard');
+            }
             return;
         }
         this._previousView = this.currentView;

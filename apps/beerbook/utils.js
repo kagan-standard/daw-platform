@@ -8,7 +8,11 @@ const Utils = {
         const container = document.getElementById('toast-container');
         if (!container) return;
         const toast = document.createElement('div');
-        toast.className = `toast ${type}`;
+        if (type === 'tabs') {
+            toast.className = 'toast toast-tabs';
+        } else {
+            toast.className = `toast ${type}`;
+        }
         toast.textContent = message;
         container.appendChild(toast);
 

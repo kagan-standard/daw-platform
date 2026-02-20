@@ -20,11 +20,18 @@ const KEYCLOAK_JWKS_URI = process.env.KEYCLOAK_JWKS_URI || 'https://auth.drinksa
 const CLOCK_SKEW = Number(process.env.TOKEN_CLOCK_SKEW_SECONDS) || 30;
 const RATE_WINDOW_MS = Number(process.env.RATE_LIMIT_WINDOW_MS) || 60000;
 const RATE_MAX = Number(process.env.RATE_LIMIT_MAX) || 100;
+const ADMIN_USER_IDS = new Set([
+  process.env.ADMIN_USER_ID || '',
+].filter(Boolean));
 
 const SORT_WHITELIST = ['created_at', 'rating', 'beer_name'];
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
 const CATALOG_SORT_WHITELIST = ['name', 'abv', 'review_overall', 'review_count'];
+
+function isAdmin(sub) {
+  return ADMIN_USER_IDS.has(sub);
+}
 
 // ---------- Helpers: call PostgREST ----------
 // BUG FIX #2: Don't spread opts into fetch — it overrides the constructed headers.
@@ -687,16 +694,19 @@ app.delete('/api/ratings/:id', authMiddleware, async (req, res) => {
   res.status(204).end();
 });
 
-// GET /api/profile — auth required, get or create
+// GET /api/profile and /api/profile/me — auth required, get or create
 // BUG FIX #5: Added Prefer: return=representation on profile creation
-app.get('/api/profile', authMiddleware, async (req, res) => {
+async function handleProfileRequest(req, res) {
   const { sub, preferred_username, email } = req.claims;
   const { status: getStatus, body: rows } = await rest('GET', `/profiles?id=eq.${encodeURIComponent(sub)}&limit=1`);
   if (getStatus >= 400) {
     return res.status(502).json({ error: 'Upstream error' });
   }
   if (Array.isArray(rows) && rows.length > 0) {
-    return res.json(rows[0]);
+    return res.json({
+      ...rows[0],
+      is_admin: isAdmin(sub),
+    });
   }
   const newProfile = {
     id: sub,
@@ -711,8 +721,13 @@ app.get('/api/profile', authMiddleware, async (req, res) => {
     return res.status(502).json(created || { error: 'Create profile failed' });
   }
   const profile = Array.isArray(created) ? created[0] : created;
-  res.status(201).json(profile || newProfile);
-});
+  res.status(201).json({
+    ...(profile || newProfile),
+    is_admin: isAdmin(sub),
+  });
+}
+app.get('/api/profile', authMiddleware, handleProfileRequest);
+app.get('/api/profile/me', authMiddleware, handleProfileRequest);
 
 // GET /api/stats — public, paginated (beer_averages + summary counts)
 // BUG FIX #4: Use count=exact on beer_averages to get accurate totalBeers

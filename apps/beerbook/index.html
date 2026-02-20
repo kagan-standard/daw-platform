@@ -114,6 +114,18 @@
                 <div id="user-greeting"></div>
             </div>
             <div class="topbar-right">
+                <div class="notification-bell" id="notification-bell" style="display:none;">
+                    <button class="btn btn-ghost btn-sm notification-btn" id="notification-btn" type="button">
+                        🔔 <span class="notification-badge" id="notification-badge" style="display:none;">0</span>
+                    </button>
+                    <div class="notification-dropdown" id="notification-dropdown" style="display:none;">
+                        <div class="notification-header">
+                            <span>Notifications</span>
+                            <button class="btn btn-ghost btn-xs" id="mark-all-read" type="button">Mark all read</button>
+                        </div>
+                        <div class="notification-list" id="notification-list"></div>
+                    </div>
+                </div>
                 <button type="button" class="hamburger-btn" id="menu-toggle" aria-label="Menu" aria-expanded="false">
                     <span class="hamburger-icon">☰</span>
                     <span class="close-icon" style="display:none;">✕</span>
@@ -174,6 +186,18 @@
                     <span class="stat-tile__icon" aria-hidden="true">🏆</span>
                     <span class="stat-tile__value stat-tile__value--botw" id="stat-botw">—</span>
                     <span class="stat-tile__label">Beer of the Week</span>
+                </div>
+            </div>
+
+            <div class="tabs-widget" id="tabs-widget" style="display:none;">
+                <div class="tabs-widget-header">
+                    <div class="tabs-tier-badge" id="tabs-tier-badge"></div>
+                    <div class="tabs-balance" id="tabs-balance"></div>
+                </div>
+                <div class="tabs-widget-body">
+                    <div class="tabs-weekly-progress" id="tabs-weekly-progress"></div>
+                    <div class="tabs-streak" id="tabs-streak"></div>
+                    <div class="tabs-next-tier" id="tabs-next-tier"></div>
                 </div>
             </div>
 
@@ -300,6 +324,7 @@
             <div class="view-header">
                 <h2>Rate a Beer</h2>
                 <p class="view-desc">Share your thoughts on what you're drinking</p>
+                <button type="button" class="btn btn-ghost btn-sm submit-beer-trigger" id="submit-beer-trigger">Can't find your beer? Submit it!</button>
             </div>
 
             <form id="rating-form" class="rating-form">
@@ -638,53 +663,28 @@
                     <h3>🍻 Most Cheered</h3>
                     <div id="lb-cheers" class="lb-list"></div>
                 </div>
+                <div class="lb-card">
+                    <h3>🪙 Tabs Leaderboard</h3>
+                    <div id="lb-tabs" class="lb-list"></div>
+                </div>
             </div>
         </main>
 
         <!-- ========== ADMIN VIEW ========== -->
         <main id="view-admin" class="view admin-only" style="display:none;">
             <div class="view-header">
-                <h2>Admin Dashboard</h2>
-                <p class="view-desc">Platform analytics, users, referrals, and traffic</p>
+                <h2>⚙️ Admin Panel</h2>
+                <p class="view-desc">Manage Tabs economy, users, and beer submissions</p>
             </div>
-            <div class="admin-stats-grid" id="admin-stats"></div>
-            <div class="admin-tabs">
-                <button type="button" class="admin-tab active" data-tab="users">Users</button>
-                <button type="button" class="admin-tab" data-tab="referrals">Referrals</button>
-                <button type="button" class="admin-tab" data-tab="traffic">Traffic</button>
+            <div class="admin-tabs" id="admin-tabs">
+                <button class="admin-tab active" data-admin-view="users" type="button">👥 Users &amp; Tabs</button>
+                <button class="admin-tab" data-admin-view="submissions" type="button">🍺 Beer Submissions</button>
+                <button class="admin-tab" data-admin-view="economy" type="button">📊 Economy Stats</button>
             </div>
-            <div class="admin-tab-content" id="admin-tab-users">
-                <div class="admin-toolbar">
-                    <input type="text" id="admin-user-search" placeholder="Search users...">
-                    <select id="admin-user-sort">
-                        <option value="last_active">Last Active</option>
-                        <option value="total_ratings">Most Ratings</option>
-                        <option value="created_at">Newest</option>
-                    </select>
-                </div>
-                <div id="admin-users-table"></div>
-            </div>
-            <div class="admin-tab-content" id="admin-tab-referrals" style="display:none;">
-                <div class="admin-toolbar">
-                    <select id="admin-referral-type">
-                        <option value="">All Types</option>
-                        <option value="brewery">Brewery</option>
-                        <option value="venue">Venue</option>
-                        <option value="beer">Beer</option>
-                        <option value="external">External</option>
-                    </select>
-                    <input type="date" id="admin-referral-from">
-                    <input type="date" id="admin-referral-to">
-                    <button type="button" class="btn btn-ghost btn-sm" id="admin-referral-apply">Apply</button>
-                </div>
-                <div id="admin-referral-summary"></div>
-                <div id="admin-referral-top"></div>
-                <div id="admin-referral-log"></div>
-            </div>
-            <div class="admin-tab-content" id="admin-tab-traffic" style="display:none;">
-                <div id="admin-traffic-stats"></div>
-                <div id="admin-traffic-pages"></div>
-            </div>
+
+            <div id="admin-users" class="admin-panel active"></div>
+            <div id="admin-submissions" class="admin-panel" style="display:none;"></div>
+            <div id="admin-economy" class="admin-panel" style="display:none;"></div>
         </main>
 
         <!-- ========== PROFILE VIEW ========== -->
@@ -721,9 +721,19 @@
                 </div>
             </div>
 
+            <div class="profile-tabs-card" id="profile-tabs-card" style="display:none;">
+                <h3>🪙 Tabs</h3>
+                <div id="profile-tabs-summary"></div>
+            </div>
+
             <div class="profile-chart-card">
                 <h3>My Rating History</h3>
                 <canvas id="chart-my-ratings"></canvas>
+            </div>
+
+            <div class="profile-submissions-section" id="profile-submissions-section" style="display:none;">
+                <h3>My Beer Submissions</h3>
+                <div id="profile-submissions-list" class="reviews-list"></div>
             </div>
 
             <div class="profile-reviews-section">
@@ -809,6 +819,42 @@
         </div>
     </div>
 
+    <div id="tabs-submission-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="tabs-submission-title" style="display:none;">
+        <div class="modal-content tabs-submission-content">
+            <h3 id="tabs-submission-title">Submit a New Beer</h3>
+            <form id="tabs-submission-form" class="rating-form">
+                <div class="form-group">
+                    <label for="submission-beer-name">Beer name *</label>
+                    <input id="submission-beer-name" type="text" required>
+                </div>
+                <div class="form-row">
+                    <div class="form-group flex-1">
+                        <label for="submission-brewery">Brewery</label>
+                        <input id="submission-brewery" type="text">
+                    </div>
+                    <div class="form-group flex-1">
+                        <label for="submission-style">Style</label>
+                        <select id="submission-style">
+                            <option value="">Select style...</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="submission-abv">ABV</label>
+                    <input id="submission-abv" type="number" min="0" max="30" step="0.1">
+                </div>
+                <div class="form-group">
+                    <label for="submission-notes">Notes</label>
+                    <textarea id="submission-notes" rows="3" placeholder="Tell us about this beer"></textarea>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-ghost" id="tabs-submission-cancel">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Submit Beer</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <!-- Scripts -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
@@ -816,6 +862,8 @@
     <script src="config.js"></script>
     <script src="supabase.js"></script>
     <script src="charts.js"></script>
+    <script src="tabs.js"></script>
+    <script src="admin.js"></script>
     <script src="app.js"></script>
     <script src="exchange.js"></script>
     <script src="map.js"></script>

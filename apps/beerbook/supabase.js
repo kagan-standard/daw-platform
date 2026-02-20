@@ -126,9 +126,35 @@ const DB = {
     },
 
     isAdmin() {
+        if (this.currentUser && typeof this.currentUser.isAdmin === 'boolean') {
+            return this.currentUser.isAdmin;
+        }
         const claims = this.getTokenClaims();
         const roles = claims?.realm_access?.roles || [];
         return Array.isArray(roles) && roles.includes('beerbook_admin');
+    },
+
+    async getProfile() {
+        if (this.isDemo) {
+            return this.currentUser || null;
+        }
+        return await this._api('GET', '/api/profile/me');
+    },
+
+    async hydrateCurrentUserProfile() {
+        if (!this.currentUser || this.isDemo) return this.currentUser;
+        try {
+            const profileData = await this.getProfile();
+            this.currentUser = {
+                ...this.currentUser,
+                ...profileData,
+                isAdmin: !!(profileData && profileData.is_admin),
+            };
+        } catch (err) {
+            console.warn('Failed to hydrate profile from API:', err?.message || err);
+            this.currentUser.isAdmin = this.isAdmin();
+        }
+        return this.currentUser;
     },
 
     async _api(method, path, opts = {}) {
@@ -784,6 +810,44 @@ const DB = {
         } catch { return { top_reviewers: [], top_beers: [], top_yg_values: [], most_venues: [] }; }
     },
 
+    async getTabsProfile(userId = null) {
+        if (this.isDemo) return { data: null };
+        const path = userId
+            ? `/api/tabs/profile/${encodeURIComponent(userId)}`
+            : '/api/tabs/profile';
+        return await this._api('GET', path);
+    },
+
+    async getTabsNotifications(limit = 50, offset = 0) {
+        if (this.isDemo) return { data: [], metadata: { unread_count: 0 } };
+        return await this._api('GET', `/api/tabs/notifications?limit=${Math.max(1, Number(limit) || 50)}&offset=${Math.max(0, Number(offset) || 0)}`);
+    },
+
+    async markTabsNotificationRead(notificationId) {
+        if (this.isDemo) return { ok: true };
+        return await this._api('PATCH', `/api/tabs/notifications/${encodeURIComponent(notificationId)}/read`);
+    },
+
+    async markAllTabsNotificationsRead() {
+        if (this.isDemo) return { ok: true };
+        return await this._api('PATCH', '/api/tabs/notifications/read-all');
+    },
+
+    async createTabsSubmission(payload) {
+        if (this.isDemo) return { data: { ...payload, id: Utils.uid(), status: 'pending', created_at: new Date().toISOString() } };
+        return await this._api('POST', '/api/tabs/submissions', { body: JSON.stringify(payload) });
+    },
+
+    async getTabsSubmissions() {
+        if (this.isDemo) return { data: [] };
+        return await this._api('GET', '/api/tabs/submissions');
+    },
+
+    async getTabsLeaderboard(limit = 50, offset = 0) {
+        if (this.isDemo) return { data: [] };
+        return await this._api('GET', `/api/tabs/leaderboard?limit=${Math.max(1, Number(limit) || 50)}&offset=${Math.max(0, Number(offset) || 0)}`);
+    },
+
     async getBeerOfTheWeek() {
         if (this.isDemo) return null;
         try {
@@ -994,5 +1058,64 @@ const DB = {
         if (params.from) qs.set('from', params.from);
         if (params.to) qs.set('to', params.to);
         return await this._api('GET', `/api/admin/traffic?${qs.toString()}`);
+    },
+
+    async adminTabsGetUsers() {
+        if (this.isDemo) return { data: [] };
+        return await this._api('GET', '/api/admin/tabs/users');
+    },
+
+    async adminTabsSetSeeder(userId, isSeeder) {
+        if (this.isDemo) return { data: null };
+        return await this._api('PATCH', `/api/admin/tabs/users/${encodeURIComponent(userId)}/seeder`, {
+            body: JSON.stringify({ is_seeder: !!isSeeder }),
+        });
+    },
+
+    async adminTabsSetTier(userId, tier) {
+        if (this.isDemo) return { data: null };
+        return await this._api('PATCH', `/api/admin/tabs/users/${encodeURIComponent(userId)}/tier`, {
+            body: JSON.stringify({ tier }),
+        });
+    },
+
+    async adminTabsAdjustBalance(userId, amount, reason) {
+        if (this.isDemo) return { data: null };
+        return await this._api('POST', `/api/admin/tabs/users/${encodeURIComponent(userId)}/adjust`, {
+            body: JSON.stringify({ amount, reason }),
+        });
+    },
+
+    async adminTabsGetSubmissions(status = 'pending') {
+        if (this.isDemo) return { data: [] };
+        if (status === 'all') {
+            const [pending, approved, rejected] = await Promise.all([
+                this._api('GET', '/api/admin/tabs/submissions?status=pending'),
+                this._api('GET', '/api/admin/tabs/submissions?status=approved'),
+                this._api('GET', '/api/admin/tabs/submissions?status=rejected'),
+            ]);
+            return {
+                data: [
+                    ...(pending?.data || []),
+                    ...(approved?.data || []),
+                    ...(rejected?.data || []),
+                ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
+            };
+        }
+        return await this._api('GET', `/api/admin/tabs/submissions?status=${encodeURIComponent(status)}`);
+    },
+
+    async adminTabsReviewSubmission(id, status, reviewNotes = null) {
+        if (this.isDemo) return { data: null };
+        const payload = { status };
+        if (reviewNotes != null) payload.review_notes = reviewNotes;
+        return await this._api('PATCH', `/api/admin/tabs/submissions/${encodeURIComponent(id)}`, {
+            body: JSON.stringify(payload),
+        });
+    },
+
+    async adminTabsGetStats() {
+        if (this.isDemo) return {};
+        return await this._api('GET', '/api/admin/tabs/stats');
     }
 };
