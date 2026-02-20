@@ -499,13 +499,11 @@ input, select, textarea, button {
     color: var(--gold);
 }
 
-/* Hamburger menu — mobile only; hide on desktop */
+/* Hamburger menu — mobile only; hide on desktop. Do NOT add .topbar here — it must stay visible. */
 @media (min-width: 769px) {
+    /* Only hide the hamburger button and its dropdown on desktop */
     .hamburger-btn,
-    #menu-toggle {
-        display: none !important;
-    }
-
+    #menu-toggle,
     .hamburger-dropdown,
     #hamburger-menu {
         display: none !important;
