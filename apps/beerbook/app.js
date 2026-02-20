@@ -204,6 +204,8 @@ const App = {
     catalogHasMore: false,
     catalogStyles: [],
     catalogExpandedId: null,
+    _pendingPhotoBlob: null,
+    _pendingPhotoPreviewUrl: null,
 
     toast(message, type = 'info') {
         Utils.toast(message, type, 3000);
@@ -680,16 +682,17 @@ const App = {
             }
 
             let photoUrl = null;
-            const previewImg = document.querySelector('#photo-preview img');
-            if (previewImg && previewImg.src && previewImg.src.startsWith('data:')) {
+            if (this._pendingPhotoBlob) {
                 try {
-                    this.setLoading(e.target, true);
-                    const blob = await this.dataUrlToBlob(previewImg.src);
-                    const file = new File([blob], 'photo.jpg', { type: blob.type || 'image/jpeg' });
+                    this.setLoadingText(e.target, 'Uploading photo...');
+                    const file = new File([this._pendingPhotoBlob], 'photo.jpg', { type: this._pendingPhotoBlob.type || 'image/jpeg' });
                     const up = await DB.uploadPhoto(file);
                     photoUrl = (up && up.url) ? up.url : null;
-                } catch (err) {
-                    App.toast('Photo upload failed: ' + err.message, 'error');
+                } catch (photoErr) {
+                    console.error('Photo upload failed:', photoErr);
+                    App.toast(photoErr.message || 'Photo upload failed', 'error');
+                    this.setLoading(e.target, false);
+                    return;
                 }
             }
 
@@ -718,7 +721,7 @@ const App = {
             };
 
             try {
-                this.setLoading(e.target, true);
+                this.setLoadingText(e.target, 'Saving rating...');
                 const result = await DB.addRating(rating);
                 if (result && result.updated) {
                     App.toast(`Rating updated! (previously ${result.previous_rating} ★)`, 'success');
@@ -1604,30 +1607,63 @@ const App = {
             App.toast('Photo must be under 5MB', 'error');
             return;
         }
-        const reader = new FileReader();
-        reader.onload = (ev) => {
-            const img = new Image();
-            img.onload = () => {
-                let w = img.width, h = img.height;
-                if (w > 1200) {
-                    const c = document.createElement('canvas');
-                    c.width = 1200;
-                    c.height = Math.round(1200 * h / w);
-                    const ctx = c.getContext('2d');
-                    ctx.drawImage(img, 0, 0, c.width, c.height);
-                    const dataUrl = c.toDataURL(file.type || 'image/jpeg', 0.9);
-                    document.getElementById('photo-preview').innerHTML = `<img src="${dataUrl}" alt="Preview"><button type="button" class="photo-remove" data-dataurl="${dataUrl.replace(/^data:[^;]+;base64,/, '')}" data-type="${file.type}">Remove photo</button>`;
-                } else {
-                    document.getElementById('photo-preview').innerHTML = `<img src="${ev.target.result}" alt="Preview"><button type="button" class="photo-remove" data-url="${ev.target.result}">Remove photo</button>`;
-                }
-                document.getElementById('photo-preview').querySelector('.photo-remove').addEventListener('click', () => {
-                    document.getElementById('photo-preview').innerHTML = '';
+        const previewEl = document.getElementById('photo-preview');
+        if (!previewEl) return;
+        if (this._pendingPhotoPreviewUrl) {
+            URL.revokeObjectURL(this._pendingPhotoPreviewUrl);
+            this._pendingPhotoPreviewUrl = null;
+        }
+        this._pendingPhotoBlob = null;
+
+        const sourceUrl = URL.createObjectURL(file);
+        const img = new Image();
+        img.onload = () => {
+            URL.revokeObjectURL(sourceUrl);
+            const w = img.width;
+            const h = img.height;
+            const showPreview = () => {
+                if (this._pendingPhotoPreviewUrl) URL.revokeObjectURL(this._pendingPhotoPreviewUrl);
+                this._pendingPhotoPreviewUrl = URL.createObjectURL(this._pendingPhotoBlob);
+                previewEl.innerHTML = `<img src="${this._pendingPhotoPreviewUrl}" alt="Preview"><button type="button" class="photo-remove">Remove photo</button>`;
+                previewEl.querySelector('.photo-remove')?.addEventListener('click', () => {
+                    if (this._pendingPhotoPreviewUrl) {
+                        URL.revokeObjectURL(this._pendingPhotoPreviewUrl);
+                        this._pendingPhotoPreviewUrl = null;
+                    }
+                    this._pendingPhotoBlob = null;
+                    previewEl.innerHTML = '';
                     document.getElementById('photo-input').value = '';
                 });
             };
-            img.src = ev.target.result;
+
+            if (w > 1200) {
+                const c = document.createElement('canvas');
+                c.width = 1200;
+                c.height = Math.round(1200 * h / w);
+                const ctx = c.getContext('2d');
+                if (!ctx) {
+                    App.toast('Could not process photo', 'error');
+                    return;
+                }
+                ctx.drawImage(img, 0, 0, c.width, c.height);
+                c.toBlob((blob) => {
+                    if (!blob) {
+                        App.toast('Could not process photo', 'error');
+                        return;
+                    }
+                    this._pendingPhotoBlob = blob;
+                    showPreview();
+                }, 'image/jpeg', 0.8);
+            } else {
+                this._pendingPhotoBlob = file;
+                showPreview();
+            }
         };
-        reader.readAsDataURL(file);
+        img.onerror = () => {
+            URL.revokeObjectURL(sourceUrl);
+            App.toast('Could not read photo', 'error');
+        };
+        img.src = sourceUrl;
     },
 
     closeDeleteModal() {
@@ -2805,8 +2841,14 @@ const App = {
         btn.disabled = loading;
     },
 
-    dataUrlToBlob(dataUrl) {
-        return fetch(dataUrl).then(r => r.blob());
+    setLoadingText(form, text) {
+        const btn = form.querySelector('button[type="submit"]');
+        if (!btn) return;
+        const textEl = btn.querySelector('.btn-text');
+        const loader = btn.querySelector('.btn-loader');
+        if (textEl) textEl.style.display = 'none';
+        if (loader) { loader.style.display = ''; loader.textContent = text; }
+        btn.disabled = true;
     },
 
     resetRatingForm(form) {
@@ -2827,6 +2869,11 @@ const App = {
         document.getElementById('price-happy-hour').checked = false;
         document.getElementById('price-log-fields').style.display = 'none';
         document.getElementById('price-log-toggle').setAttribute('aria-expanded', 'false');
+        if (this._pendingPhotoPreviewUrl) {
+            URL.revokeObjectURL(this._pendingPhotoPreviewUrl);
+            this._pendingPhotoPreviewUrl = null;
+        }
+        this._pendingPhotoBlob = null;
         document.getElementById('photo-preview').innerHTML = '';
         document.getElementById('photo-input').value = '';
     }

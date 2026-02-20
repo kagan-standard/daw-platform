@@ -794,18 +794,35 @@ const DB = {
 
     async uploadPhoto(file) {
         if (this.isDemo) return { url: null };
+
+        // Ensure token is fresh — uploadPhoto bypasses _api() so must check manually
+        const tokens = Utils.storage.get('oidc_tokens');
+        if (tokens?.expires_at && Date.now() > tokens.expires_at - 60000) {
+            const refreshed = await this._refreshToken();
+            if (!refreshed) throw new Error('Session expired — please sign in again');
+        }
+
         const formData = new FormData();
         formData.append('file', file);
         const url = `${this.apiBaseUrl}/api/upload`;
         const headers = {};
         const token = this._getAccessToken();
         if (token) headers['Authorization'] = `Bearer ${token}`;
-        const res = await fetch(url, { method: 'POST', headers, body: formData });
-        const text = await res.text();
-        let body;
-        try { body = text ? JSON.parse(text) : null; } catch { body = null; }
-        if (!res.ok) throw new Error(body?.error || body?.message || `Upload failed: ${res.status}`);
-        return body;
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 30000);
+        try {
+            const res = await fetch(url, { method: 'POST', headers, body: formData, signal: controller.signal });
+            clearTimeout(timeout);
+            const text = await res.text();
+            let body;
+            try { body = text ? JSON.parse(text) : null; } catch { body = null; }
+            if (!res.ok) throw new Error(body?.error || body?.message || `Upload failed: ${res.status}`);
+            return body;
+        } catch (err) {
+            clearTimeout(timeout);
+            if (err.name === 'AbortError') throw new Error('Photo upload timed out — please try again on a better connection');
+            throw err;
+        }
     },
 
     async createVenue(venue) {
