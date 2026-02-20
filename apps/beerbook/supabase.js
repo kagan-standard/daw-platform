@@ -456,7 +456,7 @@ const DB = {
             const reviews = Utils.storage.get('reviews', []);
             reviews.unshift(rev);
             Utils.storage.set('reviews', reviews);
-            return rev;
+            return { data: rev, updated: false };
         }
         const body = {
             beer_name: record.beerName,
@@ -478,9 +478,10 @@ const DB = {
             photo_url: record.photo_url,
             beer_id: record.beer_id,
         };
-        const data = await this._api('POST', '/api/ratings', { body: JSON.stringify(body) });
+        const response = await this._api('POST', '/api/ratings', { body: JSON.stringify(body) });
         invalidateCache('');
-        return data;
+        if (response && response.data !== undefined) return response;
+        return { data: response || null, updated: false };
     },
 
     cacheInvalidate(prefix) { invalidateCache(prefix || ''); },

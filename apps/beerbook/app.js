@@ -629,8 +629,12 @@ const App = {
 
             try {
                 this.setLoading(e.target, true);
-                await DB.addRating(rating);
-                App.toast(`Rated "${rating.beerName}" ${Utils.stars(ratingVal)}`, 'success');
+                const result = await DB.addRating(rating);
+                if (result && result.updated) {
+                    App.toast(`Rating updated! (previously ${result.previous_rating} ★)`, 'success');
+                } else {
+                    App.toast(`Rated "${rating.beerName}" ${Utils.stars(ratingVal)}`, 'success');
+                }
 
                 const priceAmount = document.getElementById('price-amount').value.trim();
                 const priceHappy = document.getElementById('price-happy-hour').checked;
@@ -1001,8 +1005,65 @@ const App = {
                 dropdown.setAttribute('aria-hidden', 'true');
                 const hintEl = document.getElementById('autocomplete-hint');
                 if (hintEl) hintEl.style.display = 'none';
+                this._handleSelectedBeerExistingRatings(el.dataset.beerId || null, el.dataset.name || '');
             });
         });
+    },
+
+    _normalizedBeerName(name) {
+        return String(name || '').toLowerCase().trim().replace(/\s+/g, ' ');
+    },
+
+    _applyExistingRatingToForm(existing) {
+        if (!existing) return;
+        const rating = Number(existing.rating) || 0;
+        if (rating >= 1 && rating <= 5) {
+            document.getElementById('beer-rating').value = rating;
+            document.getElementById('rating-label').textContent = Utils.ratingLabel(rating);
+            document.querySelectorAll('#star-rating .star').forEach((star) => {
+                const active = Number(star.dataset.value) <= rating;
+                star.classList.toggle('active', active);
+            });
+        }
+        ['hoppy', 'malty', 'bitter', 'sweet', 'fruity'].forEach((flavor) => {
+            const val = Number(existing[`flavor_${flavor}`]) || 0;
+            const slider = document.getElementById(`flavor-${flavor}`);
+            const readout = document.getElementById(`val-${flavor}`);
+            if (slider) slider.value = String(val);
+            if (readout) readout.textContent = String(val);
+        });
+        const notes = document.getElementById('beer-notes');
+        if (notes) notes.value = existing.notes || '';
+        if (typeof App._ygSetValue === 'function') {
+            const yg = (existing.yg_value != null && Number(existing.yg_value) > 0) ? Number(existing.yg_value) : 0;
+            App._ygSetValue(yg);
+        }
+    },
+
+    _handleSelectedBeerExistingRatings(beerId, beerName) {
+        const allRatings = this.allRatings || [];
+        if (!allRatings.length) return;
+        const currentVenueId = document.getElementById('rating-venue-id')?.value || null;
+        const normalizedSelectedName = this._normalizedBeerName(beerName);
+        const matchesBeer = (r) => {
+            if (beerId && r.beer_id && String(r.beer_id) === String(beerId)) return true;
+            return this._normalizedBeerName(r.beer_name) === normalizedSelectedName;
+        };
+        const beerMatches = allRatings.filter(matchesBeer);
+        if (!beerMatches.length) return;
+
+        const existingAtVenue = beerMatches.find((r) => {
+            if (currentVenueId == null || currentVenueId === '') return !r.venue_id;
+            return String(r.venue_id || '') === String(currentVenueId);
+        }) || null;
+
+        const otherVenueRatings = beerMatches.filter((r) => r !== existingAtVenue);
+        if (existingAtVenue) {
+            this._applyExistingRatingToForm(existingAtVenue);
+            App.toast(`You rated this ${existingAtVenue.rating} ★ — submitting will update your rating`, 'info');
+        } else if (otherVenueRatings.length > 0) {
+            App.toast(`You've rated this at ${otherVenueRatings.length} other venue(s) — this will be a new rating`, 'info');
+        }
     },
 
     bindBreweryAutocomplete() {
@@ -1643,6 +1704,30 @@ const App = {
             const ygBadge = (r.yg_value != null && r.yg_value > 0) ? ` <span class="yg-badge-pill">${r.yg_value} YG</span>` : '';
             return `<div class="beer-detail-rating" data-rating-id="${Utils.escapeHtml(r.id)}"><span class="beer-detail-rating-stars">${Utils.stars(r.rating)}</span>${ygBadge} — ${Utils.escapeHtml(r.user_name || 'Anonymous')} · ${Utils.timeAgo(r.created_at)}${r.notes ? ` — ${Utils.escapeHtml(Utils.truncate(r.notes, 60))}` : ''} <span class="beer-detail-rating-cheers">${this.cheersButtonHtml(r.id)}</span></div>`;
         }).join('');
+        const myRatingsForBeer = (beer.ratings || []).filter((r) => String(r.user_id || '') === String(DB.currentUser?.id || ''));
+        const myRatingsHtml = myRatingsForBeer.length ? (() => {
+            const avg = (myRatingsForBeer.reduce((sum, r) => sum + (Number(r.rating) || 0), 0) / myRatingsForBeer.length).toFixed(1);
+            const rows = myRatingsForBeer.slice(0, 10).map((r) => {
+                const venueName = r.location_name || 'General';
+                let dateLabel = '';
+                if (r.created_at) {
+                    const d = new Date(r.created_at);
+                    if (!Number.isNaN(d.getTime())) dateLabel = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+                }
+                return `<div class="venue-rating-item">
+                    <span class="user-venue-name">${Utils.escapeHtml(venueName)}</span>
+                    <span class="venue-score">${Utils.escapeHtml(String(r.rating || 0))} ★</span>
+                    <span class="venue-date">${Utils.escapeHtml(dateLabel || '')}</span>
+                </div>`;
+            }).join('');
+            return `<div class="user-beer-ratings">
+                <div class="user-avg-rating">
+                    <span class="user-avg-score">Your Avg: ${avg} / 5</span>
+                    <span class="user-avg-label">across ${myRatingsForBeer.length} venue${myRatingsForBeer.length !== 1 ? 's' : ''}</span>
+                </div>
+                <div class="venue-ratings-list">${rows}</div>
+            </div>`;
+        })() : '';
 
         const catalogInfoHtml = (catalogBeer && (catalogBeer.description || catalogBeer.review_overall != null || catalogBeer.abv != null || catalogBeer.style)) ? (() => {
             const parts = [];
@@ -1675,6 +1760,7 @@ const App = {
                 <span>${reviewCount} review${reviewCount !== 1 ? 's' : ''}</span>
                 ${avgYg ? `<span>${avgYg} YG avg</span>` : ''}
             </div>
+            ${myRatingsHtml}
             ${ygContext ? `<p class="beer-detail-yg-context">${ygContext}</p>` : ''}
             <div class="beer-detail-ratings">
                 <h4>Ratings</h4>

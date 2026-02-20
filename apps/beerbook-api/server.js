@@ -509,8 +509,8 @@ app.post('/api/ratings', authMiddleware, async (req, res) => {
   const ygValue = b.yg_value ?? b.ygValue ?? null;
   if (ygValue != null) {
     const yg = Number(ygValue);
-    if (!Number.isFinite(yg) || yg < 0.1 || yg > 10.0) {
-      return res.status(400).json({ error: 'yg_value must be between 0.1 and 10.0' });
+    if (!Number.isFinite(yg) || yg < 0 || yg > 12 || !Number.isInteger(yg)) {
+      return res.status(400).json({ error: 'yg_value must be an integer between 0 and 12' });
     }
   }
   const lat = b.latitude ?? b.lat;
@@ -543,15 +543,67 @@ app.post('/api/ratings', authMiddleware, async (req, res) => {
   if (!record.beer_name || !record.style || !record.rating) {
     return res.status(400).json({ error: 'beer_name, style, and rating required' });
   }
-  const { status, body } = await rest('POST', '/ratings', {
+
+  let existing = null;
+  const existingRes = await rest('POST', '/rpc/find_existing_user_rating', {
+    body: JSON.stringify({
+      p_user_id: sub,
+      p_beer_id: record.beer_id || null,
+      p_beer_name: record.beer_name,
+      p_venue_id: record.venue_id || null,
+    }),
+    headers: { 'Content-Type': 'application/json' },
+  });
+  if (existingRes.status < 400 && Array.isArray(existingRes.body) && existingRes.body.length > 0) {
+    existing = existingRes.body[0];
+  }
+
+  if (existing && existing.id) {
+    const updatePayload = {
+      rating: record.rating,
+      beer_name: record.beer_name,
+      brewery: record.brewery,
+      style: record.style,
+      abv: record.abv,
+      beer_id: record.beer_id,
+      flavor_hoppy: record.flavor_hoppy,
+      flavor_malty: record.flavor_malty,
+      flavor_bitter: record.flavor_bitter,
+      flavor_sweet: record.flavor_sweet,
+      flavor_fruity: record.flavor_fruity,
+      notes: record.notes,
+      yg_value: record.yg_value,
+      latitude: record.latitude,
+      longitude: record.longitude,
+      location_name: record.location_name,
+      venue_id: record.venue_id,
+      photo_url: record.photo_url,
+    };
+    const updateRes = await rest('PATCH', `/ratings?id=eq.${encodeURIComponent(existing.id)}`, {
+      headers: { 'Prefer': 'return=representation' },
+      body: JSON.stringify(updatePayload),
+    });
+    if (updateRes.status >= 400) {
+      return res.status(updateRes.status).json(updateRes.body || { error: 'Update failed' });
+    }
+    const updatedRow = Array.isArray(updateRes.body) ? updateRes.body[0] : updateRes.body;
+    return res.json({
+      data: updatedRow || null,
+      updated: true,
+      previous_rating: existing.rating ?? null,
+      message: `Rating updated (previously ${existing.rating} ★)`,
+    });
+  }
+
+  const insertRes = await rest('POST', '/ratings', {
     headers: { 'Prefer': 'return=representation' },
     body: JSON.stringify(record),
   });
-  if (status >= 400) {
-    return res.status(status).json(body || { error: 'Insert failed' });
+  if (insertRes.status >= 400) {
+    return res.status(insertRes.status).json(insertRes.body || { error: 'Insert failed' });
   }
-  const row = Array.isArray(body) ? body[0] : body;
-  res.status(201).json(row || record);
+  const row = Array.isArray(insertRes.body) ? insertRes.body[0] : insertRes.body;
+  res.status(201).json({ data: row || record, updated: false });
 });
 
 // DELETE /api/ratings/:id — auth required, ownership check

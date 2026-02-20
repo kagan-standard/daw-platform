@@ -1733,6 +1733,59 @@ input, select, textarea, button {
 .beer-detail-rating-stars { color: var(--gold); }
 #beer-detail-rate-btn { margin-top: var(--space-lg); }
 
+.user-beer-ratings {
+    margin: 0 0 var(--space-lg);
+}
+
+.user-avg-rating {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.user-avg-score {
+    font-weight: 700;
+    font-size: 1.1em;
+}
+
+.user-avg-label {
+    font-size: 0.8em;
+    opacity: 0.6;
+}
+
+.venue-ratings-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.venue-rating-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    border-radius: 6px;
+    background: var(--card-bg, rgba(255,255,255,0.03));
+    font-size: 0.9em;
+}
+
+.user-venue-name {
+    flex: 1;
+    font-weight: 500;
+}
+
+.venue-score {
+    font-weight: 700;
+    color: var(--accent, #f5a623);
+    margin: 0 12px;
+}
+
+.venue-date {
+    font-size: 0.8em;
+    opacity: 0.5;
+}
+
 .beer-name-link {
     color: var(--gold);
     cursor: pointer;
