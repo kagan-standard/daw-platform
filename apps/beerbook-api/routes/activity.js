@@ -2,6 +2,7 @@
  * Activity feed, cheers, user profile & stats
  */
 const express = require('express');
+const { awardTabsForCheers } = require('../lib/tabs');
 
 module.exports = function (opts) {
   const { rest } = opts;
@@ -48,6 +49,13 @@ module.exports = function (opts) {
         const record = { rating_id: req.params.id, user_id: sub, reaction_type: 'cheers' };
         const { status: postStatus, body } = await rest('POST', '/reactions', { headers: { Prefer: 'return=representation' }, body: JSON.stringify(record) });
         if (postStatus >= 400) return res.status(postStatus).json(body || { error: 'Insert failed' });
+        const ratingOut = await rest('GET', `/ratings?id=eq.${ratingId}&select=id,user_id&limit=1`);
+        if (ratingOut.status < 400) {
+          const rating = Array.isArray(ratingOut.body) && ratingOut.body[0] ? ratingOut.body[0] : null;
+          if (rating && rating.user_id) {
+            await awardTabsForCheers(rest, sub, rating.user_id, req.params.id);
+          }
+        }
         const countRes = await rest('GET', `/reactions?rating_id=eq.${ratingId}&select=id`, { headers: { Prefer: 'count=exact' } });
         const count = opts.totalFromContentRange(countRes.headers['content-range']) ?? 1;
         res.json({ action: 'added', count });

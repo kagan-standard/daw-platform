@@ -4,7 +4,9 @@
   "description": "BFF for BeerBook — validates Keycloak tokens, proxies to PostgREST",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "tabs:weekly-eval": "node scripts/weekly-tabs-eval.js",
+    "tabs:streak-risk": "node scripts/streak-risk-check.js"
   },
   "engines": { "node": ">=20" },
   "dependencies": {

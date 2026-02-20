@@ -6,6 +6,7 @@ const express = require('express');
 const path = require('path');
 const rateLimit = require('express-rate-limit');
 const { createRemoteJWKSet, jwtVerify } = require('jose');
+const { awardTabsForRating } = require('./lib/tabs');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -56,7 +57,7 @@ function corsMiddleware(req, res, next) {
   if (req.method === 'OPTIONS') {
     if (allowed) {
       res.setHeader('Access-Control-Allow-Origin', CORS_ORIGIN);
-      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
       res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
       res.setHeader('Access-Control-Max-Age', '86400');
       return res.status(204).end();
@@ -65,7 +66,7 @@ function corsMiddleware(req, res, next) {
   }
   if (allowed) {
     res.setHeader('Access-Control-Allow-Origin', CORS_ORIGIN);
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   }
   next();
@@ -219,6 +220,7 @@ const uploadRoutes = require('./routes/upload')({ ...routeHelpers });
 const highlightsRoutes = require('./routes/highlights')({ ...routeHelpers });
 const adminRoutes = require('./routes/admin')({ ...routeHelpers });
 const trackingRoutes = require('./routes/tracking')({ ...routeHelpers });
+const tabsRoutes = require('./routes/tabs')({ ...routeHelpers });
 
 app.use('/api', activityRoutes);
 app.use('/api/beers', beersRoutes);
@@ -231,6 +233,7 @@ app.use('/api/upload', uploadRoutes);
 app.use('/api/highlights', highlightsRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api', trackingRoutes);
+app.use('/api', tabsRoutes);
 
 // ---------- Phase 3.2: Catalog (no auth — public catalog) ----------
 function toNumberOrNull(v) {
@@ -560,8 +563,15 @@ app.post('/api/ratings', authMiddleware, async (req, res) => {
   }
   const lat = b.latitude ?? b.lat;
   const lng = b.longitude ?? b.lng;
+  const priceCentsRaw = b.price_cents ?? b.priceCents ?? null;
   if ((lat != null && lng == null) || (lat == null && lng != null)) {
     return res.status(400).json({ error: 'latitude and longitude must be provided together' });
+  }
+  if (priceCentsRaw != null) {
+    const priceCents = Number(priceCentsRaw);
+    if (!Number.isInteger(priceCents) || priceCents <= 0) {
+      return res.status(400).json({ error: 'price_cents must be a positive integer' });
+    }
   }
   const record = {
     user_id: sub,
@@ -584,6 +594,7 @@ app.post('/api/ratings', authMiddleware, async (req, res) => {
     venue_id: b.venue_id ?? b.venueId ?? null,
     photo_url: b.photo_url ?? b.photoUrl ?? null,
     beer_id: b.beer_id ?? b.beerId ?? null,
+    price_cents: priceCentsRaw != null ? Number(priceCentsRaw) : null,
   };
   if (!record.beer_name || !record.style || !record.rating) {
     return res.status(400).json({ error: 'beer_name, style, and rating required' });
@@ -648,7 +659,17 @@ app.post('/api/ratings', authMiddleware, async (req, res) => {
     return res.status(insertRes.status).json(insertRes.body || { error: 'Insert failed' });
   }
   const row = Array.isArray(insertRes.body) ? insertRes.body[0] : insertRes.body;
-  res.status(201).json({ data: row || record, updated: false });
+  const tabsResult = await awardTabsForRating(rest, sub, row?.id || null, row || record, {
+    displayName: preferred_username,
+    email: req.claims.email,
+  });
+  res.status(201).json({
+    data: row || record,
+    updated: false,
+    tabs_earned: tabsResult.tabs_earned,
+    tabs_breakdown: tabsResult.breakdown,
+    tabs_reason: tabsResult.reason,
+  });
 });
 
 // DELETE /api/ratings/:id — auth required, ownership check
