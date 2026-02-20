@@ -69,10 +69,18 @@ async function run() {
         `/beer_submissions?submitted_by=eq.${encodedUser}&status=eq.approved&reviewed_at=gte.${encodeURIComponent(from)}&reviewed_at=lte.${encodeURIComponent(to)}&select=id&limit=1000`
       ),
     ]);
+    const txEarnRows = await rest(
+      'GET',
+      `/tab_transactions?user_id=eq.${encodedUser}&transaction_type=eq.earn&created_at=gte.${encodeURIComponent(from)}&created_at=lte.${encodeURIComponent(to)}&select=amount&limit=5000`
+    );
 
     const ratingsCount = Array.isArray(ratings) ? ratings.length : 0;
     const reviewsCount = (Array.isArray(ratings) ? ratings : []).filter((r) => (r.notes || '').trim().length >= 10).length;
     const contributionsCount = Array.isArray(submissions) ? submissions.length : 0;
+    const tabsEarnedThisWeek = (Array.isArray(txEarnRows) ? txEarnRows : []).reduce(
+      (sum, row) => sum + (Number(row.amount) || 0),
+      0
+    );
 
     let currentTier = profile.current_tier || 'taster';
     let weeksInactive = Number(profile.weeks_inactive) || 0;
@@ -139,6 +147,21 @@ async function run() {
     if (notification) {
       await rest('POST', '/tab_notifications', notification);
     }
+
+    await rest('POST', '/tab_notifications', {
+      user_id: userId,
+      notification_type: 'weekly_summary',
+      title: 'Weekly tabs summary',
+      message: `You earned ${tabsEarnedThisWeek} tabs last week.`,
+      metadata: {
+        week_start: from,
+        week_end: to,
+        tabs_earned: tabsEarnedThisWeek,
+        ratings_count: ratingsCount,
+        reviews_count: reviewsCount,
+        contributions_count: contributionsCount,
+      },
+    });
   }
 
   console.log(`Weekly tabs eval completed for ${profiles.length} users`);
