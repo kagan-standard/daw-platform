@@ -289,7 +289,46 @@ input::placeholder {
   color: rgba(245, 240, 232, 0.4);
 }
 
-/* PatternFly form controls override */
+/* Form-scoped: force ALL inputs in login/registration to full width + dark theme
+   (Keycloak 26 user-profile fields use different structure; this catches them) */
+#kc-form-login input[type="text"],
+#kc-form-login input[type="email"],
+#kc-form-login input[type="password"],
+#kc-register-form input[type="text"],
+#kc-register-form input[type="email"],
+#kc-register-form input[type="password"],
+.kc-form-card input[type="text"],
+.kc-form-card input[type="email"],
+.kc-form-card input[type="password"] {
+  width: 100%;
+  min-width: 0;
+  padding: 0.75rem 1rem;
+  margin: 0;
+  background: var(--daw-input-bg);
+  border: 1px solid var(--daw-input-border);
+  border-radius: 8px;
+  color: var(--daw-text);
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.95rem;
+  box-sizing: border-box;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  outline: none;
+}
+
+#kc-form-login input:focus,
+#kc-register-form input:focus,
+.kc-form-card input:focus {
+  border-color: var(--daw-gold);
+  box-shadow: 0 0 0 3px var(--daw-glow);
+}
+
+#kc-form-login input::placeholder,
+#kc-register-form input::placeholder,
+.kc-form-card input::placeholder {
+  color: var(--daw-text-dim);
+}
+
+/* PatternFly v4 form controls override */
 .pf-c-form-control,
 .pf-c-form-control[type="text"],
 .pf-c-form-control[type="password"],
@@ -305,6 +344,35 @@ input::placeholder {
 .pf-c-form-control:focus {
   border-color: var(--daw-gold) !important;
   box-shadow: 0 0 0 3px var(--daw-glow) !important;
+}
+
+/* PatternFly v5 (Keycloak 26) form controls override */
+.pf-v5-c-form-control,
+.pf-v5-c-form-control[type="text"],
+.pf-v5-c-form-control[type="password"],
+.pf-v5-c-form-control[type="email"] {
+  width: 100% !important;
+  min-width: 0 !important;
+  box-sizing: border-box !important;
+  padding: 0.75rem 1rem !important;
+  margin: 0 !important;
+  background: var(--daw-input-bg) !important;
+  border: 1px solid var(--daw-input-border) !important;
+  border-radius: 8px !important;
+  color: var(--daw-text) !important;
+  font-family: 'Outfit', sans-serif !important;
+  font-size: 0.95rem !important;
+  transition: border-color 0.2s, box-shadow 0.2s !important;
+  outline: none !important;
+}
+
+.pf-v5-c-form-control:focus {
+  border-color: var(--daw-gold) !important;
+  box-shadow: 0 0 0 3px var(--daw-glow) !important;
+}
+
+.pf-v5-c-form-control::placeholder {
+  color: var(--daw-text-dim) !important;
 }
 
 /* Labels (registration / Keycloak default) */
