@@ -574,7 +574,16 @@ const DB = {
         const key = `beerSearch:${q.toLowerCase().trim()}`;
         return cachedFetch(key, CACHE_TTL.beerSearch, async () => {
             const out = await this._api('GET', `/api/beers/search?q=${encodeURIComponent(q)}`);
-            return (out && out.data) ? out.data : [];
+            return (out && out.data ? out.data : []).map((row) => ({
+                id: row.id || row.beer_id || null,
+                beer_name: row.beer_name || row.name || '',
+                brewery: row.brewery || row.brewery_name || '',
+                style: row.style || '',
+                abv: row.abv != null ? row.abv : null,
+                review_overall: row.review_overall != null ? Number(row.review_overall) : null,
+                review_count: row.review_count != null ? Number(row.review_count) : 0,
+                source: row.source || 'catalog',
+            }));
         });
     },
 

@@ -42,20 +42,83 @@ module.exports = function (opts) {
     const q = (req.query.q || '').trim().replace(/%/g, '');
     if (!q) return res.json({ data: [] });
     const encoded = encodeURIComponent(q);
-    rest('GET', `/ratings?beer_name=ilike.${encoded}*&select=beer_name,brewery,style&limit=50`, {})
-      .then(({ status, body }) => {
-        if (status >= 400) return res.status(status).json(body || { error: 'Upstream error' });
-        const rows = Array.isArray(body) ? body : [];
-        const seen = new Set();
-        const deduped = [];
-        for (const r of rows) {
-          const key = (r.beer_name || '').toLowerCase();
-          if (seen.has(key)) continue;
-          seen.add(key);
-          deduped.push({ beer_name: r.beer_name, brewery: r.brewery || '', style: r.style || '' });
-          if (deduped.length >= 10) break;
-        }
-        res.json({ data: deduped });
+    const limit = 10;
+
+    const normalizeName = (name) => String(name || '')
+      .toLowerCase()
+      .replace(/[^\w\s]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    const fetchCatalogResults = async () => {
+      try {
+        const rpc = await rest('POST', '/rpc/search_beer_catalog', {
+          body: JSON.stringify({ search_term: q, max_results: limit }),
+          headers: { 'Content-Type': 'application/json' },
+        });
+        if (rpc.status < 400 && Array.isArray(rpc.body)) return rpc.body;
+      } catch (_) {}
+
+      try {
+        const fallback = await rest(
+          'GET',
+          `/beers?or=(name.ilike.${encoded}*,brewery_name.ilike.${encoded}*)&select=id,name,brewery_name,style,abv,review_overall,review_count&order=review_count.desc.nullslast&limit=${limit}`,
+          {},
+        );
+        if (fallback.status < 400 && Array.isArray(fallback.body)) return fallback.body;
+      } catch (_) {}
+
+      return [];
+    };
+
+    const fetchUserRows = async () => {
+      try {
+        const out = await rest('GET', `/ratings?beer_name=ilike.${encoded}*&select=beer_name,brewery,style,abv,beer_id&limit=50`, {});
+        if (out.status >= 400) return [];
+        return Array.isArray(out.body) ? out.body : [];
+      } catch (_) {
+        return [];
+      }
+    };
+
+    Promise.all([fetchCatalogResults(), fetchUserRows()])
+      .then(([catalogRows, userRows]) => {
+        const byName = new Map();
+        const ordered = [];
+
+        const upsert = (row, fallbackSource) => {
+          const beerName = row.name || row.beer_name || '';
+          const key = normalizeName(beerName);
+          if (!key) return;
+          const mapped = {
+            id: row.id || row.beer_id || null,
+            beer_name: beerName,
+            brewery: row.brewery_name || row.brewery || '',
+            style: row.style || '',
+            abv: row.abv != null ? row.abv : null,
+            review_overall: row.review_overall != null ? parseFloat(row.review_overall) : null,
+            review_count: Number(row.review_count) || 0,
+            source: row.source || fallbackSource,
+          };
+          if (!byName.has(key)) {
+            byName.set(key, mapped);
+            ordered.push(mapped);
+            return;
+          }
+          const existing = byName.get(key);
+          if ((!existing.id && mapped.id) || (existing.review_count === 0 && mapped.review_count > 0)) {
+            byName.set(key, { ...existing, ...mapped });
+          }
+        };
+
+        (catalogRows || []).forEach((row) => upsert(row, 'catalog'));
+        (userRows || []).forEach((row) => {
+          const key = normalizeName(row.beer_name);
+          if (!key || byName.has(key)) return;
+          upsert(row, 'user');
+        });
+
+        res.json({ data: ordered.slice(0, limit) });
       })
       .catch(next);
   });

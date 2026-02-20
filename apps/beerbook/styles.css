@@ -1086,6 +1086,10 @@ input, select, textarea, button {
     font-size: 0.9rem;
     border-bottom: 1px solid var(--border-subtle);
     transition: background 0.15s;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
 }
 
 .autocomplete-item:hover,
@@ -1095,6 +1099,41 @@ input, select, textarea, button {
 }
 
 .autocomplete-item:last-child { border-bottom: none; }
+
+.autocomplete-beer-info {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+}
+
+.autocomplete-beer-name {
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.autocomplete-beer-meta {
+    font-size: 0.8em;
+    opacity: 0.7;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.autocomplete-rating {
+    font-weight: 700;
+    font-size: 0.85em;
+    color: var(--accent, #f5a623);
+    white-space: nowrap;
+}
+
+.autocomplete-reviews {
+    font-size: 0.75em;
+    opacity: 0.6;
+    white-space: nowrap;
+}
 
 .autocomplete-group-label {
     font-size: 0.7rem;
@@ -1116,6 +1155,26 @@ input, select, textarea, button {
     font-size: 0.8rem;
     padding: 4px 8px;
     margin-top: 4px;
+}
+
+.community-rating {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 12px;
+    border-radius: 8px;
+    background: var(--card-bg, rgba(255,255,255,0.05));
+}
+
+.community-rating-score {
+    font-size: 1.5em;
+    font-weight: 700;
+    color: var(--accent, #f5a623);
+}
+
+.community-rating-label {
+    font-size: 0.8em;
+    opacity: 0.7;
 }
 
 .brewery-autocomplete-wrap { position: relative; }
