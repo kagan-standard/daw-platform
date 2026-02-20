@@ -1824,6 +1824,37 @@ input, select, textarea, button {
 .empty-state .btn { margin-top: var(--space-md); }
 
 /* ============ BROWSE ============ */
+.browse-tabs {
+    display: inline-flex;
+    gap: 4px;
+    padding: 4px;
+    margin-bottom: var(--space-lg);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-full);
+    background: var(--bg-surface);
+}
+
+.browse-tab {
+    border: none;
+    border-radius: var(--radius-full);
+    background: transparent;
+    color: var(--text-secondary);
+    padding: 0.45rem 0.95rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s var(--ease-out);
+}
+
+.browse-tab:hover {
+    color: var(--text-primary);
+}
+
+.browse-tab.active {
+    background: linear-gradient(180deg, var(--gold-hover) 0%, var(--gold) 100%);
+    color: var(--text-inverse);
+}
+
 .browse-controls {
     display: flex;
     gap: var(--space-md);
@@ -1897,6 +1928,9 @@ input, select, textarea, button {
 }
 
 .beer-card {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
     background: linear-gradient(180deg, var(--bg-surface) 0%, var(--bg-surface-fade) 100%);
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-lg);
@@ -1942,7 +1976,8 @@ input, select, textarea, button {
 
 .beer-card-details {
     display: flex;
-    gap: var(--space-md);
+    flex-wrap: wrap;
+    gap: 8px;
     margin-bottom: var(--space-sm);
 }
 
@@ -1956,6 +1991,9 @@ input, select, textarea, button {
 }
 
 .beer-card-stars {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     color: var(--gold);
     font-size: 0.9rem;
     letter-spacing: 2px;
@@ -1982,6 +2020,141 @@ input, select, textarea, button {
     border-top: 1px solid var(--border-subtle);
     font-size: 0.8rem;
     color: var(--text-muted);
+}
+
+.catalog-grid {
+    grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+}
+
+.catalog-card {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    background: linear-gradient(180deg, rgba(18, 31, 52, 0.92) 0%, rgba(14, 24, 41, 0.98) 100%);
+    border: 1px solid var(--border-subtle);
+    border-left: 3px solid var(--gold);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-card);
+    padding: var(--space-lg);
+    cursor: pointer;
+    transition: all 0.2s var(--ease-out);
+}
+
+.catalog-card:hover {
+    border-color: var(--border-default);
+    transform: translateY(-2px);
+}
+
+.catalog-card-title {
+    font-family: var(--font-display);
+    font-size: 1.05rem;
+    color: var(--gold);
+}
+
+.catalog-card-subtitle {
+    color: var(--text-secondary);
+    font-size: 0.88rem;
+}
+
+.catalog-card-meta {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.catalog-ibu {
+    color: var(--text-muted);
+    font-size: 0.78rem;
+}
+
+.catalog-card-description {
+    color: var(--text-primary);
+    opacity: 0.9;
+    line-height: 1.45;
+    font-size: 0.88rem;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.catalog-flavors {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px 10px;
+}
+
+.catalog-flavor-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.catalog-flavor-track {
+    width: 90px;
+    height: 8px;
+    border-radius: var(--radius-full);
+    background: var(--bg-elevated);
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.catalog-flavor-fill {
+    display: block;
+    height: 100%;
+    border-radius: var(--radius-full);
+    background: linear-gradient(90deg, var(--gold) 0%, var(--gold-hover) 100%);
+}
+
+.catalog-flavor-label {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+.catalog-flavor-empty {
+    color: var(--text-muted);
+    font-size: 0.8rem;
+}
+
+.catalog-card-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-sm);
+    padding-top: var(--space-xs);
+}
+
+.catalog-score {
+    font-size: 0.82rem;
+    color: var(--gold);
+}
+
+.catalog-card-detail {
+    border-top: 1px solid var(--border-subtle);
+    margin-top: 2px;
+    padding-top: var(--space-md);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.catalog-detail-description {
+    color: var(--text-primary);
+    font-size: 0.86rem;
+    line-height: 1.5;
+}
+
+.catalog-detail-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px 12px;
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+}
+
+.catalog-flavors-all {
+    grid-template-columns: 1fr;
 }
 
 /* ============ LEADERBOARD ============ */
@@ -2206,7 +2379,16 @@ input, select, textarea, button {
     .profile-header-card { flex-direction: column; text-align: center; }
     .profile-stats-grid { grid-template-columns: 1fr; }
     .beer-grid { grid-template-columns: 1fr; }
+    .catalog-grid { grid-template-columns: 1fr; }
     .browse-controls { flex-direction: column; }
+    .browse-tabs {
+        width: 100%;
+        display: flex;
+    }
+    .browse-tab {
+        flex: 1;
+        text-align: center;
+    }
 }
 
 @media (max-width: 519px) {
@@ -2859,6 +3041,12 @@ input, select, textarea, button {
     .browse-controls .filter-select {
         flex: 1 1 100%;
         max-width: 100%;
+    }
+    .catalog-flavors {
+        grid-template-columns: 1fr;
+    }
+    .catalog-detail-grid {
+        grid-template-columns: 1fr;
     }
     body { overflow-x: hidden; }
     .app .main-content { overflow-x: hidden; }

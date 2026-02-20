@@ -586,6 +586,27 @@ const DB = {
         return (out && out.data) ? out.data : [];
     },
 
+    async browseCatalog(opts = {}) {
+        if (this.isDemo) return { data: [], pagination: { limit: 30, offset: 0, total: 0 } };
+        const limit = Math.min(Math.max(Number(opts.limit) || 30, 1), 100);
+        const offset = Math.max(Number(opts.offset) || 0, 0);
+        const sort = (opts.sort || 'name');
+        const order = (opts.order === 'desc') ? 'desc' : 'asc';
+        const style = (opts.style || '').trim();
+        const q = (opts.q || '').trim();
+        let path = `/api/catalog/browse?limit=${limit}&offset=${offset}&sort=${encodeURIComponent(sort)}&order=${order}`;
+        if (style) path += `&style=${encodeURIComponent(style)}`;
+        if (q) path += `&q=${encodeURIComponent(q)}`;
+        const out = await this._api('GET', path);
+        return out || { data: [], pagination: { limit, offset, total: 0 } };
+    },
+
+    async getCatalogStyles() {
+        if (this.isDemo) return [];
+        const out = await this._api('GET', '/api/catalog/styles');
+        return (out && out.data) ? out.data : [];
+    },
+
     async getCatalogBeer(beerId) {
         if (this.isDemo || !beerId) return null;
         try {

@@ -23,6 +23,7 @@ const RATE_MAX = Number(process.env.RATE_LIMIT_MAX) || 100;
 const SORT_WHITELIST = ['created_at', 'rating', 'beer_name'];
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
+const CATALOG_SORT_WHITELIST = ['name', 'abv', 'review_overall', 'review_count'];
 
 // ---------- Helpers: call PostgREST ----------
 // BUG FIX #2: Don't spread opts into fetch — it overrides the constructed headers.
@@ -187,6 +188,48 @@ app.use('/api/upload', uploadRoutes);
 app.use('/api/highlights', highlightsRoutes);
 
 // ---------- Phase 3.2: Catalog (no auth — public catalog) ----------
+function toNumberOrNull(v) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+function mapCatalogBeer(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    brewery_name: row.brewery_name ?? null,
+    style: row.style ?? null,
+    abv: toNumberOrNull(row.abv),
+    description: row.description ?? null,
+    ibu_min: toNumberOrNull(row.ibu_min),
+    ibu_max: toNumberOrNull(row.ibu_max),
+    flavors: {
+      astringency: toNumberOrNull(row.flavor_astringency),
+      body: toNumberOrNull(row.flavor_body),
+      alcohol: toNumberOrNull(row.flavor_alcohol),
+      bitter: toNumberOrNull(row.flavor_bitter),
+      sweet: toNumberOrNull(row.flavor_sweet),
+      sour: toNumberOrNull(row.flavor_sour),
+      salty: toNumberOrNull(row.flavor_salty),
+      fruits: toNumberOrNull(row.flavor_fruity),
+      hoppy: toNumberOrNull(row.flavor_hoppy),
+      spices: toNumberOrNull(row.flavor_spicy),
+      malty: toNumberOrNull(row.flavor_malty),
+    },
+    reviews: {
+      aroma: toNumberOrNull(row.review_aroma),
+      appearance: toNumberOrNull(row.review_appearance),
+      palate: toNumberOrNull(row.review_palate),
+      taste: toNumberOrNull(row.review_taste),
+      overall: toNumberOrNull(row.review_overall),
+      count: toNumberOrNull(row.review_count),
+    },
+    // Backward-compat fields still used by existing frontend code paths.
+    review_overall: toNumberOrNull(row.review_overall),
+    review_count: toNumberOrNull(row.review_count),
+  };
+}
+
 // GET /api/catalog/search?q=<query>&limit=<n>
 app.get('/api/catalog/search', async (req, res) => {
   const q = (req.query.q || '').trim();
@@ -219,26 +262,88 @@ app.get('/api/catalog/search', async (req, res) => {
   }
 });
 
-// GET /api/catalog/beer/:id — single catalog beer (for detail view)
-app.get('/api/catalog/beer/:id', async (req, res) => {
-  const id = encodeURIComponent(req.params.id);
+// GET /api/catalog/browse?limit=30&offset=0&sort=name&order=asc&style=IPA&q=hazy
+app.get('/api/catalog/browse', async (req, res) => {
+  const rawLimit = parseInt(req.query.limit, 10);
+  const rawOffset = parseInt(req.query.offset, 10);
+  const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 100) : 30;
+  const offset = Number.isFinite(rawOffset) && rawOffset >= 0 ? rawOffset : 0;
+  const sort = CATALOG_SORT_WHITELIST.includes(req.query.sort) ? req.query.sort : 'name';
+  const order = req.query.order === 'desc' ? 'desc' : 'asc';
+  const style = (req.query.style || '').trim();
+  const q = (req.query.q || '').trim().replace(/%/g, '');
+  const like = encodeURIComponent(`*${q}*`);
+
+  let path = '/beers?';
+  path += 'select=id,name,brewery_name,style,abv,description,ibu_min,ibu_max,';
+  path += 'flavor_astringency,flavor_body,flavor_alcohol,flavor_bitter,flavor_sweet,flavor_sour,';
+  path += 'flavor_salty,flavor_fruity,flavor_hoppy,flavor_spicy,flavor_malty,';
+  path += 'review_aroma,review_appearance,review_palate,review_taste,review_overall,review_count';
+  path += `&limit=${limit}&offset=${offset}&order=${sort}.${order}`;
+
+  if (style) {
+    path += `&style=eq.${encodeURIComponent(style)}`;
+  }
+  if (q) {
+    path += `&or=(name.ilike.${like},brewery_name.ilike.${like},style.ilike.${like})`;
+  }
+
   try {
-    const { status, body } = await rest('GET', `/beers?id=eq.${id}&select=id,name,brewery_name,style,abv,description,review_overall,review_count&limit=1`);
+    const { status, headers, body } = await rest('GET', path, { headers: { Prefer: 'count=exact' } });
+    if (status >= 400) {
+      return res.status(status >= 500 ? 502 : status).json(body || { error: 'Catalog browse failed' });
+    }
+    const rows = Array.isArray(body) ? body : [];
+    const total = totalFromContentRange(headers['content-range']) ?? rows.length;
+    res.json({
+      data: rows.map(mapCatalogBeer),
+      pagination: { limit, offset, total },
+    });
+  } catch (e) {
+    console.error('Catalog browse error:', e);
+    res.status(502).json({ error: 'Catalog browse failed' });
+  }
+});
+
+// GET /api/catalog/styles — distinct style list for filters
+app.get('/api/catalog/styles', async (req, res) => {
+  try {
+    const { status, body } = await rest('GET', '/beers?select=style&style=not.is.null&order=style.asc&limit=10000');
+    if (status >= 400) {
+      return res.status(status >= 500 ? 502 : status).json(body || { error: 'Catalog styles failed' });
+    }
+    const rows = Array.isArray(body) ? body : [];
+    const uniq = [];
+    const seen = new Set();
+    for (const row of rows) {
+      const style = (row && row.style ? String(row.style) : '').trim();
+      if (!style) continue;
+      const key = style.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      uniq.push(style);
+    }
+    res.json({ data: uniq });
+  } catch (e) {
+    console.error('Catalog styles error:', e);
+    res.status(502).json({ error: 'Catalog styles failed' });
+  }
+});
+
+// GET /api/catalog/beer/:id — single catalog beer (expanded detail)
+app.get('/api/catalog/beer/:id', async (req, res) => {
+  const id = encodeURIComponent((req.params.id || '').trim());
+  try {
+    const { status, body } = await rest(
+      'GET',
+      `/beers?id=eq.${id}&select=id,name,brewery_name,style,abv,description,ibu_min,ibu_max,flavor_astringency,flavor_body,flavor_alcohol,flavor_bitter,flavor_sweet,flavor_sour,flavor_salty,flavor_fruity,flavor_hoppy,flavor_spicy,flavor_malty,review_aroma,review_appearance,review_palate,review_taste,review_overall,review_count&limit=1`
+    );
     if (status >= 400) {
       return res.status(status >= 500 ? 502 : status).json(body || { error: 'Upstream error' });
     }
     const row = Array.isArray(body) && body[0] ? body[0] : null;
     if (!row) return res.status(404).json({ error: 'Beer not found' });
-    res.json({
-      id: row.id,
-      name: row.name,
-      brewery_name: row.brewery_name ?? null,
-      style: row.style ?? null,
-      abv: row.abv != null ? Number(row.abv) : null,
-      description: row.description ?? null,
-      review_overall: row.review_overall != null ? Number(row.review_overall) : null,
-      review_count: row.review_count != null ? Number(row.review_count) : null,
-    });
+    res.json(mapCatalogBeer(row));
   } catch (e) {
     console.error('Catalog beer error:', e);
     res.status(502).json({ error: 'Catalog fetch failed' });

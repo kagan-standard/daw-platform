@@ -146,6 +146,15 @@ const App = {
     cheersCache: {},
     _demoCheersKey: 'beerbook_demo_cheers',
     _loadAllDataDebounceTimer: null,
+    browseTab: 'community',
+    catalogItems: [],
+    catalogTotal: 0,
+    catalogLimit: 30,
+    catalogOffset: 0,
+    catalogLoading: false,
+    catalogHasMore: false,
+    catalogStyles: [],
+    catalogExpandedId: null,
 
     toast(message, type = 'info') {
         Utils.toast(message, type, 3000);
@@ -308,6 +317,11 @@ const App = {
         if (browseSentinel) {
             const browseObs = new IntersectionObserver((entries) => {
                 if (!entries[0]?.isIntersecting) return;
+                if (this.browseTab === 'catalog') {
+                    if (this.catalogLoading || !this.catalogHasMore) return;
+                    this.loadNextCatalogPage();
+                    return;
+                }
                 const total = this._browseFilteredLength ?? 0;
                 if ((this.browseShownCount || 24) >= total) return;
                 this.browseShownCount = (this.browseShownCount || 24) + 24;
@@ -649,11 +663,39 @@ const App = {
             }
         });
 
-        // Search & filters (reset infinite scroll on change)
+        // Browse mode tabs
+        document.querySelectorAll('.browse-tab').forEach((tabBtn) => {
+            tabBtn.addEventListener('click', async () => {
+                await this.setBrowseTab(tabBtn.dataset.tab || 'community');
+            });
+        });
+
+        // Search & filters (tab-aware)
         document.getElementById('search-input')?.addEventListener('input',
-            Utils.debounce(() => { this.browseShownCount = 24; this.renderBrowse(); }, 200));
-        document.getElementById('filter-style')?.addEventListener('change', () => { this.browseShownCount = 24; this.renderBrowse(); });
-        document.getElementById('sort-by')?.addEventListener('change', () => { this.browseShownCount = 24; this.renderBrowse(); });
+            Utils.debounce(() => {
+                if (this.browseTab === 'catalog') {
+                    this.refreshCatalogBrowse();
+                    return;
+                }
+                this.browseShownCount = 24;
+                this.renderBrowse();
+            }, 250));
+        document.getElementById('filter-style')?.addEventListener('change', () => {
+            if (this.browseTab === 'catalog') {
+                this.refreshCatalogBrowse();
+                return;
+            }
+            this.browseShownCount = 24;
+            this.renderBrowse();
+        });
+        document.getElementById('sort-by')?.addEventListener('change', () => {
+            if (this.browseTab === 'catalog') {
+                this.refreshCatalogBrowse();
+                return;
+            }
+            this.browseShownCount = 24;
+            this.renderBrowse();
+        });
 
         // Beer autocomplete (Task 2)
         this.bindBeerAutocomplete();
@@ -1604,10 +1646,13 @@ const App = {
         if (rateBtn) {
             rateBtn.addEventListener('click', () => {
                 this.closeBeerDetail();
-                document.getElementById('beer-name').value = beer.beer_name;
-                document.getElementById('beer-brewery').value = beer.brewery || '';
-                document.getElementById('beer-style').value = beer.style || '';
-                this.navigate('rate');
+                this.prefillRateFormFromBeer({
+                    id: beerId || null,
+                    name: beer.beer_name,
+                    brewery_name: beer.brewery || '',
+                    style: beer.style || '',
+                    abv: beer.abv ?? null,
+                });
             });
         }
         this.fillCheersForCards((beer.ratings || []).slice(0, 20).map(r => r.id));
@@ -1738,10 +1783,10 @@ const App = {
 
             Charts.renderDashboard(this.allRatings);
             this.renderRecentReviews();
+            this.populateStyleFilter();
             this.renderBrowse();
             this.renderLeaderboard(period);
             this.renderProfile();
-            this.populateStyleFilter();
 
             const activityRes = await DB.getActivity();
             this.activityItems = (activityRes && activityRes.data) ? activityRes.data : [];
@@ -1785,6 +1830,12 @@ const App = {
         }
         if (viewId === 'map' && typeof MapView !== 'undefined' && typeof MapView.onShow === 'function') {
             setTimeout(() => MapView.onShow(), 100);
+        }
+        if (viewId === 'browse') {
+            this.renderBrowse();
+            if (this.browseTab === 'catalog' && !this.catalogItems.length && !this.catalogLoading) {
+                this.refreshCatalogBrowse();
+            }
         }
         if (viewId === 'rate') {
             try {
@@ -1837,7 +1888,141 @@ const App = {
         });
     },
 
+    async setBrowseTab(tab) {
+        const nextTab = tab === 'catalog' ? 'catalog' : 'community';
+        if (this.browseTab === nextTab) return;
+        this.browseTab = nextTab;
+        this.catalogExpandedId = null;
+        this.setCatalogSortOptions();
+        if (this.browseTab === 'catalog') {
+            await this.ensureCatalogStyles();
+            this.populateStyleFilter();
+            await this.refreshCatalogBrowse();
+        } else {
+            this.populateStyleFilter();
+            this.browseShownCount = 24;
+            this.renderBrowse();
+        }
+    },
+
+    setCatalogSortOptions() {
+        const select = document.getElementById('sort-by');
+        if (!select) return;
+        const current = select.value;
+        if (this.browseTab === 'catalog') {
+            select.innerHTML = `
+                <option value="name_asc">Name A-Z</option>
+                <option value="abv_desc">ABV (High to Low)</option>
+                <option value="abv_asc">ABV (Low to High)</option>
+                <option value="review_overall_desc">Expert Rating</option>
+                <option value="review_count_desc">Review Count</option>
+            `;
+            const allowed = new Set(['name_asc', 'abv_desc', 'abv_asc', 'review_overall_desc', 'review_count_desc']);
+            select.value = allowed.has(current) ? current : 'name_asc';
+        } else {
+            select.innerHTML = `
+                <option value="recent">Most Recent</option>
+                <option value="highest">Highest Rated</option>
+                <option value="lowest">Lowest Rated</option>
+                <option value="name">Alphabetical</option>
+            `;
+            const allowed = new Set(['recent', 'highest', 'lowest', 'name']);
+            select.value = allowed.has(current) ? current : 'recent';
+        }
+    },
+
+    async ensureCatalogStyles() {
+        if (this.catalogStyles.length || DB.isDemo) return;
+        try {
+            this.catalogStyles = await DB.getCatalogStyles();
+        } catch (e) {
+            console.warn('Failed to load catalog styles', e);
+            this.catalogStyles = [];
+        }
+    },
+
+    getCatalogSortParams() {
+        const sortBy = document.getElementById('sort-by')?.value || 'name_asc';
+        switch (sortBy) {
+            case 'abv_desc': return { sort: 'abv', order: 'desc' };
+            case 'abv_asc': return { sort: 'abv', order: 'asc' };
+            case 'review_overall_desc': return { sort: 'review_overall', order: 'desc' };
+            case 'review_count_desc': return { sort: 'review_count', order: 'desc' };
+            default: return { sort: 'name', order: 'asc' };
+        }
+    },
+
+    async refreshCatalogBrowse() {
+        if (this.browseTab !== 'catalog') return;
+        this.catalogItems = [];
+        this.catalogOffset = 0;
+        this.catalogTotal = 0;
+        this.catalogHasMore = false;
+        this.catalogExpandedId = null;
+        await this.loadNextCatalogPage(true);
+    },
+
+    async loadNextCatalogPage(reset = false) {
+        if (this.catalogLoading || this.browseTab !== 'catalog') return;
+        if (DB.isDemo) {
+            this.catalogItems = [];
+            this.catalogTotal = 0;
+            this.catalogHasMore = false;
+            this.renderBrowse();
+            return;
+        }
+        const loadingEl = document.getElementById('browse-loading');
+        this.catalogLoading = true;
+        if (loadingEl) loadingEl.style.display = 'block';
+        try {
+            const search = (document.getElementById('search-input')?.value || '').trim();
+            const style = (document.getElementById('filter-style')?.value || '').trim();
+            const { sort, order } = this.getCatalogSortParams();
+            const out = await DB.browseCatalog({
+                limit: this.catalogLimit,
+                offset: this.catalogOffset,
+                sort,
+                order,
+                style,
+                q: search,
+            });
+            const rows = Array.isArray(out?.data) ? out.data : [];
+            if (reset) {
+                this.catalogItems = rows;
+            } else {
+                this.catalogItems = this.catalogItems.concat(rows);
+            }
+            this.catalogOffset += rows.length;
+            this.catalogTotal = out?.pagination?.total ?? this.catalogItems.length;
+            this.catalogHasMore = this.catalogOffset < this.catalogTotal;
+            this.renderBrowse();
+        } catch (err) {
+            console.error('Catalog browse failed:', err);
+            App.toast('Failed to load catalog beers', 'error');
+        } finally {
+            this.catalogLoading = false;
+            if (loadingEl) loadingEl.style.display = 'none';
+        }
+    },
+
     renderBrowse() {
+        document.querySelectorAll('.browse-tab').forEach((tabBtn) => {
+            const active = (tabBtn.dataset.tab || 'community') === this.browseTab;
+            tabBtn.classList.toggle('active', active);
+            tabBtn.setAttribute('aria-selected', active ? 'true' : 'false');
+        });
+        const communityGrid = document.getElementById('beer-grid');
+        const catalogGrid = document.getElementById('catalog-grid');
+        if (communityGrid) communityGrid.style.display = this.browseTab === 'community' ? 'grid' : 'none';
+        if (catalogGrid) catalogGrid.style.display = this.browseTab === 'catalog' ? 'grid' : 'none';
+        if (this.browseTab === 'catalog') {
+            this.renderCatalogBrowse();
+            return;
+        }
+        this.renderCommunityBrowse();
+    },
+
+    renderCommunityBrowse() {
         const container = document.getElementById('beer-grid');
         const search = (document.getElementById('search-input')?.value || '').toLowerCase();
         const styleFilter = document.getElementById('filter-style')?.value || '';
@@ -1893,6 +2078,103 @@ const App = {
         }).join('');
         const sentinel = document.getElementById('browse-sentinel');
         if (sentinel) sentinel.style.display = filtered.length > showCount ? 'block' : 'none';
+    },
+
+    _catalogFlavorPercent(rawValue) {
+        const value = Number(rawValue);
+        if (!Number.isFinite(value) || value <= 0) return 0;
+        if (value <= 5) return Math.round((value / 5) * 100);
+        if (value <= 10) return Math.round((value / 10) * 100);
+        if (value <= 100) return Math.round(value);
+        if (value <= 200) return Math.round(value / 2);
+        return 100;
+    },
+
+    _catalogFlavorRows(flavors, maxItems = 4) {
+        const entries = Object.entries(flavors || {})
+            .map(([name, raw]) => ({ name, raw, pct: this._catalogFlavorPercent(raw) }))
+            .filter(x => x.pct > 0)
+            .sort((a, b) => b.pct - a.pct)
+            .slice(0, maxItems);
+        if (!entries.length) return '<div class="catalog-flavor-empty">No flavor profile available</div>';
+        return entries.map((entry) => {
+            const label = entry.name.charAt(0).toUpperCase() + entry.name.slice(1);
+            return `<div class="catalog-flavor-row">
+                <div class="catalog-flavor-track"><span class="catalog-flavor-fill" style="width:${entry.pct}%"></span></div>
+                <span class="catalog-flavor-label">${Utils.escapeHtml(label)} ${Math.round(entry.pct / 20)}</span>
+            </div>`;
+        }).join('');
+    },
+
+    renderCatalogBrowse() {
+        const container = document.getElementById('catalog-grid');
+        const sentinel = document.getElementById('browse-sentinel');
+        if (!container) return;
+        const items = this.catalogItems || [];
+        if (!items.length) {
+            container.innerHTML = this.catalogLoading
+                ? '<p class="empty-state">Loading catalog…</p>'
+                : '<p class="empty-state">No catalog beers match your filters.</p>';
+            if (sentinel) sentinel.style.display = 'none';
+            return;
+        }
+        container.innerHTML = items.map((beer) => {
+            const detailOpen = this.catalogExpandedId === beer.id;
+            const expert = beer?.reviews?.overall ?? beer.review_overall;
+            const reviewCount = beer?.reviews?.count ?? beer.review_count ?? 0;
+            const ibuRange = (beer.ibu_min != null || beer.ibu_max != null)
+                ? `${beer.ibu_min != null ? beer.ibu_min : '—'}-${beer.ibu_max != null ? beer.ibu_max : '—'}`
+                : null;
+            const detailReviews = beer.reviews || {};
+            return `<article class="catalog-card${detailOpen ? ' is-open' : ''}" data-catalog-id="${Utils.escapeHtml(beer.id)}">
+                <div class="catalog-card-title">📚 ${Utils.escapeHtml(beer.name || 'Unknown Beer')}</div>
+                <div class="catalog-card-subtitle">${Utils.escapeHtml(beer.brewery_name || 'Unknown Brewery')}${beer.abv != null ? ` · ${Utils.escapeHtml(String(beer.abv))}%` : ''}</div>
+                <div class="catalog-card-meta">
+                    ${beer.style ? `<span class="beer-card-tag style-tooltip" data-style="${Utils.escapeHtml(beer.style)}">${Utils.escapeHtml(beer.style)}</span>` : ''}
+                    ${ibuRange ? `<span class="catalog-ibu">IBU: ${Utils.escapeHtml(ibuRange)}</span>` : ''}
+                </div>
+                ${beer.description ? `<div class="catalog-card-description">${Utils.escapeHtml(beer.description)}</div>` : ''}
+                <div class="catalog-flavors">${this._catalogFlavorRows(beer.flavors, 4)}</div>
+                <div class="catalog-card-footer">
+                    <span class="catalog-score">⭐ ${expert != null ? Utils.escapeHtml(String(expert)) : '—'} expert avg · ${Number(reviewCount || 0).toLocaleString()} reviews</span>
+                    <button type="button" class="btn btn-ghost btn-sm catalog-rate-btn" data-catalog-id="${Utils.escapeHtml(beer.id)}">Rate →</button>
+                </div>
+                ${detailOpen ? `<div class="catalog-card-detail">
+                    ${beer.description ? `<p class="catalog-detail-description">${Utils.escapeHtml(beer.description)}</p>` : ''}
+                    <div class="catalog-detail-grid">
+                        <div><strong>IBU:</strong> ${ibuRange ? Utils.escapeHtml(ibuRange) : '—'}</div>
+                        <div><strong>Aroma:</strong> ${detailReviews.aroma ?? '—'}</div>
+                        <div><strong>Appearance:</strong> ${detailReviews.appearance ?? '—'}</div>
+                        <div><strong>Palate:</strong> ${detailReviews.palate ?? '—'}</div>
+                        <div><strong>Taste:</strong> ${detailReviews.taste ?? '—'}</div>
+                        <div><strong>Overall:</strong> ${detailReviews.overall ?? '—'}</div>
+                    </div>
+                    <div class="catalog-flavors catalog-flavors-all">${this._catalogFlavorRows(beer.flavors, 11)}</div>
+                    <button type="button" class="btn btn-primary btn-sm catalog-detail-rate-btn" data-catalog-id="${Utils.escapeHtml(beer.id)}">Rate This Beer</button>
+                </div>` : ''}
+            </article>`;
+        }).join('');
+
+        container.querySelectorAll('.catalog-card').forEach((cardEl) => {
+            cardEl.addEventListener('click', (e) => {
+                if (e.target.closest('.catalog-rate-btn') || e.target.closest('.catalog-detail-rate-btn')) return;
+                const id = cardEl.dataset.catalogId;
+                this.catalogExpandedId = this.catalogExpandedId === id ? null : id;
+                this.renderCatalogBrowse();
+            });
+        });
+        container.querySelectorAll('.catalog-rate-btn, .catalog-detail-rate-btn').forEach((btn) => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const id = btn.dataset.catalogId;
+                const beer = (this.catalogItems || []).find((b) => b.id === id);
+                if (!beer) return;
+                this.prefillRateFormFromBeer(beer);
+            });
+        });
+
+        if (sentinel) sentinel.style.display = this.catalogHasMore ? 'block' : 'none';
     },
 
     renderLeaderboard(period = 'alltime') {
@@ -2055,10 +2337,42 @@ const App = {
     populateStyleFilter() {
         const select = document.getElementById('filter-style');
         if (!select) return;
-        const styles = [...new Set(this.allRatings.map(r => r.style).filter(Boolean))].sort();
+        const styles = (this.browseTab === 'catalog')
+            ? [...new Set((this.catalogStyles || []).filter(Boolean))].sort()
+            : [...new Set(this.allRatings.map(r => r.style).filter(Boolean))].sort();
         const current = select.value;
         select.innerHTML = '<option value="">All Styles</option>' +
             styles.map(s => `<option value="${s}" ${s === current ? 'selected' : ''}>${s}</option>`).join('');
+    },
+
+    prefillRateFormFromBeer(beer) {
+        if (!beer) return;
+        const name = beer.name || beer.beer_name || '';
+        const brewery = beer.brewery_name || beer.brewery || '';
+        const rawStyle = beer.style || '';
+        const mappedStyle = this._mapStyleToDropdown(rawStyle);
+        const abv = (beer.abv != null && Number.isFinite(Number(beer.abv))) ? Number(beer.abv).toFixed(1) : '';
+        const beerId = beer.id || beer.beer_id || '';
+
+        const beerInput = document.getElementById('beer-name');
+        const breweryInput = document.getElementById('beer-brewery');
+        const styleInput = document.getElementById('beer-style');
+        const abvInput = document.getElementById('beer-abv');
+        const beerIdInput = document.getElementById('rating-beer-id');
+
+        if (beerInput) beerInput.value = name;
+        if (breweryInput) breweryInput.value = brewery;
+        if (styleInput) {
+            if (mappedStyle) {
+                styleInput.value = mappedStyle;
+            } else {
+                const direct = Array.from(styleInput.options).some((opt) => opt.value === rawStyle);
+                styleInput.value = direct ? rawStyle : 'Other';
+            }
+        }
+        if (abvInput) abvInput.value = abv;
+        if (beerIdInput) beerIdInput.value = beerId;
+        this.navigate('rate');
     },
 
     ratingEmoji(rating) {
