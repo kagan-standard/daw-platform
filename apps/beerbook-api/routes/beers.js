@@ -39,9 +39,9 @@ module.exports = function (opts) {
 
   // GET /api/beers/search?q=X — autocomplete, top 10
   router.get('/search', (req, res, next) => {
-    const q = (req.query.q || '').trim().replace(/%/g, '');
+    const q = (req.query.q || '').trim().replace(/[%*]/g, '');
     if (!q) return res.json({ data: [] });
-    const encoded = encodeURIComponent(q);
+    const containsPattern = encodeURIComponent(`*${q}*`);
     const limit = 10;
 
     const normalizeName = (name) => String(name || '')
@@ -56,13 +56,16 @@ module.exports = function (opts) {
           body: JSON.stringify({ search_term: q, max_results: limit }),
           headers: { 'Content-Type': 'application/json' },
         });
-        if (rpc.status < 400 && Array.isArray(rpc.body)) return rpc.body;
+        if (rpc.status < 400) {
+          if (Array.isArray(rpc.body)) return rpc.body;
+          if (rpc.body && Array.isArray(rpc.body.data)) return rpc.body.data;
+        }
       } catch (_) {}
 
       try {
         const fallback = await rest(
           'GET',
-          `/beers?or=(name.ilike.${encoded}*,brewery_name.ilike.${encoded}*)&select=id,name,brewery_name,style,abv,review_overall,review_count&order=review_count.desc.nullslast&limit=${limit}`,
+          `/beers?or=(name.ilike.${containsPattern},brewery_name.ilike.${containsPattern})&select=id,name,brewery_name,style,abv,review_overall,review_count&order=review_count.desc.nullslast&limit=${limit}`,
           {},
         );
         if (fallback.status < 400 && Array.isArray(fallback.body)) return fallback.body;
@@ -73,7 +76,11 @@ module.exports = function (opts) {
 
     const fetchUserRows = async () => {
       try {
-        const out = await rest('GET', `/ratings?beer_name=ilike.${encoded}*&select=beer_name,brewery,style,abv,beer_id&limit=50`, {});
+        const out = await rest(
+          'GET',
+          `/ratings?or=(beer_name.ilike.${containsPattern},brewery.ilike.${containsPattern})&select=beer_name,brewery,style,abv,beer_id&order=created_at.desc&limit=50`,
+          {}
+        );
         if (out.status >= 400) return [];
         return Array.isArray(out.body) ? out.body : [];
       } catch (_) {
@@ -107,7 +114,7 @@ module.exports = function (opts) {
           }
           const existing = byName.get(key);
           if ((!existing.id && mapped.id) || (existing.review_count === 0 && mapped.review_count > 0)) {
-            byName.set(key, { ...existing, ...mapped });
+            Object.assign(existing, mapped);
           }
         };
 
