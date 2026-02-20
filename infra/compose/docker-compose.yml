@@ -8,7 +8,8 @@ services:
     image: quay.io/keycloak/keycloak:26.1
     container_name: keycloak
     restart: unless-stopped
-    command: start --proxy-headers=xforwarded --hostname=https://auth.drinksafterwork.net --http-enabled=true --hostname-strict=false
+    # Theme cache disabled so CSS/theme changes apply without restart. Remove for production.
+    command: start --proxy-headers=xforwarded --hostname=https://auth.drinksafterwork.net --http-enabled=true --hostname-strict=false --spi-theme-static-max-age=-1 --spi-theme-cache-themes=false
     environment:
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
