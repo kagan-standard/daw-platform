@@ -37,97 +37,47 @@ module.exports = function (opts) {
       .catch(next);
   });
 
-  // GET /api/beers/search?q=X — autocomplete, top 10
-  router.get('/search', (req, res, next) => {
+  // GET /api/beers/search?q=X — autocomplete, top 10 unique beers
+  router.get('/search', (req, res) => {
     const q = (req.query.q || '').trim().replace(/[%*]/g, '');
-    if (!q) return res.json({ data: [] });
-    const containsPattern = encodeURIComponent(`*${q}*`);
-    const limit = 10;
+    if (!q || q.length < 2) return res.json({ data: [] });
 
-    const normalizeName = (name) => String(name || '')
-      .toLowerCase()
-      .replace(/[^\w\s]/g, '')
-      .replace(/\s+/g, ' ')
-      .trim();
+    const encoded = encodeURIComponent(q);
+    const url = `/ratings?or=(beer_name.ilike.*${encoded}*,brewery.ilike.*${encoded}*)&select=beer_name,brewery,style&order=beer_name.asc&limit=50`;
 
-    const fetchCatalogResults = async () => {
-      try {
-        const rpc = await rest('POST', '/rpc/search_beer_catalog', {
-          body: JSON.stringify({ search_term: q, max_results: limit }),
-          headers: { 'Content-Type': 'application/json' },
-        });
-        if (rpc.status < 400) {
-          if (Array.isArray(rpc.body)) return rpc.body;
-          if (rpc.body && Array.isArray(rpc.body.data)) return rpc.body.data;
+    rest('GET', url, {})
+      .then(({ status, body }) => {
+        if (status >= 400) return res.json({ data: [] });
+
+        let rows = [];
+        if (Array.isArray(body)) {
+          rows = body;
+        } else if (body && Array.isArray(body.data)) {
+          rows = body.data;
         }
-      } catch (_) {}
 
-      try {
-        const fallback = await rest(
-          'GET',
-          `/beers?or=(name.ilike.${containsPattern},brewery_name.ilike.${containsPattern})&select=id,name,brewery_name,style,abv,review_overall,review_count&order=review_count.desc.nullslast&limit=${limit}`,
-          {},
-        );
-        if (fallback.status < 400 && Array.isArray(fallback.body)) return fallback.body;
-      } catch (_) {}
+        const seen = new Set();
+        const deduped = [];
+        for (const row of rows) {
+          const name = (row.beer_name || '').trim();
+          if (!name) continue;
+          const key = name.toLowerCase();
+          if (seen.has(key)) continue;
+          seen.add(key);
+          deduped.push({
+            beer_name: name,
+            brewery: (row.brewery || '').trim(),
+            style: (row.style || '').trim(),
+          });
+          if (deduped.length >= 10) break;
+        }
 
-      return [];
-    };
-
-    const fetchUserRows = async () => {
-      try {
-        const out = await rest(
-          'GET',
-          `/ratings?or=(beer_name.ilike.${containsPattern},brewery.ilike.${containsPattern})&select=beer_name,brewery,style,abv,beer_id&order=created_at.desc&limit=50`,
-          {}
-        );
-        if (out.status >= 400) return [];
-        return Array.isArray(out.body) ? out.body : [];
-      } catch (_) {
-        return [];
-      }
-    };
-
-    Promise.all([fetchCatalogResults(), fetchUserRows()])
-      .then(([catalogRows, userRows]) => {
-        const byName = new Map();
-        const ordered = [];
-
-        const upsert = (row, fallbackSource) => {
-          const beerName = row.name || row.beer_name || '';
-          const key = normalizeName(beerName);
-          if (!key) return;
-          const mapped = {
-            id: row.id || row.beer_id || null,
-            beer_name: beerName,
-            brewery: row.brewery_name || row.brewery || '',
-            style: row.style || '',
-            abv: row.abv != null ? row.abv : null,
-            review_overall: row.review_overall != null ? parseFloat(row.review_overall) : null,
-            review_count: Number(row.review_count) || 0,
-            source: row.source || fallbackSource,
-          };
-          if (!byName.has(key)) {
-            byName.set(key, mapped);
-            ordered.push(mapped);
-            return;
-          }
-          const existing = byName.get(key);
-          if ((!existing.id && mapped.id) || (existing.review_count === 0 && mapped.review_count > 0)) {
-            Object.assign(existing, mapped);
-          }
-        };
-
-        (catalogRows || []).forEach((row) => upsert(row, 'catalog'));
-        (userRows || []).forEach((row) => {
-          const key = normalizeName(row.beer_name);
-          if (!key || byName.has(key)) return;
-          upsert(row, 'user');
-        });
-
-        res.json({ data: ordered.slice(0, limit) });
+        return res.json({ data: deduped });
       })
-      .catch(next);
+      .catch((err) => {
+        console.error('Beer search error:', err.message);
+        return res.json({ data: [] });
+      });
   });
 
   // GET /api/beers/:name — single beer: aggregated + all ratings + price history
