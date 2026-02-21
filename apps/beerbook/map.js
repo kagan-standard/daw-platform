@@ -86,6 +86,9 @@ const MapView = {
     _userLng: null,
     currentLayer: 'discover',
     moveEndDebounce: null,
+    _sheetMode: 'list',
+    _sheetExpanded: false,
+    _pendingListRefresh: false,
     VENUE_CATEGORIES: {
         brewery: {
             types: ['micro', 'nano', 'regional', 'large', 'contract', 'proprietor', 'brewpub'],
@@ -344,10 +347,8 @@ const MapView = {
             m.breweryId = b.id;
             m.brewerySummary = b;
             this._breweryMarkersById[String(b.id)] = m;
-            const isMobile = typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches;
             m.on('click', () => {
-                this.showVenueSheetBreweryDetail(b.id);
-                this.openBreweryDetail(b.id, isMobile);
+                this.showVenueDetail(b.id, 'beerbook');
             });
             const cityState = [b.city, b.state].filter(Boolean).join(', ');
             const typePill = this.venueTypePill(b.brewery_type);
@@ -363,7 +364,7 @@ const MapView = {
             m.on('popupopen', () => {
                 const popupEl = m.getPopup().getElement();
                 popupEl?.querySelector('.map-popup-brewery-detail')?.addEventListener('click', () => {
-                    this.openBreweryDetail(b.id, window.matchMedia('(max-width: 768px)').matches);
+                    this.showVenueDetail(b.id, 'beerbook');
                 });
                 popupEl?.querySelector('.brewery-rate-link')?.addEventListener('click', (e) => {
                     e.preventDefault();
@@ -397,6 +398,21 @@ const MapView = {
         }
     },
 
+    showVenueDetail(venueId, source = 'beerbook') {
+        const isMobile = window.innerWidth <= 768;
+
+        if (source === 'osm') {
+            this.showVenueSheetOSMDetail(venueId);
+            return;
+        }
+
+        if (isMobile) {
+            this.showVenueSheetBreweryDetail(venueId);
+        } else {
+            this.openBreweryDetail(venueId, false);
+        }
+    },
+
     _initSheetDrag() {
         const handle = document.getElementById('venue-sheet-handle');
         const sheet = document.getElementById('venue-list-sheet');
@@ -405,6 +421,7 @@ const MapView = {
         handle.addEventListener('click', () => {
             sheet.classList.toggle('expanded');
             sheet.classList.toggle('collapsed', !sheet.classList.contains('expanded'));
+            this._sheetExpanded = sheet.classList.contains('expanded');
         });
 
         let startY = 0;
@@ -417,18 +434,27 @@ const MapView = {
             if (diff > 30) {
                 sheet.classList.add('expanded');
                 sheet.classList.remove('collapsed');
+                this._sheetExpanded = true;
             } else if (diff < -30) {
                 sheet.classList.remove('expanded');
                 sheet.classList.add('collapsed');
+                this._sheetExpanded = false;
             }
         }, { passive: true });
     },
 
     showVenueListMode() {
+        this._sheetMode = 'list';
+        this._sheetExpanded = false;
         const list = document.getElementById('venue-sheet-list');
         const detail = document.getElementById('venue-sheet-detail');
         if (list) list.style.display = '';
         if (detail) detail.style.display = 'none';
+        if (this._pendingListRefresh) {
+            this._pendingListRefresh = false;
+            this.updateVenueListSheet();
+            return;
+        }
         const sheet = document.getElementById('venue-list-sheet');
         if (sheet) {
             sheet.classList.add('collapsed');
@@ -443,6 +469,8 @@ const MapView = {
         const sheet = document.getElementById('venue-list-sheet');
         if (!list || !detail || !body || !sheet) return;
         if (this.currentLayer !== 'discover') return;
+        this._sheetMode = 'detail';
+        this._sheetExpanded = true;
 
         body.innerHTML = '<p class="brewery-sheet-loading">Loading…</p>';
         list.style.display = 'none';
@@ -644,6 +672,10 @@ const MapView = {
         const sheet = document.getElementById('venue-list-sheet');
         if (!listEl || !sheet) return;
         if (this.currentLayer !== 'discover') return;
+        if (this._sheetMode === 'detail') {
+            this._pendingListRefresh = true;
+            return;
+        }
 
         let allVenues = [];
 
@@ -725,8 +757,10 @@ const MapView = {
             });
         });
 
-        sheet.classList.add('collapsed');
-        sheet.classList.remove('expanded', 'hidden');
+        if (!this._sheetExpanded) {
+            sheet.classList.add('collapsed');
+            sheet.classList.remove('expanded', 'hidden');
+        }
         sheet.setAttribute('aria-hidden', 'false');
     },
 
@@ -845,11 +879,16 @@ const MapView = {
                     <div class="map-popup-type-row">${typePill}${hours}</div>
                     ${v.phone ? `📞 ${Utils.escapeHtml(v.phone)}<br>` : ''}
                     ${v.website ? `<a href="${Utils.escapeHtml(v.website)}" target="_blank" rel="noopener">🌐 Website →</a><br>` : ''}
+                    <button type="button" class="btn btn-sm btn-primary map-popup-osm-detail" data-venue-id="osm_${v.id}">View details</button>
                     <a href="#" class="osm-rate-link" data-venue-id="osm_${Utils.escapeHtml(String(v.id))}" data-venue-name="${Utils.escapeHtml(v.name)}" data-lat="${Utils.escapeHtml(String(v.lat))}" data-lng="${Utils.escapeHtml(String(v.lng))}">⭐ Rate a beer from here →</a>
                 </div>
             `);
             m.on('popupopen', () => {
-                m.getPopup().getElement()?.querySelector('.osm-rate-link')?.addEventListener('click', (e) => {
+                const popupEl = m.getPopup().getElement();
+                popupEl?.querySelector('.map-popup-osm-detail')?.addEventListener('click', () => {
+                    this.showVenueDetail(`osm_${v.id}`, 'osm');
+                });
+                popupEl?.querySelector('.osm-rate-link')?.addEventListener('click', (e) => {
                     e.preventDefault();
                     const link = e.currentTarget;
                     const venueId = link?.dataset?.venueId || '';
@@ -884,49 +923,126 @@ const MapView = {
         const map = this.map || this._map;
         if (!map) return;
 
-        const currentZoom = (typeof map.getZoom === 'function' ? map.getZoom() : 0) || 0;
-        const targetZoom = Math.min(Math.max(currentZoom, 15), 17);
-        let centerLatLng = [lat, lng];
-
-        try {
-            const leaflet = (typeof L !== 'undefined' && L) || (typeof window !== 'undefined' && window.L);
-            if (leaflet && typeof map.latLngToContainerPoint === 'function' && typeof map.containerPointToLatLng === 'function') {
-                const pt = map.latLngToContainerPoint([lat, lng]);
-                const yOffset = 140;
-                const pt2 = leaflet.point(pt.x, pt.y - yOffset);
-                const ll2 = map.containerPointToLatLng(pt2);
-                centerLatLng = ll2;
-            }
-        } catch (_) {}
+        const markerLatLng = L.latLng(lat, lng);
+        const currentZoom = map.getZoom() || 0;
+        const bounds = map.getBounds();
+        const isVisible = bounds.contains(markerLatLng);
 
         const marker = source === 'beerbook'
             ? this._breweryMarkersById[String(id)]
             : this._osmMarkersById[String(id)];
         const cluster = source === 'beerbook' ? this.breweryCluster : this._osmCluster;
 
+        const isClustered = marker ? this.isMarkerClustered(marker, cluster) : false;
+
+        let targetZoom = currentZoom;
+        if (isClustered) {
+            targetZoom = Math.max(currentZoom, 15);
+        } else if (!isVisible) {
+            targetZoom = Math.max(currentZoom, 13);
+        }
+        targetZoom = Math.min(targetZoom, 17);
+
+        const offsetLatLng = this.getOffsetCenter(markerLatLng, targetZoom);
+
         if (!marker) {
-            map.setView(centerLatLng, targetZoom);
-            if (source === 'beerbook' && !String(id).startsWith('osm_')) {
-                this.showVenueSheetBreweryDetail(id);
-            }
+            map.flyTo(offsetLatLng, targetZoom, { duration: 0.5, easeLinearity: 0.5 });
+            this.showVenueDetail(id, source);
             return;
         }
 
         if (cluster && typeof cluster.zoomToShowLayer === 'function') {
-            map.setView(centerLatLng, targetZoom);
+            map.flyTo(offsetLatLng, targetZoom, { duration: 0.5, easeLinearity: 0.5 });
             cluster.zoomToShowLayer(marker, () => {
                 marker.openPopup();
                 this.highlightVenueMarker(marker);
             });
         } else {
-            map.setView(centerLatLng, targetZoom);
-            marker.openPopup();
-            this.highlightVenueMarker(marker);
+            map.flyTo(offsetLatLng, targetZoom, { duration: 0.5, easeLinearity: 0.5 });
+            setTimeout(() => {
+                if (marker.openPopup) marker.openPopup();
+                this.highlightVenueMarker(marker);
+            }, 550);
         }
 
-        if (source === 'beerbook' && !String(id).startsWith('osm_')) {
-            this.showVenueSheetBreweryDetail(id);
+        this.showVenueDetail(id, source);
+    },
+
+    isMarkerClustered(marker, cluster) {
+        const group = cluster || this.breweryCluster;
+        if (group && typeof group.getVisibleParent === 'function') {
+            const parent = group.getVisibleParent(marker);
+            return parent !== marker;
         }
+        return false;
+    },
+
+    getSheetOffset() {
+        const sheet = document.getElementById('venue-list-sheet');
+        if (!sheet) return 80;
+        const sheetRect = sheet.getBoundingClientRect();
+        const viewportHeight = window.innerHeight;
+        const sheetVisibleHeight = viewportHeight - sheetRect.top;
+        return Math.max(sheetVisibleHeight / 2, 60);
+    },
+
+    getOffsetCenter(latLng, zoom) {
+        if (!this.map) return latLng;
+        const offset = this.getSheetOffset();
+        const point = this.map.project(latLng, zoom);
+        const offsetPoint = L.point(point.x, point.y + offset);
+        return this.map.unproject(offsetPoint, zoom);
+    },
+
+    findOSMVenueById(venueId) {
+        const rawId = String(venueId).replace(/^osm_/, '');
+        return (this._osmVenues || []).find((v) => String(v.id) === rawId);
+    },
+
+    showVenueSheetOSMDetail(venueId) {
+        const venue = this.findOSMVenueById(venueId);
+        if (!venue) return;
+
+        this._sheetMode = 'detail';
+        this._sheetExpanded = true;
+
+        const sheet = document.getElementById('venue-list-sheet');
+        const listView = document.getElementById('venue-sheet-list');
+        const detailView = document.getElementById('venue-sheet-detail');
+        const body = document.getElementById('venue-sheet-detail-body');
+
+        if (listView) listView.style.display = 'none';
+        if (detailView) detailView.style.display = '';
+        if (body) body.innerHTML = this.buildOSMDetailHtml(venue);
+
+        if (sheet) {
+            sheet.classList.remove('collapsed', 'hidden');
+            sheet.classList.add('expanded');
+        }
+    },
+
+    buildOSMDetailHtml(venue) {
+        const pill = venueTypePill(venue.type || '');
+        const safeId = Utils.escapeHtml(String(venue.id || ''));
+        const safeName = Utils.escapeHtml(venue.name || 'Unknown Venue');
+        const escapedName = (venue.name || '').replace(/'/g, "\\'");
+
+        return `
+            <div class="venue-detail-header">
+                <h3 class="venue-detail-name">${safeName}</h3>
+                <div class="venue-detail-meta">
+                    ${pill}
+                    ${venue.hours ? `<span class="venue-detail__location">${Utils.escapeHtml(venue.hours)}</span>` : ''}
+                </div>
+            </div>
+            ${venue.phone ? `<div class="venue-detail-row">📞 ${Utils.escapeHtml(venue.phone)}</div>` : ''}
+            ${venue.website ? `<div class="venue-detail-row"><a href="${Utils.escapeHtml(venue.website)}" target="_blank" rel="noopener">🌐 Visit Website →</a></div>` : ''}
+            <div class="venue-detail-actions" style="margin-top:12px;">
+                <a href="#" onclick="rateFromVenue('osm_${safeId}', '${escapedName}', ${venue.lat}, ${venue.lng}); return false;" class="btn btn-primary btn-sm">
+                    ⭐ Rate a beer from here
+                </a>
+            </div>
+        `;
     },
 
     highlightVenueMarker(marker) {
