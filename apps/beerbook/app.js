@@ -204,7 +204,7 @@ const App = {
     catalogHasMore: false,
     catalogStyles: [],
     catalogExpandedId: null,
-    _pendingPhotoBlob: null,
+    _pendingPhotoFile: null,
     _pendingPhotoPreviewUrl: null,
 
     toast(message, type = 'info') {
@@ -666,17 +666,14 @@ const App = {
             }
 
             let photoUrl = null;
-            if (this._pendingPhotoBlob) {
+            if (this._pendingPhotoFile) {
                 try {
                     this.setLoadingText(e.target, 'Uploading photo...');
-                    const file = new File([this._pendingPhotoBlob], 'photo.jpg', { type: this._pendingPhotoBlob.type || 'image/jpeg' });
-                    const up = await DB.uploadPhoto(file);
+                    const up = await DB.uploadPhoto(this._pendingPhotoFile);
                     photoUrl = (up && up.url) ? up.url : null;
                 } catch (photoErr) {
                     console.error('Photo upload failed:', photoErr);
-                    App.toast(photoErr.message || 'Photo upload failed', 'error');
-                    this.setLoading(e.target, false);
-                    return;
+                    App.toast('Photo upload failed — rating saved without photo', 'warning');
                 }
             }
 
@@ -1596,11 +1593,13 @@ const App = {
         }
         const previewEl = document.getElementById('photo-preview');
         if (!previewEl) return;
+        const progressEl = document.getElementById('upload-progress');
         if (this._pendingPhotoPreviewUrl) {
             URL.revokeObjectURL(this._pendingPhotoPreviewUrl);
             this._pendingPhotoPreviewUrl = null;
         }
-        this._pendingPhotoBlob = null;
+        this._pendingPhotoFile = null;
+        if (progressEl) progressEl.style.display = 'none';
 
         const sourceUrl = URL.createObjectURL(file);
         const img = new Image();
@@ -1610,41 +1609,39 @@ const App = {
             const h = img.height;
             const showPreview = () => {
                 if (this._pendingPhotoPreviewUrl) URL.revokeObjectURL(this._pendingPhotoPreviewUrl);
-                this._pendingPhotoPreviewUrl = URL.createObjectURL(this._pendingPhotoBlob);
+                this._pendingPhotoPreviewUrl = URL.createObjectURL(this._pendingPhotoFile);
                 previewEl.innerHTML = `<img src="${this._pendingPhotoPreviewUrl}" alt="Preview"><button type="button" class="photo-remove">Remove photo</button>`;
                 previewEl.querySelector('.photo-remove')?.addEventListener('click', () => {
                     if (this._pendingPhotoPreviewUrl) {
                         URL.revokeObjectURL(this._pendingPhotoPreviewUrl);
                         this._pendingPhotoPreviewUrl = null;
                     }
-                    this._pendingPhotoBlob = null;
+                    this._pendingPhotoFile = null;
                     previewEl.innerHTML = '';
                     document.getElementById('photo-input').value = '';
+                    if (progressEl) progressEl.style.display = 'none';
                 });
             };
 
-            if (w > 1200) {
-                const c = document.createElement('canvas');
-                c.width = 1200;
-                c.height = Math.round(1200 * h / w);
-                const ctx = c.getContext('2d');
-                if (!ctx) {
+            const targetWidth = w > 1200 ? 1200 : w;
+            const targetHeight = Math.round((targetWidth * h) / w);
+            const c = document.createElement('canvas');
+            c.width = targetWidth;
+            c.height = targetHeight;
+            const ctx = c.getContext('2d');
+            if (!ctx) {
+                App.toast('Could not process photo', 'error');
+                return;
+            }
+            ctx.drawImage(img, 0, 0, c.width, c.height);
+            c.toBlob((blob) => {
+                if (!blob) {
                     App.toast('Could not process photo', 'error');
                     return;
                 }
-                ctx.drawImage(img, 0, 0, c.width, c.height);
-                c.toBlob((blob) => {
-                    if (!blob) {
-                        App.toast('Could not process photo', 'error');
-                        return;
-                    }
-                    this._pendingPhotoBlob = blob;
-                    showPreview();
-                }, 'image/jpeg', 0.8);
-            } else {
-                this._pendingPhotoBlob = file;
+                this._pendingPhotoFile = new File([blob], 'photo.jpg', { type: 'image/jpeg' });
                 showPreview();
-            }
+            }, 'image/jpeg', 0.8);
         };
         img.onerror = () => {
             URL.revokeObjectURL(sourceUrl);
@@ -2881,9 +2878,14 @@ const App = {
             URL.revokeObjectURL(this._pendingPhotoPreviewUrl);
             this._pendingPhotoPreviewUrl = null;
         }
-        this._pendingPhotoBlob = null;
+        this._pendingPhotoFile = null;
         document.getElementById('photo-preview').innerHTML = '';
         document.getElementById('photo-input').value = '';
+        const progressEl = document.getElementById('upload-progress');
+        if (progressEl) {
+            progressEl.style.display = 'none';
+            progressEl.textContent = '';
+        }
     }
 };
 

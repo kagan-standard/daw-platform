@@ -833,27 +833,54 @@ const DB = {
             if (!refreshed) throw new Error('Session expired — please sign in again');
         }
 
-        const formData = new FormData();
-        formData.append('file', file);
-        const url = `${this.apiBaseUrl}/api/upload`;
-        const headers = {};
-        const token = this._getAccessToken();
-        if (token) headers['Authorization'] = `Bearer ${token}`;
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 30000);
-        try {
-            const res = await fetch(url, { method: 'POST', headers, body: formData, signal: controller.signal });
-            clearTimeout(timeout);
-            const text = await res.text();
-            let body;
-            try { body = text ? JSON.parse(text) : null; } catch { body = null; }
-            if (!res.ok) throw new Error(body?.error || body?.message || `Upload failed: ${res.status}`);
-            return body;
-        } catch (err) {
-            clearTimeout(timeout);
-            if (err.name === 'AbortError') throw new Error('Photo upload timed out — please try again on a better connection');
-            throw err;
-        }
+        return await new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            const url = `${this.apiBaseUrl}/api/upload`;
+            const progressEl = document.getElementById('upload-progress');
+
+            const hideProgress = () => {
+                if (!progressEl) return;
+                progressEl.style.display = 'none';
+                progressEl.textContent = '';
+            };
+
+            xhr.upload.addEventListener('progress', (event) => {
+                if (!progressEl || !event.lengthComputable) return;
+                const pct = Math.round((event.loaded / event.total) * 100);
+                progressEl.style.display = 'block';
+                progressEl.textContent = `Uploading photo... ${pct}%`;
+            });
+
+            xhr.addEventListener('load', () => {
+                hideProgress();
+                let body = null;
+                try { body = xhr.responseText ? JSON.parse(xhr.responseText) : null; } catch (_) {}
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    resolve(body || {});
+                    return;
+                }
+                reject(new Error(body?.error || body?.message || `Upload failed: ${xhr.status}`));
+            });
+
+            xhr.addEventListener('error', () => {
+                hideProgress();
+                reject(new Error('Upload network error'));
+            });
+
+            xhr.addEventListener('timeout', () => {
+                hideProgress();
+                reject(new Error('Photo upload timed out — please try again on a better connection'));
+            });
+
+            xhr.open('POST', url);
+            xhr.timeout = 30000;
+            const token = this._getAccessToken();
+            if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+
+            const formData = new FormData();
+            formData.append('file', file);
+            xhr.send(formData);
+        });
     },
 
     async createVenue(venue) {
