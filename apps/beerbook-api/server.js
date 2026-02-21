@@ -182,8 +182,7 @@ function adminMiddleware(req, res, next) {
   if (!req.claims) {
     return res.status(401).json({ error: 'Authentication required' });
   }
-  const roles = req.claims.realm_access?.roles || [];
-  if (!roles.includes('beerbook_admin')) {
+  if (!isAdmin(req.claims.sub)) {
     return res.status(403).json({ error: 'Admin access required' });
   }
   return next();
