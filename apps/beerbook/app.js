@@ -1990,7 +1990,8 @@ const App = {
     },
 
     // ========== DATA LOADING ==========
-    async loadAllData() {
+    async loadAllData(options = {}) {
+        const opts = { force: false, ...options };
         // Debounce rapid calls - if called multiple times quickly, only execute once
         if (this._loadAllDataDebounceTimer) {
             clearTimeout(this._loadAllDataDebounceTimer);
@@ -1999,7 +2000,7 @@ const App = {
             this._loadAllDataDebounceTimer = setTimeout(async () => {
                 this._loadAllDataDebounceTimer = null;
                 try {
-                    await this._loadAllDataInternal();
+                    await this._loadAllDataInternal(opts);
                     resolve();
                 } catch (err) {
                     reject(err);
@@ -2008,7 +2009,10 @@ const App = {
         });
     },
     
-    async _loadAllDataInternal() {
+    async _loadAllDataInternal(options = {}) {
+        if (this._loadingAllData) return;
+        this._loadingAllData = true;
+        const { force = false } = options;
         this.activityPage = 0;
         this.activityItems = [];
         const period = document.querySelector('.lb-tab.active')?.dataset.period || 'alltime';
@@ -2016,7 +2020,10 @@ const App = {
             const stats = await DB.getStats();
             this.allRatings = stats.ratings || [];
             if (typeof this.refreshSocialGraph === 'function') {
-                await this.refreshSocialGraph();
+                if (force || !this._socialGraphLoaded) {
+                    await this.refreshSocialGraph({ force });
+                    this._socialGraphLoaded = true;
+                }
             }
 
             document.getElementById('stat-beers').textContent = stats.totalBeers ?? 0;
@@ -2056,6 +2063,8 @@ const App = {
         } catch (err) {
             console.error('Failed to load data:', err);
             App.toast('Failed to load data', 'error');
+        } finally {
+            this._loadingAllData = false;
         }
     },
 

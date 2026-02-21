@@ -58,7 +58,8 @@ const MapView = {
             this.loadBreweriesInViewport();
             this.loadOSMVenuesInViewport();
             if (venueSheet) {
-                venueSheet.classList.remove('hidden');
+                venueSheet.classList.add('collapsed');
+                venueSheet.classList.remove('expanded', 'hidden');
                 venueSheet.setAttribute('aria-hidden', 'false');
             }
         } else if (venueSheet) {
@@ -117,7 +118,8 @@ const MapView = {
         const venueSheet = document.getElementById('venue-list-sheet');
         if (layer === 'discover') {
             if (venueSheet) {
-                venueSheet.classList.remove('hidden');
+                venueSheet.classList.add('collapsed');
+                venueSheet.classList.remove('expanded', 'hidden');
                 venueSheet.setAttribute('aria-hidden', 'false');
             }
             this.showVenueListMode();
@@ -331,6 +333,11 @@ const MapView = {
         const detail = document.getElementById('venue-sheet-detail');
         if (list) list.style.display = '';
         if (detail) detail.style.display = 'none';
+        const sheet = document.getElementById('venue-list-sheet');
+        if (sheet) {
+            sheet.classList.add('collapsed');
+            sheet.classList.remove('expanded', 'hidden');
+        }
     },
 
     async showVenueSheetBreweryDetail(breweryId) {
@@ -617,7 +624,8 @@ const MapView = {
             });
         });
 
-        sheet.classList.remove('hidden');
+        sheet.classList.add('collapsed');
+        sheet.classList.remove('expanded', 'hidden');
         sheet.setAttribute('aria-hidden', 'false');
     },
 

@@ -9,36 +9,51 @@
         activeFeedFilter: 'all'
     };
 
-    App.refreshSocialGraph = async function refreshSocialGraph() {
+    App.refreshSocialGraph = async function refreshSocialGraph(options = {}) {
+        const { force = false } = options;
         if (!DB.currentUser) return this.socialGraph;
-        try {
-            const [crewsOut, followingOut] = await Promise.all([
-                DB.getCrews().catch(() => ({ data: [] })),
-                DB.getFollowing(DB.currentUser.id, 500, 0).catch(() => ({ data: [] }))
-            ]);
-            const crews = Array.isArray(crewsOut?.data) ? crewsOut.data : [];
-            const following = Array.isArray(followingOut?.data) ? followingOut.data : [];
-            // #region agent log
-            fetch('http://127.0.0.1:7669/ingest/dcf85816-3d9a-4023-99e0-099b9beddd82',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7a1905'},body:JSON.stringify({sessionId:'7a1905',runId:'run1',hypothesisId:'H5',location:'social.js:refreshSocialGraph:resolved',message:'social graph fetch resolved',data:{currentUserId:DB.currentUser?.id||null,crewsCount:crews.length,followingCount:following.length},timestamp:Date.now()})}).catch(()=>{});
-            // #endregion
-            const crewMemberIds = new Set();
-            crews.forEach((crew) => {
-                const ids = Array.isArray(crew.member_user_ids) ? crew.member_user_ids : [];
-                ids.forEach((id) => crewMemberIds.add(id));
-            });
-            this.socialGraph.myCrews = crews;
-            this.socialGraph.crewMemberIds = crewMemberIds;
-            this.socialGraph.followingIds = new Set(following.map((u) => u.id).filter(Boolean));
-            if (!this.socialGraph.selectedCrewId && crews[0]) {
-                this.socialGraph.selectedCrewId = crews[0].id;
-            }
-        } catch (err) {
-            // #region agent log
-            fetch('http://127.0.0.1:7669/ingest/dcf85816-3d9a-4023-99e0-099b9beddd82',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7a1905'},body:JSON.stringify({sessionId:'7a1905',runId:'run1',hypothesisId:'H5',location:'social.js:refreshSocialGraph:catch',message:'social graph fetch threw',data:{currentUserId:DB.currentUser?.id||null,error:err?.message||String(err)},timestamp:Date.now()})}).catch(()=>{});
-            // #endregion
-            console.warn('Failed to refresh social graph:', err?.message || err);
+        const now = Date.now();
+        const ttlMs = 60 * 1000;
+        if (!force && this._socialGraphFetchedAt && (now - this._socialGraphFetchedAt) < ttlMs) {
+            return this.socialGraph;
         }
-        return this.socialGraph;
+        if (this._socialGraphInFlight) return this._socialGraphInFlight;
+
+        this._socialGraphInFlight = (async () => {
+            try {
+                const [crewsOut, followingOut] = await Promise.all([
+                    DB.getCrews().catch(() => ({ data: [] })),
+                    DB.getFollowing(DB.currentUser.id, 500, 0).catch(() => ({ data: [] }))
+                ]);
+                const crews = Array.isArray(crewsOut?.data) ? crewsOut.data : [];
+                const following = Array.isArray(followingOut?.data) ? followingOut.data : [];
+                // #region agent log
+                fetch('http://127.0.0.1:7669/ingest/dcf85816-3d9a-4023-99e0-099b9beddd82',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7a1905'},body:JSON.stringify({sessionId:'7a1905',runId:'run1',hypothesisId:'H5',location:'social.js:refreshSocialGraph:resolved',message:'social graph fetch resolved',data:{currentUserId:DB.currentUser?.id||null,crewsCount:crews.length,followingCount:following.length},timestamp:Date.now()})}).catch(()=>{});
+                // #endregion
+                const crewMemberIds = new Set();
+                crews.forEach((crew) => {
+                    const ids = Array.isArray(crew.member_user_ids) ? crew.member_user_ids : [];
+                    ids.forEach((id) => crewMemberIds.add(id));
+                });
+                this.socialGraph.myCrews = crews;
+                this.socialGraph.crewMemberIds = crewMemberIds;
+                this.socialGraph.followingIds = new Set(following.map((u) => u.id).filter(Boolean));
+                if (!this.socialGraph.selectedCrewId && crews[0]) {
+                    this.socialGraph.selectedCrewId = crews[0].id;
+                }
+                this._socialGraphFetchedAt = Date.now();
+            } catch (err) {
+                // #region agent log
+                fetch('http://127.0.0.1:7669/ingest/dcf85816-3d9a-4023-99e0-099b9beddd82',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7a1905'},body:JSON.stringify({sessionId:'7a1905',runId:'run1',hypothesisId:'H5',location:'social.js:refreshSocialGraph:catch',message:'social graph fetch threw',data:{currentUserId:DB.currentUser?.id||null,error:err?.message||String(err)},timestamp:Date.now()})}).catch(()=>{});
+                // #endregion
+                console.warn('Failed to refresh social graph:', err?.message || err);
+            } finally {
+                this._socialGraphInFlight = null;
+            }
+            return this.socialGraph;
+        })();
+
+        return this._socialGraphInFlight;
     };
 
     App.getSocialTier = function getSocialTier(userId) {
@@ -219,7 +234,10 @@
     const _enterApp = App.enterApp.bind(App);
     App.enterApp = async function patchedEnterApp() {
         await _enterApp();
-        await this.refreshSocialGraph();
+        if (!this._socialGraphLoaded) {
+            await this.refreshSocialGraph();
+            this._socialGraphLoaded = true;
+        }
         this.renderFeedFilters();
         this.refreshCrewSelectors();
         this.decorateSocialCards();

@@ -2623,6 +2623,11 @@ input, select, textarea, button {
     padding-bottom: 0;
     position: relative;
 }
+#view-map {
+    position: relative;
+    height: calc(100vh - 120px);
+    overflow: hidden;
+}
 /* Map view header: subheader + breathing room (20px between header and toggle) */
 .view-map-header-breathe {
     margin-bottom: 20px;
@@ -2637,12 +2642,14 @@ input, select, textarea, button {
 .view-map .map-wrapper {
     position: relative;
     flex: 1;
+    min-height: 0;
     min-height: 300px;
     display: flex;
     flex-direction: column;
+    overflow: hidden;
 }
 .beer-map-container {
-    height: 500px;
+    height: 100%;
     width: 100%;
     border-radius: var(--radius-xl);
     overflow: hidden;
@@ -2654,15 +2661,20 @@ input, select, textarea, button {
     margin-top: var(--space-lg);
     transition: box-shadow var(--transition-base), border-color var(--transition-base);
 }
+#beer-map {
+    width: 100%;
+    height: 100%;
+    min-height: 300px;
+}
 .view-map .beer-map-container {
     margin-bottom: 0;
 }
 /* Near Me: floating inside map wrapper */
 .map-nearme-btn {
     position: absolute;
-    bottom: 40px;
+    bottom: 220px;
     right: var(--space-lg);
-    z-index: 1000;
+    z-index: 1002;
     min-height: 44px;
     padding: 8px 16px;
     border-radius: 24px;
@@ -2869,26 +2881,29 @@ input, select, textarea, button {
 
 .venue-list-sheet {
     position: absolute;
+    bottom: 0;
     left: 0;
     right: 0;
-    bottom: 0;
     z-index: 1001;
-    background: linear-gradient(180deg, var(--bg-surface) 0%, var(--bg-surface-fade) 100%);
-    border-top-left-radius: var(--radius-xl);
-    border-top-right-radius: var(--radius-xl);
-    box-shadow: var(--shadow-elevated);
+    background: var(--bg-surface, #141428);
+    border-top-left-radius: 16px;
+    border-top-right-radius: 16px;
+    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.5);
     transition: max-height 0.3s ease;
-    max-height: 35vh;
     overflow: hidden;
     display: flex;
     flex-direction: column;
+    pointer-events: auto;
+}
+.venue-list-sheet.collapsed {
+    max-height: 200px;
 }
 .venue-list-sheet.expanded {
-    max-height: 70vh;
+    max-height: 55vh;
 }
 .venue-list-sheet.hidden {
     max-height: 0;
-    overflow: hidden;
+    pointer-events: none;
 }
 .venue-sheet-handle {
     display: flex;
@@ -3112,6 +3127,9 @@ input, select, textarea, button {
     border-top: 1px solid var(--border-subtle) !important;
 }
 @media (max-width: 768px) {
+    #view-map {
+        height: calc(100vh - 60px - 82px);
+    }
     .view-map-header .view-map-title,
     .view-map-header .view-desc,
     .view-map-header .view-map-subheader { display: none !important; }
@@ -3146,7 +3164,7 @@ input, select, textarea, button {
         margin-bottom: 0;
     }
     .view-map .map-nearme-btn {
-        bottom: var(--space-lg);
+        bottom: 220px;
         right: var(--space-lg);
         padding: 8px 12px;
         font-size: 0.8rem;
