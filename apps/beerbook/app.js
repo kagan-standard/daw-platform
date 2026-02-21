@@ -2758,11 +2758,11 @@ const App = {
                             <div class="rating-card__time">${Utils.timeAgo(r.created_at)}</div>
                         </div>
                         <div class="rating-card__score">
-                            <span class="rating-card__score-value">${Number(r.rating || 0).toFixed(1)}</span>
+                            <span class="rating-card__score-value">${Number(r.rating || 0) % 1 === 0 ? String(Number(r.rating || 0)) : Number(r.rating || 0).toFixed(1)}</span>
                             <span class="rating-card__score-max">/5</span>
                         </div>
                     </div>
-                    ${r.photo_url ? `<img class="rating-card__photo" src="${Utils.escapeHtml(r.photo_url)}" alt="" loading="lazy">` : ''}
+                    ${r.photo_url ? `<img class="rating-card__photo" src="${Utils.escapeHtml(r.photo_url)}" alt="" loading="lazy" onerror="this.style.display='none'">` : ''}
                     <div class="rating-card__body">
                         <div class="rating-card__beer-name"><span class="beer-name-link" data-beer-name="${Utils.escapeHtml(r.beer_name || '')}" data-beer-brewery="${Utils.escapeHtml(r.brewery || '')}" data-beer-style="${Utils.escapeHtml(r.style || '')}"${beerIdAttr} role="button" tabindex="0">${Utils.escapeHtml(r.beer_name || 'Unknown Beer')}</span></div>
                         ${r.brewery ? `<div class="rating-card__brewery">${Utils.escapeHtml(r.brewery)}</div>` : ''}
