@@ -3,6 +3,61 @@
    Phase 3.9: Brewery pins, clustering, layer toggle
    ============================================ */
 
+function venueTypeMeta(breweryType) {
+    if (!breweryType) return null;
+    const bt = String(breweryType).toLowerCase();
+    if (['micro', 'regional', 'large', 'nano', 'contract'].includes(bt)) {
+        return { className: 'venue-type-pill--brewery', label: 'Brewery' };
+    }
+    if (['brewpub', 'bar'].includes(bt)) {
+        return { className: 'venue-type-pill--bar', label: 'Bar & Pub' };
+    }
+    if (bt === 'restaurant') {
+        return { className: 'venue-type-pill--restaurant', label: 'Restaurant' };
+    }
+    return null;
+}
+
+function venueTypePill(breweryType) {
+    const meta = venueTypeMeta(breweryType);
+    if (!meta) return '';
+    return `<span class="venue-type-pill ${meta.className}">${meta.label}</span>`;
+}
+
+function rateFromVenue(venueId, venueName, lat, lng) {
+    const latEl = document.getElementById('rating-lat');
+    const lngEl = document.getElementById('rating-lng');
+    const locationNameEl = document.getElementById('rating-location-name');
+    const venueIdEl = document.getElementById('rating-venue-id');
+    const chipText = document.getElementById('location-chip-text');
+    const chip = document.getElementById('location-chip');
+    const manual = document.getElementById('location-manual');
+    const priceSec = document.getElementById('price-log-section');
+    const cleanName = venueName || 'Selected Venue';
+
+    if (latEl) latEl.value = Number.isFinite(Number(lat)) ? String(lat) : '';
+    if (lngEl) lngEl.value = Number.isFinite(Number(lng)) ? String(lng) : '';
+    if (locationNameEl) locationNameEl.value = cleanName;
+    if (venueIdEl) {
+        venueIdEl.value = venueId || '';
+        venueIdEl.removeAttribute('data-pending-venue');
+    }
+    if (chipText) chipText.textContent = `📍 ${cleanName}`;
+    if (chip) chip.style.display = 'inline-flex';
+    if (manual) manual.value = cleanName;
+    if (typeof App !== 'undefined' && typeof App.togglePriceSection === 'function') {
+        App.togglePriceSection();
+    } else if (priceSec) {
+        priceSec.style.display = 'block';
+    }
+    if (typeof App !== 'undefined' && App.navigate) App.navigate('rate');
+}
+
+if (typeof window !== 'undefined') {
+    window.venueTypePill = venueTypePill;
+    window.rateFromVenue = rateFromVenue;
+}
+
 const MapView = {
     map: null,
     markersCluster: null,
@@ -189,6 +244,10 @@ const MapView = {
         return { icon: c.icon, color: c.color, label: c.label };
     },
 
+    venueTypePill(type) {
+        return venueTypePill(type);
+    },
+
     isBreweryTypeVisible() {
         return true;
     },
@@ -291,16 +350,24 @@ const MapView = {
                 this.openBreweryDetail(b.id, isMobile);
             });
             const cityState = [b.city, b.state].filter(Boolean).join(', ');
+            const typePill = this.venueTypePill(b.brewery_type);
+            const locationHtml = cityState ? `<span class="venue-detail__location">${Utils.escapeHtml(cityState)}</span>` : '';
             m.bindPopup(`
                 <div class="map-popup map-popup-brewery">
                     <strong>${Utils.escapeHtml(b.name)}</strong><br>
-                    Type: ${Utils.escapeHtml(b.brewery_type || '')} | ${Utils.escapeHtml(cityState || '')}<br>
+                    <div class="map-popup-type-row">${typePill}${locationHtml}</div>
                     <button type="button" class="btn btn-sm btn-primary map-popup-brewery-detail" data-brewery-id="${b.id}">View details</button>
+                    <a href="#" class="brewery-rate-link" data-brewery-id="${Utils.escapeHtml(String(b.id || ''))}" data-venue-name="${Utils.escapeHtml(b.name || '')}" data-lat="${Utils.escapeHtml(String(b.latitude ?? lat))}" data-lng="${Utils.escapeHtml(String(b.longitude ?? lng))}">⭐ Rate a beer from here →</a>
                 </div>
             `);
             m.on('popupopen', () => {
-                m.getPopup().getElement().querySelector('.map-popup-brewery-detail')?.addEventListener('click', () => {
+                const popupEl = m.getPopup().getElement();
+                popupEl?.querySelector('.map-popup-brewery-detail')?.addEventListener('click', () => {
                     this.openBreweryDetail(b.id, window.matchMedia('(max-width: 768px)').matches);
+                });
+                popupEl?.querySelector('.brewery-rate-link')?.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    rateFromVenue(b.id, b.name || 'Selected Venue', b.latitude ?? lat, b.longitude ?? lng);
                 });
             });
             markers.push(m);
@@ -415,7 +482,8 @@ const MapView = {
 
     buildBreweryDetailHtml(b) {
         const cityState = [b.city, b.state].filter(Boolean).join(', ');
-        const typeLabel = b.brewery_type || 'Brewery';
+        const typePill = this.venueTypePill(b.brewery_type);
+        const locationHtml = cityState ? `<span class="venue-detail__location">${Utils.escapeHtml(cityState)}</span>` : '';
         const beers = b.beers || [];
         const beerList = beers.length === 0
             ? '<p>No beers cataloged yet — rate one to be the first!</p>'
@@ -425,12 +493,12 @@ const MapView = {
         return `
             <div class="map-popup brewery-detail-popup">
                 <strong>${Utils.escapeHtml(b.name)}</strong><br>
-                Type: ${Utils.escapeHtml(typeLabel)} | ${Utils.escapeHtml(cityState)}<br>
+                <div class="map-popup-type-row">${typePill}${locationHtml}</div>
                 ${b.phone ? `📞 ${Utils.escapeHtml(b.phone)}<br>` : ''}
                 ${b.website_url ? `<a href="${Utils.escapeHtml(b.website_url)}" target="_blank" rel="noopener" data-track-type="brewery" data-track-id="${Utils.escapeHtml(b.id || '')}" data-track-name="${Utils.escapeHtml(b.name || 'Unknown Brewery')}" data-track-source="brewery_detail">🌐 Visit Website →</a><br>` : ''}
                 <p><strong>Beers in catalog:</strong> ${beers.length}</p>
                 <ul>${beerList}</ul>
-                <a href="#" class="brewery-rate-link" data-brewery-id="${b.id}">⭐ Rate a beer from here →</a>
+                <a href="#" class="brewery-rate-link" data-brewery-id="${Utils.escapeHtml(String(b.id || ''))}" data-venue-name="${Utils.escapeHtml(b.name || '')}" data-lat="${Utils.escapeHtml(String(b.latitude ?? ''))}" data-lng="${Utils.escapeHtml(String(b.longitude ?? ''))}">⭐ Rate a beer from here →</a>
             </div>
         `;
     },
@@ -439,8 +507,13 @@ const MapView = {
         if (!container) return;
         container.querySelector('.brewery-rate-link')?.addEventListener('click', (e) => {
             e.preventDefault();
-            try { sessionStorage.setItem('beerbook_rate_brewery_name', b.name || ''); } catch (_) {}
-            if (typeof App !== 'undefined' && App.navigate) App.navigate('rate');
+            const link = e.currentTarget;
+            const latFromLink = parseFloat(link?.dataset?.lat || '');
+            const lngFromLink = parseFloat(link?.dataset?.lng || '');
+            const fallback = (this.breweryData || []).find((x) => String(x.id) === String(b.id));
+            const lat = Number.isFinite(latFromLink) ? latFromLink : fallback?.latitude;
+            const lng = Number.isFinite(lngFromLink) ? lngFromLink : fallback?.longitude;
+            rateFromVenue(b.id, b.name || link?.dataset?.venueName || 'Selected Venue', lat, lng);
         });
     },
 
@@ -464,20 +537,27 @@ const MapView = {
                 : '<ul>' + beers.slice(0, 3).map((beer) =>
                     `<li>${Utils.escapeHtml(beer.name)} (${Utils.escapeHtml(beer.style || '')}${beer.abv != null ? ', ' + beer.abv + '%' : ''})</li>`
                 ).join('') + (beers.length > 3 ? '<li><a href="#" class="brewery-see-all">See all →</a></li>' : '') + '</ul>';
+            const typePill = this.venueTypePill(b.brewery_type);
+            const locationHtml = cityState ? `<span class="venue-detail__location">${Utils.escapeHtml(cityState)}</span>` : '';
             body.innerHTML = `
                 <h3>${Utils.escapeHtml(b.name)}</h3>
-                <p>Type: ${Utils.escapeHtml(b.brewery_type || '')} | ${cityState}</p>
+                <div class="map-popup-type-row">${typePill}${locationHtml}</div>
                 ${b.phone ? `<p>📞 ${Utils.escapeHtml(b.phone)}</p>` : ''}
                 ${b.website_url ? `<p><a href="${Utils.escapeHtml(b.website_url)}" target="_blank" rel="noopener" data-track-type="brewery" data-track-id="${Utils.escapeHtml(b.id || '')}" data-track-name="${Utils.escapeHtml(b.name || 'Unknown Brewery')}" data-track-source="brewery_detail">🌐 Visit Website →</a></p>` : ''}
                 <p><strong>Beers in catalog:</strong> ${beers.length}</p>
                 ${beerList}
-                <p><a href="#" class="brewery-rate-link">⭐ Rate a beer from here →</a></p>
+                <p><a href="#" class="brewery-rate-link" data-brewery-id="${Utils.escapeHtml(String(b.id || ''))}" data-venue-name="${Utils.escapeHtml(b.name || '')}" data-lat="${Utils.escapeHtml(String(b.latitude ?? ''))}" data-lng="${Utils.escapeHtml(String(b.longitude ?? ''))}">⭐ Rate a beer from here →</a></p>
             `;
             body.querySelector('.brewery-rate-link')?.addEventListener('click', (e) => {
                 e.preventDefault();
-                try { sessionStorage.setItem('beerbook_rate_brewery_name', b.name || ''); } catch (_) {}
                 this.closeBrewerySheet();
-                if (typeof App !== 'undefined' && App.navigate) App.navigate('rate');
+                const link = e.currentTarget;
+                const latFromLink = parseFloat(link?.dataset?.lat || '');
+                const lngFromLink = parseFloat(link?.dataset?.lng || '');
+                const fallback = (this.breweryData || []).find((x) => String(x.id) === String(b.id));
+                const lat = Number.isFinite(latFromLink) ? latFromLink : fallback?.latitude;
+                const lng = Number.isFinite(lngFromLink) ? lngFromLink : fallback?.longitude;
+                rateFromVenue(b.id, b.name || link?.dataset?.venueName || 'Selected Venue', lat, lng);
             });
         } catch (err) {
             body.innerHTML = '<p>Could not load brewery.</p>';
@@ -619,14 +699,16 @@ const MapView = {
         const display = allVenues.slice(0, 50);
         listEl.innerHTML = display.map((v) => {
             const category = this.getVenueCategory(v.type);
-            const { color, label } = this.getVenuePinStyle(category);
+            const { color } = this.getVenuePinStyle(category);
             const distText = v.distance != null ? this._formatDist(v.distance) : '';
-            const meta = [label, v.city, v.state].filter(Boolean).join(' · ');
+            const location = [v.city, v.state].filter(Boolean).join(', ');
+            const typePill = this.venueTypePill(v.type);
+            const meta = `${typePill}${location ? `<span class="venue-detail__location">${Utils.escapeHtml(location)}</span>` : ''}`;
             return `
                 <div class="venue-list-card" data-venue-id="${v.id}" data-lat="${v.lat}" data-lng="${v.lng}" data-source="${v.source}" style="border-left: 3px solid ${color}">
                     <div class="venue-list-card-info">
                         <div class="venue-list-card-name">${Utils.escapeHtml(v.name || 'Unknown Venue')}</div>
-                        <div class="venue-list-card-meta">${Utils.escapeHtml(meta)}</div>
+                        <div class="venue-list-card-meta">${meta}</div>
                     </div>
                     ${distText ? `<div class="venue-list-card-distance">${distText}</div>` : ''}
                 </div>
@@ -755,21 +837,26 @@ const MapView = {
             const icon = this.createVenueIcon(v.type);
             const m = L.marker([v.lat, v.lng], { icon });
             this._osmMarkersById[`osm_${v.id}`] = m;
-            const { label } = this.getVenuePinStyle(category);
+            const typePill = this.venueTypePill(v.type);
+            const hours = v.hours ? `<span class="venue-detail__location">${Utils.escapeHtml(v.hours)}</span>` : '';
             m.bindPopup(`
                 <div class="map-popup">
                     <strong>${Utils.escapeHtml(v.name)}</strong><br>
-                    ${Utils.escapeHtml(label)}${v.hours ? ' · ' + Utils.escapeHtml(v.hours) : ''}<br>
+                    <div class="map-popup-type-row">${typePill}${hours}</div>
                     ${v.phone ? `📞 ${Utils.escapeHtml(v.phone)}<br>` : ''}
                     ${v.website ? `<a href="${Utils.escapeHtml(v.website)}" target="_blank" rel="noopener">🌐 Website →</a><br>` : ''}
-                    <a href="#" class="osm-rate-link" data-venue-name="${Utils.escapeHtml(v.name)}">⭐ Rate a beer from here →</a>
+                    <a href="#" class="osm-rate-link" data-venue-id="osm_${Utils.escapeHtml(String(v.id))}" data-venue-name="${Utils.escapeHtml(v.name)}" data-lat="${Utils.escapeHtml(String(v.lat))}" data-lng="${Utils.escapeHtml(String(v.lng))}">⭐ Rate a beer from here →</a>
                 </div>
             `);
             m.on('popupopen', () => {
                 m.getPopup().getElement()?.querySelector('.osm-rate-link')?.addEventListener('click', (e) => {
                     e.preventDefault();
-                    try { sessionStorage.setItem('beerbook_rate_venue_name', v.name); } catch (_) {}
-                    if (typeof App !== 'undefined' && App.navigate) App.navigate('rate');
+                    const link = e.currentTarget;
+                    const venueId = link?.dataset?.venueId || '';
+                    const venueName = link?.dataset?.venueName || v.name || 'Selected Venue';
+                    const lat = parseFloat(link?.dataset?.lat || '');
+                    const lng = parseFloat(link?.dataset?.lng || '');
+                    rateFromVenue(venueId, venueName, lat, lng);
                 });
             });
             markers.push(m);

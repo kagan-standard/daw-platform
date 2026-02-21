@@ -2361,6 +2361,8 @@ input, select, textarea, button {
 
 /* ============ VENUE TYPE PILLS ============ */
 .venue-type-pill {
+    display: inline-flex;
+    align-items: center;
     flex-shrink: 0;
     padding: 2px 8px;
     border-radius: 9999px;
@@ -2368,6 +2370,7 @@ input, select, textarea, button {
     font-weight: 600;
     letter-spacing: 0.3px;
     text-transform: uppercase;
+    vertical-align: middle;
 }
 .venue-type-pill--brewery {
     background: rgba(246, 173, 85, 0.14);
@@ -3335,6 +3338,10 @@ input, select, textarea, button {
     text-overflow: ellipsis;
 }
 .venue-list-card-meta {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
     font-size: 0.78rem;
     color: var(--text-muted, #b07d3a);
     margin-top: 2px;
@@ -3412,6 +3419,17 @@ input, select, textarea, button {
 }
 .map-popup { min-width: 200px; font-size: 0.9rem; }
 .map-popup .btn { margin-top: var(--space-sm); }
+.map-popup-type-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 2px 0 6px;
+}
+.venue-detail__location {
+    font-size: 13px;
+    color: var(--amber-500, #B0BEC5);
+}
 .leaflet-popup-content-wrapper { background: var(--bg-surface); color: var(--text-primary); border-radius: var(--radius-sm); }
 .leaflet-popup-tip { background: var(--bg-surface); }
 
