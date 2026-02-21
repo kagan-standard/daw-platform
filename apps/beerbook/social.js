@@ -18,6 +18,9 @@
             ]);
             const crews = Array.isArray(crewsOut?.data) ? crewsOut.data : [];
             const following = Array.isArray(followingOut?.data) ? followingOut.data : [];
+            // #region agent log
+            fetch('http://127.0.0.1:7669/ingest/dcf85816-3d9a-4023-99e0-099b9beddd82',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7a1905'},body:JSON.stringify({sessionId:'7a1905',runId:'run1',hypothesisId:'H5',location:'social.js:refreshSocialGraph:resolved',message:'social graph fetch resolved',data:{currentUserId:DB.currentUser?.id||null,crewsCount:crews.length,followingCount:following.length},timestamp:Date.now()})}).catch(()=>{});
+            // #endregion
             const crewMemberIds = new Set();
             crews.forEach((crew) => {
                 const ids = Array.isArray(crew.member_user_ids) ? crew.member_user_ids : [];
@@ -30,6 +33,9 @@
                 this.socialGraph.selectedCrewId = crews[0].id;
             }
         } catch (err) {
+            // #region agent log
+            fetch('http://127.0.0.1:7669/ingest/dcf85816-3d9a-4023-99e0-099b9beddd82',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7a1905'},body:JSON.stringify({sessionId:'7a1905',runId:'run1',hypothesisId:'H5',location:'social.js:refreshSocialGraph:catch',message:'social graph fetch threw',data:{currentUserId:DB.currentUser?.id||null,error:err?.message||String(err)},timestamp:Date.now()})}).catch(()=>{});
+            // #endregion
             console.warn('Failed to refresh social graph:', err?.message || err);
         }
         return this.socialGraph;
