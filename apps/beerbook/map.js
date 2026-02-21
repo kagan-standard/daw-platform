@@ -17,6 +17,10 @@ const MapView = {
     eventsBound: false,
     breweryCluster: null,
     _osmCluster: null,
+    _breweryMarkersById: {},
+    _osmMarkersById: {},
+    _highlightedMarker: null,
+    _highlightTimeout: null,
     breweryData: [],
     _osmVenues: [],
     _osmLoading: false,
@@ -269,6 +273,7 @@ const MapView = {
             this.map.removeLayer(this.breweryCluster);
             this.breweryCluster = null;
         }
+        this._breweryMarkersById = {};
         const markers = [];
         this.breweryData.forEach((b) => {
             const category = this.getVenueCategory(b.brewery_type);
@@ -279,6 +284,7 @@ const MapView = {
             const m = L.marker([lat, lng], { icon: this.createVenueIcon(b.brewery_type) });
             m.breweryId = b.id;
             m.brewerySummary = b;
+            this._breweryMarkersById[String(b.id)] = m;
             const isMobile = typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches;
             m.on('click', () => {
                 this.showVenueSheetBreweryDetail(b.id);
@@ -633,10 +639,7 @@ const MapView = {
                 const lng = parseFloat(card.dataset.lng);
                 const id = card.dataset.venueId;
                 const source = card.dataset.source;
-                this.map.setView([lat, lng], 15);
-                if (source === 'beerbook' && !id.startsWith('osm_')) {
-                    this.showVenueSheetBreweryDetail(id);
-                }
+                this.focusVenueFromList({ id, source, lat, lng });
             });
         });
 
@@ -742,6 +745,7 @@ const MapView = {
             this.map.removeLayer(this._osmCluster);
             this._osmCluster = null;
         }
+        this._osmMarkersById = {};
         if (!this._osmVenues || this._osmVenues.length === 0) return;
 
         const markers = [];
@@ -750,6 +754,7 @@ const MapView = {
             if (!this.isBreweryTypeVisible(category)) return;
             const icon = this.createVenueIcon(v.type);
             const m = L.marker([v.lat, v.lng], { icon });
+            this._osmMarkersById[`osm_${v.id}`] = m;
             const { label } = this.getVenuePinStyle(category);
             m.bindPopup(`
                 <div class="map-popup">
@@ -786,6 +791,80 @@ const MapView = {
         if (this.currentLayer === 'discover') {
             this.map.addLayer(this._osmCluster);
         }
+    },
+
+    focusVenueFromList({ id, source, lat, lng }) {
+        const map = this.map || this._map;
+        if (!map) return;
+
+        const currentZoom = (typeof map.getZoom === 'function' ? map.getZoom() : 0) || 0;
+        const targetZoom = Math.min(Math.max(currentZoom, 15), 17);
+        let centerLatLng = [lat, lng];
+
+        try {
+            const leaflet = (typeof L !== 'undefined' && L) || (typeof window !== 'undefined' && window.L);
+            if (leaflet && typeof map.latLngToContainerPoint === 'function' && typeof map.containerPointToLatLng === 'function') {
+                const pt = map.latLngToContainerPoint([lat, lng]);
+                const yOffset = 140;
+                const pt2 = leaflet.point(pt.x, pt.y - yOffset);
+                const ll2 = map.containerPointToLatLng(pt2);
+                centerLatLng = ll2;
+            }
+        } catch (_) {}
+
+        const marker = source === 'beerbook'
+            ? this._breweryMarkersById[String(id)]
+            : this._osmMarkersById[String(id)];
+        const cluster = source === 'beerbook' ? this.breweryCluster : this._osmCluster;
+
+        if (!marker) {
+            map.setView(centerLatLng, targetZoom);
+            if (source === 'beerbook' && !String(id).startsWith('osm_')) {
+                this.showVenueSheetBreweryDetail(id);
+            }
+            return;
+        }
+
+        if (cluster && typeof cluster.zoomToShowLayer === 'function') {
+            map.setView(centerLatLng, targetZoom);
+            cluster.zoomToShowLayer(marker, () => {
+                marker.openPopup();
+                this.highlightVenueMarker(marker);
+            });
+        } else {
+            map.setView(centerLatLng, targetZoom);
+            marker.openPopup();
+            this.highlightVenueMarker(marker);
+        }
+
+        if (source === 'beerbook' && !String(id).startsWith('osm_')) {
+            this.showVenueSheetBreweryDetail(id);
+        }
+    },
+
+    highlightVenueMarker(marker) {
+        if (this._highlightTimeout) {
+            clearTimeout(this._highlightTimeout);
+            this._highlightTimeout = null;
+        }
+
+        if (this._highlightedMarker && this._highlightedMarker !== marker) {
+            const prevEl = this._highlightedMarker.getElement?.();
+            if (prevEl) prevEl.classList.remove('venue-pin-highlight');
+        }
+
+        this._highlightedMarker = marker;
+        const el = marker?.getElement?.();
+        if (!el) return;
+
+        const alreadyHighlighted = el.classList.contains('venue-pin-highlight');
+        if (!alreadyHighlighted) el.classList.add('venue-pin-highlight');
+
+        this._highlightTimeout = setTimeout(() => {
+            const activeEl = this._highlightedMarker?.getElement?.();
+            if (activeEl) activeEl.classList.remove('venue-pin-highlight');
+            this._highlightTimeout = null;
+        }, 900);
     },
 
     async loadMap() {

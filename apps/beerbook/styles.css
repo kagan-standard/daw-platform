@@ -2773,6 +2773,23 @@ input, select, textarea, button {
     border: 2px solid rgba(255, 255, 255, 0.5);
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
 }
+.venue-pin-highlight .venue-pin-circle {
+    animation: venuePinPulse 900ms ease-out 1;
+    border-color: var(--gold, #F6AD55);
+    box-shadow: 0 0 0 2px rgba(246, 173, 85, 0.22), 0 3px 8px rgba(0, 0, 0, 0.45);
+}
+@keyframes venuePinPulse {
+    0% { transform: scale(1); }
+    35% { transform: scale(1.1); }
+    100% { transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .venue-pin-highlight .venue-pin-circle {
+        animation: none;
+        transform: none;
+        box-shadow: 0 0 0 2px rgba(246, 173, 85, 0.3), 0 2px 6px rgba(0, 0, 0, 0.4);
+    }
+}
 .venue-cluster {
     display: flex;
     align-items: center;
