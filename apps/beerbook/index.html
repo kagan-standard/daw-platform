@@ -584,7 +584,23 @@
             </div>
             <div class="map-wrapper">
                 <div id="beer-map" class="beer-map-container"></div>
-                <button type="button" class="map-locate-btn map-locate-float" id="map-locate-btn" title="Find breweries near me">📍 Near Me</button>
+                <button id="map-nearme-btn" class="map-nearme-btn" title="Near Me" aria-label="Find venues near me">
+                    📍 Near Me
+                </button>
+                <div id="venue-list-sheet" class="venue-list-sheet collapsed" aria-hidden="false">
+                    <div class="venue-sheet-handle" id="venue-sheet-handle">
+                        <span class="venue-sheet-handle-bar"></span>
+                    </div>
+                    <div class="venue-sheet-header" id="venue-sheet-header">
+                        <h3 id="venue-sheet-title">Venues Near You</h3>
+                        <p id="venue-sheet-subtitle" class="venue-sheet-subtitle">Based on current map view</p>
+                    </div>
+                    <div class="venue-sheet-list" id="venue-sheet-list"></div>
+                    <div class="venue-sheet-detail" id="venue-sheet-detail" style="display:none;">
+                        <button class="venue-sheet-back" id="venue-sheet-back" type="button">← Back to list</button>
+                        <div id="venue-sheet-detail-body"></div>
+                    </div>
+                </div>
             </div>
             <div id="map-sidebar" class="map-sidebar"></div>
             <div id="brewery-bottom-sheet" class="brewery-bottom-sheet" aria-hidden="true">

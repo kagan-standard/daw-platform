@@ -16,7 +16,13 @@ const MapView = {
     trailMarkers: [],
     eventsBound: false,
     breweryCluster: null,
+    _osmCluster: null,
     breweryData: [],
+    _osmVenues: [],
+    _osmLoading: false,
+    _osmLastBounds: null,
+    _userLat: null,
+    _userLng: null,
     currentLayer: 'discover',
     moveEndDebounce: null,
     BREWERY_CATEGORIES: {
@@ -43,9 +49,21 @@ const MapView = {
         this.restoreFilterState();
         const viewMap = document.getElementById('view-map');
         if (viewMap) viewMap.classList.toggle('map-mode-mymap', this.currentLayer === 'mymap');
+        const nearMeBtn = document.getElementById('map-nearme-btn');
+        if (nearMeBtn) nearMeBtn.style.display = this.currentLayer === 'discover' ? 'inline-flex' : 'none';
         await this.loadMap();
+        const venueSheet = document.getElementById('venue-list-sheet');
         if (this.currentLayer === 'discover') {
+            this.showVenueListMode();
             this.loadBreweriesInViewport();
+            this.loadOSMVenuesInViewport();
+            if (venueSheet) {
+                venueSheet.classList.remove('hidden');
+                venueSheet.setAttribute('aria-hidden', 'false');
+            }
+        } else if (venueSheet) {
+            venueSheet.classList.add('hidden');
+            venueSheet.setAttribute('aria-hidden', 'true');
         }
         this.updateLayerVisibility();
         const filtersEl = document.getElementById('map-filters');
@@ -58,7 +76,7 @@ const MapView = {
         this.eventsBound = true;
         document.getElementById('btn-near-me')?.addEventListener('click', () => this.bestNearMe());
         document.getElementById('btn-my-trail')?.addEventListener('click', () => this.showMyTrail());
-        document.getElementById('map-locate-btn')?.addEventListener('click', () => this.locateForBreweries());
+        document.getElementById('map-nearme-btn')?.addEventListener('click', () => this.nearMeLocate());
         document.getElementById('map-filter-style')?.addEventListener('change', () => this.applyStyleFilter());
         document.getElementById('beer-map')?.addEventListener('click', (e) => this._onPopupVenueClick(e));
         document.querySelectorAll('.map-toggle-btn').forEach((btn) => {
@@ -72,6 +90,8 @@ const MapView = {
             chip.addEventListener('click', () => this.toggleBreweryFilter(chip));
         });
         document.querySelector('.brewery-bottom-sheet-backdrop')?.addEventListener('click', () => this.closeBrewerySheet());
+        document.getElementById('venue-sheet-back')?.addEventListener('click', () => this.showVenueListMode());
+        this._initSheetDrag();
         if (DB.currentUser && DB.currentUser.id) {
             const trailBtn = document.getElementById('btn-my-trail');
             if (trailBtn) trailBtn.style.display = 'inline-flex';
@@ -91,9 +111,25 @@ const MapView = {
         if (viewMap) {
             viewMap.classList.toggle('map-mode-mymap', layer === 'mymap');
         }
+        const nearMeBtn = document.getElementById('map-nearme-btn');
+        if (nearMeBtn) nearMeBtn.style.display = layer === 'discover' ? 'inline-flex' : 'none';
         this.updateLayerVisibility();
-        if (layer === 'discover' && this.breweryData.length === 0) {
-            this.loadBreweriesInViewport();
+        const venueSheet = document.getElementById('venue-list-sheet');
+        if (layer === 'discover') {
+            if (venueSheet) {
+                venueSheet.classList.remove('hidden');
+                venueSheet.setAttribute('aria-hidden', 'false');
+            }
+            this.showVenueListMode();
+            if (this.breweryData.length === 0) {
+                this.loadBreweriesInViewport();
+            } else {
+                this.updateVenueListSheet();
+            }
+            this.loadOSMVenuesInViewport();
+        } else if (venueSheet) {
+            venueSheet.classList.add('hidden');
+            venueSheet.setAttribute('aria-hidden', 'true');
         }
     },
 
@@ -108,6 +144,10 @@ const MapView = {
             if (showBreweries) this.map.addLayer(this.breweryCluster);
             else this.map.removeLayer(this.breweryCluster);
         }
+        if (this._osmCluster) {
+            if (showBreweries) this.map.addLayer(this._osmCluster);
+            else this.map.removeLayer(this._osmCluster);
+        }
     },
 
     toggleBreweryFilter(chip) {
@@ -115,6 +155,8 @@ const MapView = {
         chip.setAttribute('aria-pressed', chip.classList.contains('active'));
         this.persistFilterState();
         this.renderBreweryPins();
+        this.renderOSMPins();
+        this.updateVenueListSheet();
     },
 
     persistFilterState() {
@@ -165,6 +207,7 @@ const MapView = {
             this.moveEndDebounce = null;
             if (this.currentLayer === 'discover') {
                 this.loadBreweriesInViewport();
+                this.loadOSMVenuesInViewport();
             }
         }, 500);
     },
@@ -179,6 +222,7 @@ const MapView = {
             const res = DB.isDemo ? { data: [] } : await DB.getBreweriesMap(bounds);
             this.breweryData = (res && res.data) ? res.data : [];
             this.renderBreweryPins();
+            this.updateVenueListSheet();
         } catch (err) {
             console.error('Breweries map load failed:', err);
         }
@@ -211,7 +255,10 @@ const MapView = {
             m.breweryId = b.id;
             m.brewerySummary = b;
             const isMobile = typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches;
-            m.on('click', () => this.openBreweryDetail(b.id, isMobile));
+            m.on('click', () => {
+                this.showVenueSheetBreweryDetail(b.id);
+                this.openBreweryDetail(b.id, isMobile);
+            });
             const cityState = [b.city, b.state].filter(Boolean).join(', ');
             m.bindPopup(`
                 <div class="map-popup map-popup-brewery">
@@ -249,6 +296,67 @@ const MapView = {
             this.showBreweryBottomSheet(breweryId);
         } else {
             this.fetchAndShowBreweryPopup(breweryId);
+        }
+    },
+
+    _initSheetDrag() {
+        const handle = document.getElementById('venue-sheet-handle');
+        const sheet = document.getElementById('venue-list-sheet');
+        if (!handle || !sheet) return;
+
+        handle.addEventListener('click', () => {
+            sheet.classList.toggle('expanded');
+            sheet.classList.toggle('collapsed', !sheet.classList.contains('expanded'));
+        });
+
+        let startY = 0;
+        handle.addEventListener('touchstart', (e) => {
+            startY = e.touches[0].clientY;
+        }, { passive: true });
+        handle.addEventListener('touchend', (e) => {
+            const endY = e.changedTouches[0].clientY;
+            const diff = startY - endY;
+            if (diff > 30) {
+                sheet.classList.add('expanded');
+                sheet.classList.remove('collapsed');
+            } else if (diff < -30) {
+                sheet.classList.remove('expanded');
+                sheet.classList.add('collapsed');
+            }
+        }, { passive: true });
+    },
+
+    showVenueListMode() {
+        const list = document.getElementById('venue-sheet-list');
+        const detail = document.getElementById('venue-sheet-detail');
+        if (list) list.style.display = '';
+        if (detail) detail.style.display = 'none';
+    },
+
+    async showVenueSheetBreweryDetail(breweryId) {
+        const list = document.getElementById('venue-sheet-list');
+        const detail = document.getElementById('venue-sheet-detail');
+        const body = document.getElementById('venue-sheet-detail-body');
+        const sheet = document.getElementById('venue-list-sheet');
+        if (!list || !detail || !body || !sheet) return;
+        if (this.currentLayer !== 'discover') return;
+
+        body.innerHTML = '<p class="brewery-sheet-loading">Loading…</p>';
+        list.style.display = 'none';
+        detail.style.display = '';
+        sheet.classList.add('expanded');
+        sheet.classList.remove('collapsed');
+
+        try {
+            const b = await DB.getBrewery(breweryId);
+            if (!b) {
+                body.innerHTML = '<p>Brewery not found.</p>';
+                return;
+            }
+            body.innerHTML = this.buildBreweryDetailHtml(b);
+            this._bindBreweryDetailButtons(body, b);
+        } catch (_) {
+            body.innerHTML = '<p>Could not load brewery.</p>';
         }
     },
 
@@ -348,17 +456,22 @@ const MapView = {
         }
     },
 
-    locateForBreweries() {
+    nearMeLocate() {
         if (!navigator.geolocation) {
             if (typeof App !== 'undefined') App.toast('Geolocation not supported', 'error');
             return;
         }
-        const btn = document.getElementById('map-locate-btn');
-        if (btn) btn.disabled = true;
+        const btn = document.getElementById('map-nearme-btn');
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = '⏳ Locating...';
+        }
         navigator.geolocation.getCurrentPosition(
             (pos) => {
                 const lat = pos.coords.latitude;
                 const lng = pos.coords.longitude;
+                this._userLat = lat;
+                this._userLng = lng;
                 this.map.setView([lat, lng], 13);
                 if (this.userMarker) this.map.removeLayer(this.userMarker);
                 this.userMarker = L.circleMarker([lat, lng], {
@@ -371,15 +484,292 @@ const MapView = {
                 this.userMarker.bindPopup('You are here');
                 if (this.currentLayer === 'discover') {
                     this.loadBreweriesInViewport();
+                    this.loadOSMVenuesInViewport();
                 }
-                if (btn) btn.disabled = false;
+                if (btn) {
+                    btn.disabled = false;
+                    btn.textContent = '📍 Near Me';
+                }
             },
             () => {
-                if (typeof App !== 'undefined') App.toast('Enable location to find nearby breweries', 'info');
-                if (btn) btn.disabled = false;
+                if (typeof App !== 'undefined') App.toast('Enable location to find nearby venues', 'info');
+                if (btn) {
+                    btn.disabled = false;
+                    btn.textContent = '📍 Near Me';
+                }
             },
-            { enableHighAccuracy: false, timeout: 15000 }
+            { enableHighAccuracy: true, timeout: 15000 }
         );
+    },
+
+    locateForBreweries() {
+        this.nearMeLocate();
+    },
+
+    _haversine(lat1, lon1, lat2, lon2) {
+        const R = 3959;
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLon = (lon2 - lon1) * Math.PI / 180;
+        const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    },
+
+    _formatDist(miles) {
+        if (miles < 0.1) return `${Math.round(miles * 5280)} ft`;
+        return `${miles.toFixed(1)} mi`;
+    },
+
+    _venueIcon(v) {
+        if (v.category === 'bar' || v.type === 'pub' || v.type === 'bar') return '🍺';
+        if (v.category === 'brewpub' || v.type === 'brewpub') return '🍽️';
+        if (v.type === 'restaurant') return '🍴';
+        return '🏭';
+    },
+
+    updateVenueListSheet() {
+        const listEl = document.getElementById('venue-sheet-list');
+        const titleEl = document.getElementById('venue-sheet-title');
+        const subtitleEl = document.getElementById('venue-sheet-subtitle');
+        const sheet = document.getElementById('venue-list-sheet');
+        if (!listEl || !sheet) return;
+        if (this.currentLayer !== 'discover') return;
+
+        let allVenues = [];
+
+        (this.breweryData || []).forEach((b) => {
+            if (b.latitude == null || b.longitude == null) return;
+            const category = this.getBreweryCategory(b.brewery_type);
+            if (!this.isBreweryTypeVisible(category)) return;
+            allVenues.push({
+                id: b.id,
+                name: b.name,
+                type: b.brewery_type || 'brewery',
+                category: category,
+                lat: b.latitude,
+                lng: b.longitude,
+                source: 'beerbook',
+                phone: b.phone,
+                city: b.city,
+                state: b.state
+            });
+        });
+
+        (this._osmVenues || []).forEach((v) => {
+            if (!this.isBreweryTypeVisible(v.category)) return;
+            allVenues.push({
+                id: 'osm_' + v.id,
+                name: v.name,
+                type: v.type,
+                category: v.category,
+                lat: v.lat,
+                lng: v.lng,
+                source: 'osm',
+                phone: v.phone,
+                website: v.website,
+                city: null,
+                state: null
+            });
+        });
+
+        if (this._userLat != null && this._userLng != null) {
+            allVenues.forEach((v) => {
+                v.distance = this._haversine(this._userLat, this._userLng, v.lat, v.lng);
+            });
+            allVenues.sort((a, b) => (a.distance || 9999) - (b.distance || 9999));
+        } else {
+            allVenues.sort((a, b) => a.name.localeCompare(b.name));
+        }
+
+        const count = allVenues.length;
+        if (titleEl) titleEl.textContent = `${count} Venue${count !== 1 ? 's' : ''} Near You`;
+        if (subtitleEl) subtitleEl.textContent = this._userLat != null ? 'Sorted by distance' : 'Based on current map view';
+
+        const display = allVenues.slice(0, 50);
+        listEl.innerHTML = display.map((v) => {
+            const icon = this._venueIcon(v);
+            const distText = v.distance != null ? this._formatDist(v.distance) : '';
+            const meta = [v.type, v.city, v.state].filter(Boolean).join(' · ');
+            const sourceTag = v.source === 'osm' ? '<span class="venue-osm-tag">OSM</span>' : '';
+            return `
+                <div class="venue-list-card" data-venue-id="${v.id}" data-lat="${v.lat}" data-lng="${v.lng}" data-source="${v.source}">
+                    <div class="venue-list-card-icon">${icon}</div>
+                    <div class="venue-list-card-info">
+                        <div class="venue-list-card-name">${Utils.escapeHtml(v.name || 'Unknown Venue')} ${sourceTag}</div>
+                        <div class="venue-list-card-meta">${Utils.escapeHtml(meta)}</div>
+                    </div>
+                    ${distText ? `<div class="venue-list-card-distance">${distText}</div>` : ''}
+                </div>
+            `;
+        }).join('');
+
+        listEl.querySelectorAll('.venue-list-card').forEach((card) => {
+            card.addEventListener('click', () => {
+                const lat = parseFloat(card.dataset.lat);
+                const lng = parseFloat(card.dataset.lng);
+                const id = card.dataset.venueId;
+                const source = card.dataset.source;
+                this.map.setView([lat, lng], 15);
+                if (source === 'beerbook' && !id.startsWith('osm_')) {
+                    this.showVenueSheetBreweryDetail(id);
+                }
+            });
+        });
+
+        sheet.classList.remove('hidden');
+        sheet.setAttribute('aria-hidden', 'false');
+    },
+
+    async loadOSMVenuesInViewport() {
+        if (!this.map || this._osmLoading) return;
+        if (this.currentLayer !== 'discover') return;
+        if (this.map.getZoom() < 11) {
+            this._osmVenues = [];
+            this.renderOSMPins();
+            this.updateVenueListSheet();
+            return;
+        }
+
+        const b = this.map.getBounds();
+        const sw = b.getSouthWest();
+        const ne = b.getNorthEast();
+        const boundsKey = `${sw.lat.toFixed(3)},${sw.lng.toFixed(3)},${ne.lat.toFixed(3)},${ne.lng.toFixed(3)}`;
+        if (this._osmLastBounds === boundsKey) return;
+
+        this._osmLoading = true;
+        this._osmLastBounds = boundsKey;
+        const bbox = `${sw.lat},${sw.lng},${ne.lat},${ne.lng}`;
+        const query = `
+            [out:json][timeout:10];
+            (
+              node["amenity"="bar"](${bbox});
+              node["amenity"="pub"](${bbox});
+              node["amenity"="restaurant"]["cuisine"~"beer|brewery|gastropub"](${bbox});
+              node["microbrewery"="yes"](${bbox});
+              node["craft"="brewery"](${bbox});
+              way["amenity"="bar"](${bbox});
+              way["amenity"="pub"](${bbox});
+            );
+            out center 200;
+        `;
+
+        try {
+            const res = await fetch('https://overpass-api.de/api/interpreter', {
+                method: 'POST',
+                body: 'data=' + encodeURIComponent(query),
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+            });
+            if (!res.ok) {
+                console.warn('OSM Overpass query failed:', res.status);
+                this._osmLoading = false;
+                return;
+            }
+            const data = await res.json();
+            const elements = data.elements || [];
+
+            this._osmVenues = elements
+                .filter((el) => el.tags && el.tags.name)
+                .map((el) => {
+                    const lat = el.lat || (el.center && el.center.lat);
+                    const lng = el.lon || (el.center && el.center.lon);
+                    if (lat == null || lng == null) return null;
+                    const tags = el.tags || {};
+                    let type = tags.amenity || 'bar';
+                    let category = 'bar';
+                    if (tags.microbrewery === 'yes' || tags.craft === 'brewery') {
+                        type = 'brewery';
+                        category = 'brewery';
+                    }
+                    if (type === 'restaurant') category = 'bar';
+                    return {
+                        id: el.id,
+                        name: tags.name,
+                        type,
+                        category,
+                        lat,
+                        lng,
+                        phone: tags.phone || tags['contact:phone'] || null,
+                        website: tags.website || tags['contact:website'] || null,
+                        hours: tags.opening_hours || null
+                    };
+                })
+                .filter(Boolean);
+
+            if (this.breweryData && this.breweryData.length > 0) {
+                this._osmVenues = this._osmVenues.filter((osm) => {
+                    return !this.breweryData.some((bItem) => {
+                        if (bItem.latitude == null || bItem.longitude == null) return false;
+                        const d = this._haversine(osm.lat, osm.lng, bItem.latitude, bItem.longitude);
+                        return d < 0.03;
+                    });
+                });
+            }
+
+            this.renderOSMPins();
+            this.updateVenueListSheet();
+        } catch (err) {
+            console.warn('OSM Overpass error:', err);
+        }
+
+        this._osmLoading = false;
+    },
+
+    renderOSMPins() {
+        if (!this.map) return;
+        if (this._osmCluster) {
+            this.map.removeLayer(this._osmCluster);
+            this._osmCluster = null;
+        }
+        if (!this._osmVenues || this._osmVenues.length === 0) return;
+
+        const markers = [];
+        this._osmVenues.forEach((v) => {
+            if (!this.isBreweryTypeVisible(v.category)) return;
+            const icon = L.divIcon({
+                className: 'osm-venue-pin',
+                html: `<span class="osm-pin-circle">${v.type === 'restaurant' ? '🍴' : '🍺'}</span>`,
+                iconSize: [24, 24],
+                iconAnchor: [12, 12]
+            });
+            const m = L.marker([v.lat, v.lng], { icon });
+            const meta = [v.type, v.hours].filter(Boolean).join(' · ');
+            m.bindPopup(`
+                <div class="map-popup map-popup-osm">
+                    <strong>${Utils.escapeHtml(v.name)}</strong><br>
+                    <span class="osm-source-badge">via OpenStreetMap</span><br>
+                    ${Utils.escapeHtml(meta)}<br>
+                    ${v.phone ? `📞 ${Utils.escapeHtml(v.phone)}<br>` : ''}
+                    ${v.website ? `<a href="${Utils.escapeHtml(v.website)}" target="_blank" rel="noopener">🌐 Website →</a><br>` : ''}
+                    <a href="#" class="osm-rate-link" data-venue-name="${Utils.escapeHtml(v.name)}">⭐ Rate a beer from here →</a>
+                </div>
+            `);
+            m.on('popupopen', () => {
+                m.getPopup().getElement()?.querySelector('.osm-rate-link')?.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    try { sessionStorage.setItem('beerbook_rate_venue_name', v.name); } catch (_) {}
+                    if (typeof App !== 'undefined' && App.navigate) App.navigate('rate');
+                });
+            });
+            markers.push(m);
+        });
+
+        this._osmCluster = L.markerClusterGroup({
+            iconCreateFunction: (cluster) => {
+                const count = cluster.getChildCount();
+                return L.divIcon({
+                    className: 'osm-cluster',
+                    html: `<span class="osm-cluster-count">${count}</span>`,
+                    iconSize: [36, 36],
+                    iconAnchor: [18, 18]
+                });
+            }
+        });
+        markers.forEach((m) => this._osmCluster.addLayer(m));
+
+        if (this.currentLayer === 'discover') {
+            this.map.addLayer(this._osmCluster);
+        }
     },
 
     async loadMap() {
