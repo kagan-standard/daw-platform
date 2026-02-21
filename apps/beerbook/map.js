@@ -21,6 +21,8 @@ const MapView = {
     _osmVenues: [],
     _osmLoading: false,
     _osmLastBounds: null,
+    _osmLastQueryTime: 0,
+    _lastBreweryBounds: null,
     _userLat: null,
     _userLng: null,
     currentLayer: 'discover',
@@ -203,15 +205,15 @@ const MapView = {
     },
 
     _onMapMoveEnd() {
-        console.log('MapView: moveend fired', this.currentLayer);
         if (this.moveEndDebounce) clearTimeout(this.moveEndDebounce);
         this.moveEndDebounce = setTimeout(() => {
             this.moveEndDebounce = null;
             if (this.currentLayer === 'discover') {
+                console.log('MapView: moveend fired discover');
                 this.loadBreweriesInViewport();
                 this.loadOSMVenuesInViewport();
             }
-        }, 500);
+        }, 1000);
     },
 
     async loadBreweriesInViewport() {
@@ -219,6 +221,9 @@ const MapView = {
         const b = this.map.getBounds();
         const sw = b.getSouthWest();
         const ne = b.getNorthEast();
+        const boundsKey = `${sw.lat.toFixed(3)},${sw.lng.toFixed(3)},${ne.lat.toFixed(3)},${ne.lng.toFixed(3)}`;
+        if (this._lastBreweryBounds === boundsKey) return;
+        this._lastBreweryBounds = boundsKey;
         const bounds = `${sw.lat},${sw.lng},${ne.lat},${ne.lng}`;
         try {
             const res = DB.isDemo ? { data: [] } : await DB.getBreweriesMap(bounds);
@@ -228,6 +233,39 @@ const MapView = {
         } catch (err) {
             console.error('Breweries map load failed:', err);
         }
+    },
+
+    async _queryOverpass(query) {
+        const endpoints = [
+            'https://overpass-api.de/api/interpreter',
+            'https://overpass.kumi.systems/api/interpreter',
+            'https://maps.mail.ru/osm/tools/overpass/api/interpreter'
+        ];
+
+        for (const url of endpoints) {
+            let timeoutId = null;
+            try {
+                const controller = new AbortController();
+                timeoutId = setTimeout(() => controller.abort(), 8000);
+                const res = await fetch(url, {
+                    method: 'POST',
+                    body: 'data=' + encodeURIComponent(query),
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    signal: controller.signal
+                });
+                if (res.ok) {
+                    return await res.json();
+                }
+                console.warn(`Overpass ${url} returned ${res.status}, trying next...`);
+            } catch (err) {
+                console.warn(`Overpass ${url} failed:`, err?.message || err);
+            } finally {
+                if (timeoutId) clearTimeout(timeoutId);
+            }
+        }
+
+        console.warn('All Overpass endpoints failed');
+        return { elements: [] };
     },
 
     createBreweryIcon(b) {
@@ -632,6 +670,9 @@ const MapView = {
     async loadOSMVenuesInViewport() {
         if (!this.map || this._osmLoading) return;
         if (this.currentLayer !== 'discover') return;
+        const now = Date.now();
+        if (now - this._osmLastQueryTime < 10000) return;
+        this._osmLastQueryTime = now;
         if (this.map.getZoom() < 11) {
             this._osmVenues = [];
             this.renderOSMPins();
@@ -649,7 +690,7 @@ const MapView = {
         this._osmLastBounds = boundsKey;
         const bbox = `${sw.lat},${sw.lng},${ne.lat},${ne.lng}`;
         const query = `
-            [out:json][timeout:10];
+            [out:json][timeout:5];
             (
               node["amenity"="bar"](${bbox});
               node["amenity"="pub"](${bbox});
@@ -659,21 +700,11 @@ const MapView = {
               way["amenity"="bar"](${bbox});
               way["amenity"="pub"](${bbox});
             );
-            out center 200;
+            out center 100;
         `;
 
         try {
-            const res = await fetch('https://overpass-api.de/api/interpreter', {
-                method: 'POST',
-                body: 'data=' + encodeURIComponent(query),
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-            });
-            if (!res.ok) {
-                console.warn('OSM Overpass query failed:', res.status);
-                this._osmLoading = false;
-                return;
-            }
-            const data = await res.json();
+            const data = await this._queryOverpass(query);
             const elements = data.elements || [];
 
             this._osmVenues = elements
