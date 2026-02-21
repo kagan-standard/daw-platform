@@ -58,6 +58,7 @@ CREATE TABLE IF NOT EXISTS venues (
     address TEXT,
     latitude DECIMAL(9,6) NOT NULL,
     longitude DECIMAL(9,6) NOT NULL,
+    venue_type TEXT CHECK (venue_type IN ('brewery', 'bar', 'restaurant') OR venue_type IS NULL),
     created_by TEXT NOT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()

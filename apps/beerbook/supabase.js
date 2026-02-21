@@ -1101,7 +1101,15 @@ const DB = {
 
     async createVenue(venue) {
         if (this.isDemo) return { id: 'demo_venue_' + Utils.uid(), name: venue.name };
-        const out = await this._api('POST', '/api/venues', { body: JSON.stringify(venue) });
+        const body = {
+            name: venue.name,
+            latitude: venue.latitude,
+            longitude: venue.longitude,
+            address: venue.address || null,
+            venue_type: venue.venue_type || null,
+            created_by: this.currentUser?.id || 'demo'
+        };
+        const out = await this._api('POST', '/api/venues', { body: JSON.stringify(body) });
         return out;
     },
 

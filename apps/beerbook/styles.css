@@ -2388,6 +2388,36 @@ input, select, textarea, button {
     border: 1px solid rgba(232, 116, 97, 0.3);
 }
 
+/* ============ VENUE TYPE PICKER (Rating Form) ============ */
+.venue-type-picker {
+    margin-top: 8px;
+}
+.venue-type-picker__label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--amber-500, #B0BEC5);
+    margin-bottom: 6px;
+}
+.venue-type-picker__options {
+    display: flex;
+    gap: 8px;
+}
+.venue-type-opt {
+    background: none;
+    border: 2px solid transparent;
+    border-radius: 9999px;
+    padding: 2px;
+    cursor: pointer;
+    transition: border-color 0.2s, transform 0.15s;
+}
+.venue-type-opt:hover {
+    transform: scale(1.05);
+}
+.venue-type-opt.selected {
+    border-color: var(--amber-400, #F4B223);
+    transform: scale(1.05);
+}
+
 .rating-card__footer {
     display: flex;
     align-items: center;

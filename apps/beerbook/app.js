@@ -653,6 +653,7 @@ const App = {
             const lng = document.getElementById('rating-lng').value ? parseFloat(document.getElementById('rating-lng').value) : null;
             const locationName = document.getElementById('rating-location-name').value.trim() || null;
             let venueId = document.getElementById('rating-venue-id').value || null;
+            const venueType = document.getElementById('rating-venue-type')?.value || null;
             
             // Handle pending venue creation from Overpass selection
             const pendingVenueData = document.getElementById('rating-venue-id').getAttribute('data-pending-venue');
@@ -663,7 +664,8 @@ const App = {
                         name: venueData.name,
                         latitude: venueData.latitude,
                         longitude: venueData.longitude,
-                        address: venueData.address || null
+                        address: venueData.address || null,
+                        venue_type: venueData.venue_type || venueType || null
                     });
                     venueId = venue && venue.id ? venue.id : null;
                 } catch (err) {
@@ -728,7 +730,12 @@ const App = {
                     } else {
                         try {
                             if (!venueId) {
-                                const venue = await DB.createVenue({ name: locationName, latitude: lat, longitude: lng });
+                                const venue = await DB.createVenue({
+                                    name: locationName,
+                                    latitude: lat,
+                                    longitude: lng,
+                                    venue_type: venueType
+                                });
                                 venueId = venue && venue.id ? venue.id : null;
                             }
                             if (venueId) {
@@ -784,15 +791,27 @@ const App = {
             document.getElementById('venue-picker').style.display = 'none';
             document.getElementById('location-manual').focus();
         });
-        document.getElementById('location-manual')?.addEventListener('blur', () => {
+        const handleManualLocation = () => {
             const v = document.getElementById('location-manual').value.trim();
             if (v) {
                 document.getElementById('rating-location-name').value = v;
+                document.getElementById('rating-venue-id').value = '';
+                document.getElementById('rating-venue-id').removeAttribute('data-pending-venue');
                 document.getElementById('location-chip-text').textContent = '📍 ' + v;
                 document.getElementById('location-chip').style.display = 'inline-flex';
                 document.getElementById('venue-picker').style.display = 'none';
                 this.togglePriceSection();
+                this.updateVenueTypePicker();
             }
+        };
+        document.getElementById('location-manual')?.addEventListener('blur', handleManualLocation);
+        document.getElementById('location-manual')?.addEventListener('change', handleManualLocation);
+        document.querySelectorAll('.venue-type-opt').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.venue-type-opt').forEach((b) => b.classList.remove('selected'));
+                btn.classList.add('selected');
+                document.getElementById('rating-venue-type').value = btn.dataset.type;
+            });
         });
 
         // Price log (Task 6)
@@ -1284,6 +1303,7 @@ const App = {
                             document.getElementById('rating-lng').value = lng;
                             document.getElementById('rating-location-name').value = locationName;
                             document.getElementById('rating-venue-id').value = '';
+                            document.getElementById('rating-venue-id').removeAttribute('data-pending-venue');
                             document.getElementById('location-manual').value = locationName;
 
                             // Show chip
@@ -1296,6 +1316,7 @@ const App = {
 
                             // Show price section since we now have a location
                             App.togglePriceSection();
+                            this.updateVenueTypePicker();
                             App.toast('Location set', 'success');
                         });
                     });
@@ -1490,6 +1511,18 @@ const App = {
                 document.getElementById('location-chip-text').textContent = '📍 ' + name;
                 document.getElementById('location-chip').style.display = 'inline-flex';
                 document.getElementById('location-manual').value = name;
+                document.getElementById('rating-venue-id').value = '';
+                document.getElementById('rating-venue-id').removeAttribute('data-pending-venue');
+
+                // Auto-detect venue type from OSM data and preselect picker pill.
+                const detectedType = this.detectVenueTypeFromOSM(nominatimData);
+                if (detectedType) {
+                    document.getElementById('rating-venue-type').value = detectedType;
+                    document.querySelectorAll('.venue-type-opt').forEach((btn) => {
+                        btn.classList.toggle('selected', btn.dataset.type === detectedType);
+                    });
+                }
+                this.updateVenueTypePicker();
                 
                 // Render venue suggestions
                 if (overpassVenues && overpassVenues.length > 0) {
@@ -1554,6 +1587,38 @@ const App = {
         }
     },
 
+    detectVenueTypeFromOSM(nominatimData) {
+        if (!nominatimData) return null;
+
+        const cls = (nominatimData.class || '').toLowerCase();
+        const type = (nominatimData.type || '').toLowerCase();
+
+        if (cls === 'amenity' && ['bar', 'pub', 'nightclub', 'biergarten'].includes(type)) {
+            return 'bar';
+        }
+
+        if (cls === 'amenity' && ['restaurant', 'cafe', 'fast_food'].includes(type)) {
+            return 'restaurant';
+        }
+
+        if (type === 'brewery' || (cls === 'craft' && type === 'brewery')) {
+            return 'brewery';
+        }
+
+        const name = (nominatimData.display_name || '').toLowerCase();
+        if (name.includes('brewing') || name.includes('brewery') || name.includes('brewhouse')) {
+            return 'brewery';
+        }
+        if (name.includes(' bar,') || name.includes(' pub,') || name.includes('taproom') || name.includes('tavern') || name.includes('taphouse')) {
+            return 'bar';
+        }
+        if (name.includes('restaurant') || name.includes('grill') || name.includes('bistro') || name.includes('kitchen')) {
+            return 'restaurant';
+        }
+
+        return null;
+    },
+
     _distanceMeters(lat1, lon1, lat2, lon2) {
         const R = 6371000;
         const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -1584,8 +1649,16 @@ const App = {
         // Store venue data for creation on submit if no match (use data-address for clean address)
         if (!venueId) {
             const address = el.dataset.address || '';
+            const detectedType = this.detectVenueTypeFromOSM({
+                class: 'amenity',
+                type: el.dataset.type || ''
+            });
             document.getElementById('rating-venue-id').setAttribute('data-pending-venue', JSON.stringify({
-                name, latitude: lat, longitude: lng, address: address || null
+                name,
+                latitude: lat,
+                longitude: lng,
+                address: address || null,
+                venue_type: detectedType
             }));
         } else {
             document.getElementById('rating-venue-id').value = venueId;
@@ -1600,6 +1673,7 @@ const App = {
         
         // Hide venue picker
         document.getElementById('venue-picker').style.display = 'none';
+        this.updateVenueTypePicker();
     },
 
     clearLocation() {
@@ -1612,6 +1686,9 @@ const App = {
         document.getElementById('location-chip').style.display = 'none';
         document.getElementById('venue-picker').style.display = 'none';
         document.getElementById('venue-chip').style.display = 'none';
+        document.getElementById('rating-venue-type').value = '';
+        document.querySelectorAll('.venue-type-opt').forEach((b) => b.classList.remove('selected'));
+        this.updateVenueTypePicker();
         this.togglePriceSection();
     },
 
@@ -1624,6 +1701,15 @@ const App = {
         if (lat && lng) {
             document.getElementById('venue-picker').style.display = 'block';
         }
+        this.updateVenueTypePicker();
+    },
+
+    updateVenueTypePicker() {
+        const picker = document.getElementById('venue-type-picker');
+        if (!picker) return;
+        const hasLocation = !!document.getElementById('rating-location-name').value;
+        const hasVenueId = !!document.getElementById('rating-venue-id').value;
+        picker.style.display = (hasLocation && !hasVenueId) ? 'block' : 'none';
     },
 
     togglePriceSection() {
@@ -3087,6 +3173,10 @@ const App = {
         document.getElementById('price-happy-hour').checked = false;
         document.getElementById('price-log-fields').style.display = 'none';
         document.getElementById('price-log-toggle').setAttribute('aria-expanded', 'false');
+        document.getElementById('rating-venue-type').value = '';
+        document.querySelectorAll('.venue-type-opt').forEach((b) => b.classList.remove('selected'));
+        const picker = document.getElementById('venue-type-picker');
+        if (picker) picker.style.display = 'none';
         if (this._pendingPhotoPreviewUrl) {
             URL.revokeObjectURL(this._pendingPhotoPreviewUrl);
             this._pendingPhotoPreviewUrl = null;

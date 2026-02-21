@@ -209,7 +209,7 @@ Design decisions:
 - **Stale data threshold: 90 days.** Price logs and happy hours not confirmed within 90 days get a warning badge.
 - **Confirmation mechanic:** Any authenticated user can "confirm" a price or happy hour (increment counter + update timestamp). One confirmation per user per item (idempotent).
 - **The "deals" query** factors in: user location, venue radius, active happy hours (current day + time), beer YG rate, beer price, and avg stars. Sorted by YG-per-dollar (value metric).
-- **No restaurant/bar category taxonomy.** Venues are just venues. Don't over-engineer venue types.
+- **Simple venue type taxonomy (3 types).** Venues have an optional `venue_type` column: `'brewery'`, `'bar'`, or `'restaurant'` (nullable). Used for color-coded venue type pill badges on Browse rating cards, Map pins/popups, and venue detail sheets. Colors match the Discover map legend: Brewery = #F6AD55 (amber), Bar & Pub = #48BB78 (green), Restaurant = #E87461 (coral). When a user geotags a new rating, the Nominatim reverse geocode response's `class` and `type` fields are used to auto-detect the venue type and pre-select the picker. Users can override or skip. OpenBreweryDB venues are always typed as 'brewery' since that dataset only contains breweries. The field is optional (NULL = no pill shown).
 
 ## Photo Storage Decision (Phase 2.5)
 

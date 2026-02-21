@@ -457,6 +457,21 @@
                         <span id="location-chip-text"></span>
                         <button type="button" id="location-chip-remove" class="location-chip-remove" aria-label="Remove location">✕</button>
                     </div>
+                    <div id="venue-type-picker" class="venue-type-picker" style="display:none;">
+                        <p class="venue-type-picker__label">What kind of place?</p>
+                        <div class="venue-type-picker__options">
+                            <button type="button" class="venue-type-opt" data-type="brewery">
+                                <span class="venue-type-pill venue-type-pill--brewery">Brewery</span>
+                            </button>
+                            <button type="button" class="venue-type-opt" data-type="bar">
+                                <span class="venue-type-pill venue-type-pill--bar">Bar &amp; Pub</span>
+                            </button>
+                            <button type="button" class="venue-type-opt" data-type="restaurant">
+                                <span class="venue-type-pill venue-type-pill--restaurant">Restaurant</span>
+                            </button>
+                        </div>
+                    </div>
+                    <input type="hidden" id="rating-venue-type" value="">
                     <div id="venue-picker" class="venue-picker" style="display:none;">
                         <label>Where are you drinking?</label>
                         <div id="venue-suggestions" class="venue-suggestions">
