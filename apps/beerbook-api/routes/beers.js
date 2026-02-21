@@ -1,5 +1,6 @@
 /**
  * Beer endpoints: list, single, search autocomplete
+ * IMPORTANT: Autocomplete must search ref_beers catalog. See bug history — do not change this without testing.
  */
 const express = require('express');
 
@@ -37,13 +38,13 @@ module.exports = function (opts) {
       .catch(next);
   });
 
-  // GET /api/beers/search?q=X — autocomplete, top 10 unique beers
+  // GET /api/beers/search?q=X — autocomplete from catalog (ref_beers/beers), top 10 unique beers
   router.get('/search', (req, res) => {
     const q = (req.query.q || '').trim().replace(/[%*]/g, '');
     if (!q || q.length < 2) return res.json({ data: [] });
 
-    const encoded = encodeURIComponent(q);
-    const url = `/ratings?or=(beer_name.ilike.*${encoded}*,brewery.ilike.*${encoded}*)&select=beer_name,brewery,style&order=beer_name.asc&limit=50`;
+    const like = encodeURIComponent(`*${q}*`);
+    const url = `/beers?or=(name.ilike.${like},brewery_name.ilike.${like})&select=id,name,brewery_name,style,abv,review_overall,review_count&order=review_count.desc.nullslast,name.asc&limit=50`;
 
     rest('GET', url, {})
       .then(({ status, body }) => {
@@ -59,15 +60,20 @@ module.exports = function (opts) {
         const seen = new Set();
         const deduped = [];
         for (const row of rows) {
-          const name = (row.beer_name || '').trim();
+          const name = (row.name || row.beer_name || '').trim();
           if (!name) continue;
           const key = name.toLowerCase();
           if (seen.has(key)) continue;
           seen.add(key);
           deduped.push({
+            id: row.id || null,
             beer_name: name,
-            brewery: (row.brewery || '').trim(),
+            brewery: (row.brewery_name || row.brewery || '').trim(),
             style: (row.style || '').trim(),
+            abv: row.abv != null ? Number(row.abv) : null,
+            review_overall: row.review_overall != null ? Number(row.review_overall) : null,
+            review_count: row.review_count != null ? Number(row.review_count) : 0,
+            source: 'catalog',
           });
           if (deduped.length >= 10) break;
         }
