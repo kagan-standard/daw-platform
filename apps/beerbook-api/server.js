@@ -61,20 +61,26 @@ function totalFromContentRange(contentRange) {
 function corsMiddleware(req, res, next) {
   const origin = req.headers.origin;
   const allowed = (origin === CORS_ORIGIN);
+  const allowMethods = 'GET, POST, PUT, PATCH, DELETE, OPTIONS';
+  const allowHeaders = 'Content-Type, Authorization';
   if (req.method === 'OPTIONS') {
     if (allowed) {
+      res.setHeader('Vary', 'Origin');
       res.setHeader('Access-Control-Allow-Origin', CORS_ORIGIN);
-      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+      res.setHeader('Access-Control-Allow-Methods', allowMethods);
+      res.setHeader('Access-Control-Allow-Headers', allowHeaders);
       res.setHeader('Access-Control-Max-Age', '86400');
       return res.status(204).end();
     }
     return res.status(403).end();
   }
   if (allowed) {
+    res.setHeader('Vary', 'Origin');
     res.setHeader('Access-Control-Allow-Origin', CORS_ORIGIN);
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Allow-Methods', allowMethods);
+    res.setHeader('Access-Control-Allow-Headers', allowHeaders);
   }
   next();
 }
