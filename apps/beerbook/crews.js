@@ -156,6 +156,9 @@
         document.getElementById('create-crew-btn')?.addEventListener('click', async () => {
             const name = window.prompt('Crew name (max 50 chars)');
             if (!name) return;
+            // #region agent log
+            fetch('http://127.0.0.1:7669/ingest/dcf85816-3d9a-4023-99e0-099b9beddd82',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7a1905'},body:JSON.stringify({sessionId:'7a1905',runId:'run2',hypothesisId:'H4',location:'crews.js:create-click',message:'create crew clicked',data:{nameLength:String(name).trim().length,currentUserId:DB.currentUser?.id||null},timestamp:Date.now()})}).catch(()=>{});
+            // #endregion
             const crew = await DB.createCrew(name).catch((e) => {
                 Utils.toast(e.message || 'Create crew failed', 'error');
                 return null;

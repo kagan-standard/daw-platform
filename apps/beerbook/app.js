@@ -213,6 +213,9 @@ const App = {
 
     // ========== INIT ==========
     async init() {
+        // #region agent log
+        fetch('http://127.0.0.1:7669/ingest/dcf85816-3d9a-4023-99e0-099b9beddd82',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7a1905'},body:JSON.stringify({sessionId:'7a1905',runId:'run2',hypothesisId:'H1',location:'app.js:init',message:'instrumented build loaded',data:{origin:window.location.origin,href:window.location.href},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
         Charts.init();
         await DB.init();
         Tracking.trackPageView(window.location.pathname || '/');
