@@ -239,3 +239,84 @@ Design decisions:
 - **User profiles are public.** Any user can view any other user's profile, stats, and ratings. No privacy toggle in Phase 2.5.
 - **Leaderboard periods: weekly, monthly, all-time.** Weekly = last 7 days rolling. Monthly = last 30 days rolling. Not calendar-aligned.
 - **Delete own reviews only.** Users can delete their own ratings. No edit — delete and re-rate. Admins can't delete others' ratings in Phase 2.5.
+
+## Crews & Follows Decision (Phase 3.0)
+
+### Context
+
+BeerBook currently has no user-to-user social graph. All ratings are visible globally to all authenticated users. The original "Path A" concept envisioned hard multi-tenant isolation with `crew_id` on every row, but user feedback revealed a different need: users want to **prioritize** content from their people, not be **isolated** from everyone else. This decision replaces Path A with a softer social layer model.
+
+### Design Decisions
+
+- **Two-layer social model: Follows + Crews.** Follows are lightweight discovery (one-directional, no approval). Crews are mutual groups (your actual drinking buddies). Both coexist — a user can follow strangers and also be in a crew with friends.
+- **Follows are one-directional and instant.** Tap follow on any profile — no approval, no notification. Unfollow is equally instant. This is the low-friction discovery layer.
+- **Crews are small mutual groups with invite codes.** A user creates a crew, gets a 6-character alphanumeric invite code (or shareable link), and shares it. Anyone with the code can join. No approval queue in Phase 3.0.
+- **Users can be in multiple crews.** Work crew, college friends, neighborhood regulars — no limit in Phase 3.0 (soft cap at 10 if abuse appears).
+- **Crew size soft cap: 50 members.** Keeps crews intimate. Can be raised later.
+- **Feed priority, not feed filtering.** The dashboard, activity feed, and browse views show ALL ratings but **weighted**: crew reviews appear first (visually highlighted), then followed users, then everyone else. Users always see the global pool — crews just bubble their people to the top.
+- **Crew leaderboards.** The existing leaderboard gets a "My Crew" tab alongside All Time / Monthly / Weekly. Shows stats scoped to selected crew members only.
+- **No `crew_id` on ratings or other content tables.** Crew scoping happens at query time by joining `crew_members` to `ratings` on `user_id`. Ratings remain global. This is fundamentally different from Path A.
+- **Crew roles: owner and member.** Owner can rename the crew, regenerate the invite code, and remove members. Members can leave. No admin role in Phase 3.0.
+- **Crew names are freeform text, max 50 characters.** No uniqueness constraint — multiple crews can have the same name.
+- **Invite codes are unique and regenerable.** Owner can regenerate to invalidate old links. Codes are case-insensitive, 6 alphanumeric characters (e.g., `BK7M2X`).
+- **Profile shows crew membership.** A user's public profile lists which crews they belong to (crew names visible, not invite codes).
+- **Follow/crew counts on profile.** Profile header shows: followers count, following count, crew count.
+- **No DMs, no crew chat.** Social interaction is through ratings, cheers, follows, and crew membership. DAW Chat (Matrix) handles messaging.
+- **Path A is retired.** The multi-tenant isolation model with `crew_id` on every row is no longer the plan. The social layer model (global data + social prioritization) is the new standard for BeerBook.
+
+### Schema
+
+Four new tables. All follow Schema Evolution Rules (additive, nullable, idempotent DDL).
+
+```
+follows (follower_id TEXT, followed_id TEXT, created_at TIMESTAMPTZ)
+  - PK: (follower_id, followed_id)
+  - Indexes on both columns for bidirectional lookups
+
+crews (id TEXT PK, name TEXT, created_by TEXT, invite_code TEXT UNIQUE, created_at TIMESTAMPTZ, updated_at TIMESTAMPTZ)
+  - invite_code: 6-char alphanumeric, case-insensitive unique
+
+crew_members (crew_id TEXT FK, user_id TEXT, role TEXT DEFAULT 'member', joined_at TIMESTAMPTZ)
+  - PK: (crew_id, user_id)
+  - role: CHECK IN ('owner', 'member')
+```
+
+### API Endpoints
+
+```
+POST   /api/follows/:userId         → auth; toggle follow (follow if not following, unfollow if following)
+GET    /api/follows/:userId/followers → public; paginated list of followers
+GET    /api/follows/:userId/following → public; paginated list of following
+GET    /api/follows/:userId/status    → auth; { is_following: bool }
+
+POST   /api/crews                    → auth; create crew { name } → returns crew with invite_code
+GET    /api/crews                    → auth; list my crews
+GET    /api/crews/:id                → auth; crew detail (members, stats)
+PATCH  /api/crews/:id                → auth (owner); update name
+DELETE /api/crews/:id                → auth (owner); delete crew
+POST   /api/crews/:id/regenerate-code → auth (owner); new invite code
+POST   /api/crews/join               → auth; { invite_code } → join crew
+DELETE /api/crews/:id/members/:userId → auth (owner or self); remove member / leave
+
+GET    /api/ratings?feed=crew&crew_id=X  → ratings from crew members only
+GET    /api/ratings?feed=following        → ratings from followed users only
+GET    /api/activity?feed=crew&crew_id=X → activity from crew members only
+```
+
+### Feed Algorithm (Client-Side Phase 3.0)
+
+Phase 3.0 implements feed prioritization client-side for simplicity:
+1. Fetch all ratings (existing endpoint, unchanged)
+2. Client tags each rating: `crew` / `following` / `global` based on local crew_members + follows lists
+3. Sort: crew first (sorted by date), then following (sorted by date), then global (sorted by date)
+4. Visual treatment: crew ratings get a subtle highlight border or badge; following gets a smaller indicator; global is default
+
+Future optimization: server-side feed endpoint that returns pre-sorted results.
+
+### Migration Path from Current State
+
+- No existing tables are modified
+- No existing API endpoints change behavior
+- New tables are purely additive
+- Frontend changes are additive (new nav items, new sections in existing views)
+- Demo mode extended with mock follows/crews data
