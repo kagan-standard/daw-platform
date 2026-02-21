@@ -204,6 +204,9 @@ const App = {
     catalogHasMore: false,
     catalogStyles: [],
     catalogExpandedId: null,
+    _browseStyleFilter: '',
+    _browseSortBy: 'recent',
+    _browseFiltersInitialized: false,
     _pendingPhotoFile: null,
     _pendingPhotoPreviewUrl: null,
 
@@ -754,32 +757,7 @@ const App = {
             });
         });
 
-        // Search & filters (tab-aware)
-        document.getElementById('search-input')?.addEventListener('input',
-            Utils.debounce(() => {
-                if (this.browseTab === 'catalog') {
-                    this.refreshCatalogBrowse();
-                    return;
-                }
-                this.browseShownCount = 24;
-                this.renderBrowse();
-            }, 250));
-        document.getElementById('filter-style')?.addEventListener('change', () => {
-            if (this.browseTab === 'catalog') {
-                this.refreshCatalogBrowse();
-                return;
-            }
-            this.browseShownCount = 24;
-            this.renderBrowse();
-        });
-        document.getElementById('sort-by')?.addEventListener('change', () => {
-            if (this.browseTab === 'catalog') {
-                this.refreshCatalogBrowse();
-                return;
-            }
-            this.browseShownCount = 24;
-            this.renderBrowse();
-        });
+        this.initBrowseFilters();
 
         // Beer autocomplete (Task 2)
         this.bindBeerAutocomplete();
@@ -858,6 +836,72 @@ const App = {
         // 2. User submits a rating (rating form submit handler)
         // 3. User deletes a rating (confirmDeleteRating)
         // DB.subscribeToRatings(() => this.loadAllData()); // Disabled - was causing constant refreshes
+    },
+
+    initBrowseFilters() {
+        if (this._browseFiltersInitialized) return;
+        this._browseFiltersInitialized = true;
+        const overlay = document.getElementById('browse-filter-sheet');
+        const openBtn = document.getElementById('btn-open-filters');
+        const applyBtn = document.getElementById('btn-apply-filters');
+        const sortLabel = document.getElementById('sort-label');
+        const searchInput = document.getElementById('search-input');
+        let searchTimeout;
+
+        const openSheet = () => {
+            if (this.browseTab !== 'community') return;
+            overlay?.classList.add('open');
+            document.body.style.overflow = 'hidden';
+        };
+
+        openBtn?.addEventListener('click', openSheet);
+        sortLabel?.addEventListener('click', openSheet);
+
+        overlay?.addEventListener('click', (e) => {
+            if (e.target === overlay) {
+                overlay.classList.remove('open');
+                document.body.style.overflow = '';
+            }
+        });
+
+        overlay?.querySelectorAll('.filter-sheet__options').forEach((group) => {
+            group.querySelectorAll('.filter-sheet__opt').forEach((opt) => {
+                opt.addEventListener('click', () => {
+                    group.querySelectorAll('.filter-sheet__opt').forEach((o) => o.classList.remove('active'));
+                    opt.classList.add('active');
+                });
+            });
+        });
+
+        applyBtn?.addEventListener('click', () => {
+            const activeSort = overlay?.querySelector('[data-filter="sort"] .filter-sheet__opt.active');
+            const activeStyle = overlay?.querySelector('[data-filter="style"] .filter-sheet__opt.active');
+            this._browseSortBy = activeSort?.dataset.value || 'recent';
+            this._browseStyleFilter = activeStyle?.dataset.value || '';
+
+            const sortSelect = document.getElementById('sort-by');
+            const styleSelect = document.getElementById('filter-style');
+            if (sortSelect) sortSelect.value = this._browseSortBy;
+            if (styleSelect) styleSelect.value = this._browseStyleFilter;
+            if (sortLabel) sortLabel.textContent = (activeSort?.textContent || 'Most Recent').trim();
+
+            if (overlay) overlay.classList.remove('open');
+            document.body.style.overflow = '';
+            this.browseShownCount = 24;
+            this.renderBrowse();
+        });
+
+        searchInput?.addEventListener('input', () => {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => {
+                if (this.browseTab === 'catalog') {
+                    this.refreshCatalogBrowse();
+                    return;
+                }
+                this.browseShownCount = 24;
+                this.renderBrowse();
+            }, 250);
+        });
     },
 
     _mapStyleToDropdown(rawStyle) {
@@ -1984,6 +2028,7 @@ const App = {
             `;
         }
 
+        this.initBrowseFilters();
         await this.loadAllData();
         this.navigate('dashboard');
         Tracking.trackPageView('/dashboard');
@@ -2362,6 +2407,13 @@ const App = {
         this.browseTab = nextTab;
         this.catalogExpandedId = null;
         this.setCatalogSortOptions();
+        const filterBtn = document.getElementById('btn-open-filters');
+        const sortChip = document.getElementById('sort-label');
+        const overlay = document.getElementById('browse-filter-sheet');
+        if (overlay) overlay.classList.remove('open');
+        document.body.style.overflow = '';
+        if (filterBtn) filterBtn.style.display = this.browseTab === 'community' ? '' : 'none';
+        if (sortChip) sortChip.style.display = this.browseTab === 'community' ? '' : 'none';
         if (this.browseTab === 'catalog') {
             await this.ensureCatalogStyles();
             this.populateStyleFilter();
@@ -2479,9 +2531,26 @@ const App = {
             tabBtn.classList.toggle('active', active);
             tabBtn.setAttribute('aria-selected', active ? 'true' : 'false');
         });
-        const communityGrid = document.getElementById('beer-grid');
+        const filterBtn = document.getElementById('btn-open-filters');
+        const sortChip = document.getElementById('sort-label');
+        if (filterBtn) filterBtn.style.display = this.browseTab === 'community' ? '' : 'none';
+        if (sortChip) {
+            const labels = {
+                recent: 'Most Recent',
+                highest: 'Highest Rated',
+                lowest: 'Lowest Rated',
+                name: 'Alphabetical',
+            };
+            sortChip.style.display = this.browseTab === 'community' ? '' : 'none';
+            sortChip.textContent = labels[this._browseSortBy] || 'Most Recent';
+        }
+        const sortOpts = document.querySelectorAll('#browse-filter-sheet [data-filter="sort"] .filter-sheet__opt');
+        sortOpts.forEach((opt) => {
+            opt.classList.toggle('active', opt.dataset.value === (this._browseSortBy || 'recent'));
+        });
+        const communityGrid = document.getElementById('beer-feed');
         const catalogGrid = document.getElementById('catalog-grid');
-        if (communityGrid) communityGrid.style.display = this.browseTab === 'community' ? 'grid' : 'none';
+        if (communityGrid) communityGrid.style.display = this.browseTab === 'community' ? '' : 'none';
         if (catalogGrid) catalogGrid.style.display = this.browseTab === 'catalog' ? 'grid' : 'none';
         if (this.browseTab === 'catalog') {
             this.renderCatalogBrowse();
@@ -2491,28 +2560,47 @@ const App = {
     },
 
     renderCommunityBrowse() {
-        const container = document.getElementById('beer-grid');
-        const search = (document.getElementById('search-input')?.value || '').toLowerCase();
-        const styleFilter = document.getElementById('filter-style')?.value || '';
-        const sortBy = document.getElementById('sort-by')?.value || 'recent';
+        const container = document.getElementById('beer-feed');
+        if (!container) return;
 
-        let filtered = [...this.allRatings];
-        if (search) filtered = filtered.filter(r =>
-            r.beer_name.toLowerCase().includes(search) || (r.brewery || '').toLowerCase().includes(search) ||
-            (r.style || '').toLowerCase().includes(search) || (r.notes || '').toLowerCase().includes(search));
-        if (styleFilter) filtered = filtered.filter(r => r.style === styleFilter);
+        const hiddenStyleSelect = document.getElementById('filter-style');
+        const hiddenSortSelect = document.getElementById('sort-by');
+        let filtered = [...(this.allRatings || [])];
 
+        const query = (document.getElementById('search-input')?.value || '').toLowerCase().trim();
+        if (query) {
+            filtered = filtered.filter((r) =>
+                (r.beer_name || '').toLowerCase().includes(query) ||
+                (r.brewery || '').toLowerCase().includes(query) ||
+                (r.style || '').toLowerCase().includes(query)
+            );
+        }
+
+        const styleFilter = this._browseStyleFilter || hiddenStyleSelect?.value || '';
+        if (styleFilter) {
+            filtered = filtered.filter((r) => r.style === styleFilter);
+        }
+
+        const sortBy = this._browseSortBy || hiddenSortSelect?.value || 'recent';
         switch (sortBy) {
-            case 'highest': filtered.sort((a, b) => b.rating - a.rating); break;
-            case 'lowest': filtered.sort((a, b) => a.rating - b.rating); break;
-            case 'name': filtered.sort((a, b) => a.beer_name.localeCompare(b.beer_name)); break;
-            default: filtered.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+            case 'highest':
+                filtered.sort((a, b) => b.rating - a.rating);
+                break;
+            case 'lowest':
+                filtered.sort((a, b) => a.rating - b.rating);
+                break;
+            case 'name':
+                filtered.sort((a, b) => (a.beer_name || '').localeCompare(b.beer_name || ''));
+                break;
+            case 'recent':
+            default:
+                filtered.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
         }
 
         this._browseFilteredLength = filtered.length;
         if (!filtered.length) {
-            if (!this.allRatings.length) {
-                container.innerHTML = '<p class="empty-state cta-empty">🍺 No beers rated yet. Be the first to crack one open!</p><button type="button" class="btn btn-primary" data-view="rate">Rate a Beer</button>';
+            if (!this.allRatings?.length) {
+                container.innerHTML = '<p class="empty-state cta-empty">🍺 No beers rated yet. Be the first!</p><button type="button" class="btn btn-primary" data-view="rate">Rate a Beer</button>';
                 container.querySelector('.btn')?.addEventListener('click', () => this.navigate('rate'));
             } else {
                 container.innerHTML = '<p class="empty-state">No beers match your search.</p>';
@@ -2523,27 +2611,106 @@ const App = {
         }
 
         const showCount = this.browseShownCount || 24;
-        container.innerHTML = filtered.slice(0, showCount).map(r => {
+        const visibleRatings = filtered.slice(0, showCount);
+        container.innerHTML = visibleRatings.map((r, i) => {
+            const initials = Utils.initials(r.user_name || 'Anonymous') || '🍺';
+            const avatarColors = [
+                'linear-gradient(135deg, #F4B223 0%, #FF9F1C 100%)',
+                'linear-gradient(135deg, #48BB78 0%, #3BA894 100%)',
+                'linear-gradient(135deg, #E87461 0%, #D4527A 100%)',
+                'linear-gradient(135deg, #7C6CF0 0%, #5A4BD1 100%)',
+                'linear-gradient(135deg, #60A5FA 0%, #3B82F6 100%)',
+                'linear-gradient(135deg, #F6AD55 0%, #ED8936 100%)',
+            ];
+            const colorIdx = (r.user_name || '').split('').reduce((acc, c) => acc + c.charCodeAt(0), 0) % avatarColors.length;
             const beerIdAttr = (r.beer_id) ? ` data-beer-id="${Utils.escapeHtml(r.beer_id)}"` : '';
-            return `<div class="beer-card" data-user-id="${Utils.escapeHtml(r.user_id || '')}" data-user-name="${Utils.escapeHtml(r.user_name || 'Anonymous')}">
-                <div class="beer-card-header">
-                    <div class="beer-card-name"><span class="beer-name-link" data-beer-name="${Utils.escapeHtml(r.beer_name)}" data-beer-brewery="${Utils.escapeHtml(r.brewery || '')}" data-beer-style="${Utils.escapeHtml(r.style || '')}"${beerIdAttr} role="button" tabindex="0">${Utils.escapeHtml(r.beer_name)}</span></div>
-                    <div class="beer-card-rating">${r.rating.toFixed(1)}</div>
+            const venueTypeRaw = (r.venue?.venue_type || r.venue_type || r.venue?.brewery_type || r.brewery_type || '').toString().toLowerCase();
+            let venuePillHtml = '';
+            if (venueTypeRaw) {
+                let pillClass = 'venue-type-pill--bar';
+                let pillLabel = 'Bar';
+                if (['micro', 'regional', 'large', 'nano'].includes(venueTypeRaw) || (venueTypeRaw.includes('brew') && !venueTypeRaw.includes('pub'))) {
+                    pillClass = 'venue-type-pill--brewery';
+                    pillLabel = 'Brewery';
+                } else if (
+                    ['brewpub', 'bar'].includes(venueTypeRaw) ||
+                    venueTypeRaw.includes('pub') ||
+                    venueTypeRaw.includes('taproom') ||
+                    venueTypeRaw.includes('beergarden')
+                ) {
+                    pillClass = 'venue-type-pill--bar';
+                    pillLabel = 'Bar';
+                } else if (venueTypeRaw.includes('restaurant') || venueTypeRaw.includes('dining')) {
+                    pillClass = 'venue-type-pill--restaurant';
+                    pillLabel = 'Restaurant';
+                }
+                venuePillHtml = `<span class="venue-type-pill ${pillClass}">${pillLabel}</span>`;
+            }
+
+            const venueHtml = r.location_name ? `
+                <div class="rating-card__venue">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0Z"/>
+                        <circle cx="12" cy="10" r="3"/>
+                    </svg>
+                    <span class="rating-card__venue-name">${Utils.escapeHtml(r.location_name)}</span>
+                    ${venuePillHtml}
                 </div>
-                ${r.brewery ? `<div class="beer-card-brewery">${Utils.escapeHtml(r.brewery)}</div>` : ''}
-                <div class="beer-card-details">
-                    ${r.style ? `<span class="beer-card-tag style-tooltip" data-style="${Utils.escapeHtml(r.style)}">${Utils.escapeHtml(r.style)}</span>` : ''}
-                    ${r.abv ? `<span class="beer-card-tag">${r.abv}% ABV</span>` : ''}
+            ` : '';
+
+            const ygHtml = (r.yg_value != null && r.yg_value > 0)
+                ? `<span class="rating-card__tag rating-card__tag--yg">${Number(r.yg_value)} YG</span>`
+                : '';
+            const cheersCount = Number(r.cheers_count || 0);
+
+            return `
+                <div class="rating-card" data-user-id="${Utils.escapeHtml(r.user_id || '')}" data-user-name="${Utils.escapeHtml(r.user_name || 'Anonymous')}" style="animation-delay: ${Math.min(i * 0.07, 0.35)}s">
+                    <div class="rating-card__header">
+                        <div class="rating-card__avatar" style="background: ${avatarColors[colorIdx]}">${Utils.escapeHtml(initials)}</div>
+                        <div class="rating-card__user-info">
+                            <div class="rating-card__username">${Utils.escapeHtml(r.user_name || 'Anonymous')}</div>
+                            <div class="rating-card__time">${Utils.timeAgo(r.created_at)}</div>
+                        </div>
+                        <div class="rating-card__score">
+                            <span class="rating-card__score-value">${Number(r.rating || 0).toFixed(1)}</span>
+                            <span class="rating-card__score-max">/5</span>
+                        </div>
+                    </div>
+                    ${r.photo_url ? `<img class="rating-card__photo" src="${Utils.escapeHtml(r.photo_url)}" alt="" loading="lazy">` : ''}
+                    <div class="rating-card__body">
+                        <div class="rating-card__beer-name"><span class="beer-name-link" data-beer-name="${Utils.escapeHtml(r.beer_name || '')}" data-beer-brewery="${Utils.escapeHtml(r.brewery || '')}" data-beer-style="${Utils.escapeHtml(r.style || '')}"${beerIdAttr} role="button" tabindex="0">${Utils.escapeHtml(r.beer_name || 'Unknown Beer')}</span></div>
+                        ${r.brewery ? `<div class="rating-card__brewery">${Utils.escapeHtml(r.brewery)}</div>` : ''}
+                        <div class="rating-card__tags">
+                            ${r.style ? `<span class="rating-card__tag rating-card__tag--style style-tooltip" data-style="${Utils.escapeHtml(r.style)}">${Utils.escapeHtml(r.style)}</span>` : ''}
+                            ${r.abv ? `<span class="rating-card__tag rating-card__tag--abv">${Utils.escapeHtml(String(r.abv))}% ABV</span>` : ''}
+                            ${ygHtml}
+                        </div>
+                        <div class="rating-card__stars">${Utils.stars(r.rating)}</div>
+                        ${r.notes ? `<div class="beer-card-notes">${Utils.escapeHtml(Utils.truncate(r.notes, 100))}</div>` : ''}
+                        ${venueHtml}
+                    </div>
+                    <div class="rating-card__footer">
+                        <button type="button" class="rating-card__action cheers-btn" data-rating-id="${Utils.escapeHtml(r.id)}">
+                            🍻 <span class="cheers-count">${cheersCount || ''}</span>
+                        </button>
+                        <button type="button" class="rating-card__action" aria-label="Comments">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"/>
+                            </svg>
+                        </button>
+                        <button type="button" class="rating-card__action" aria-label="Share">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/>
+                                <circle cx="18" cy="19" r="3"/>
+                                <path d="m8.59 13.51 6.83 3.98M15.41 6.51l-6.82 3.98"/>
+                            </svg>
+                            Share
+                        </button>
+                    </div>
                 </div>
-                <div class="beer-card-stars">${Utils.stars(r.rating)}${(r.yg_value != null && r.yg_value > 0) ? ` <span class="yg-badge-pill">${r.yg_value} YG</span>` : ''}</div>
-                ${r.notes ? `<div class="beer-card-notes">${Utils.escapeHtml(r.notes)}</div>` : ''}
-                <div class="beer-card-footer">
-                    <span>${Utils.escapeHtml(r.user_name || 'Anonymous')}</span>
-                    <span>${Utils.timeAgo(r.created_at)}</span>
-                </div>
-            </div>
-        `;
+            `;
         }).join('');
+        this.fillCheersForCards(visibleRatings.map((r) => r.id).filter(Boolean));
         const sentinel = document.getElementById('browse-sentinel');
         if (sentinel) sentinel.style.display = filtered.length > showCount ? 'block' : 'none';
     },
@@ -2803,14 +2970,45 @@ const App = {
 
     // ========== HELPERS ==========
     populateStyleFilter() {
-        const select = document.getElementById('filter-style');
-        if (!select) return;
-        const styles = (this.browseTab === 'catalog')
-            ? [...new Set((this.catalogStyles || []).filter(Boolean))].sort()
-            : [...new Set(this.allRatings.map(r => r.style).filter(Boolean))].sort();
-        const current = select.value;
-        select.innerHTML = '<option value="">All Styles</option>' +
-            styles.map(s => `<option value="${s}" ${s === current ? 'selected' : ''}>${s}</option>`).join('');
+        const hiddenSelect = document.getElementById('filter-style');
+        if (this.browseTab === 'catalog') {
+            if (!hiddenSelect) return;
+            const styles = [...new Set((this.catalogStyles || []).filter(Boolean))].sort();
+            const current = hiddenSelect.value;
+            hiddenSelect.innerHTML = '<option value="">All Styles</option>' +
+                styles.map((s) => `<option value="${Utils.escapeHtml(s)}">${Utils.escapeHtml(s)}</option>`).join('');
+            hiddenSelect.value = styles.includes(current) ? current : '';
+            return;
+        }
+
+        const container = document.getElementById('filter-style-options');
+        if (!container) return;
+
+        const styles = [...new Set(
+            (this.allRatings || [])
+                .map((r) => r.style)
+                .filter(Boolean)
+        )].sort();
+
+        const activeStyle = styles.includes(this._browseStyleFilter) ? this._browseStyleFilter : '';
+        this._browseStyleFilter = activeStyle;
+        if (hiddenSelect) {
+            hiddenSelect.innerHTML = '<option value="">All Styles</option>' +
+                styles.map((s) => `<option value="${Utils.escapeHtml(s)}">${Utils.escapeHtml(s)}</option>`).join('');
+            hiddenSelect.value = activeStyle;
+        }
+
+        container.innerHTML = '<button class="filter-sheet__opt' + (activeStyle ? '' : ' active') + '" data-value="">All Styles</button>' +
+            styles.map((s) =>
+                `<button class="filter-sheet__opt${s === activeStyle ? ' active' : ''}" data-value="${Utils.escapeHtml(s)}">${Utils.escapeHtml(s)}</button>`
+            ).join('');
+
+        container.querySelectorAll('.filter-sheet__opt').forEach((opt) => {
+            opt.addEventListener('click', () => {
+                container.querySelectorAll('.filter-sheet__opt').forEach((o) => o.classList.remove('active'));
+                opt.classList.add('active');
+            });
+        });
     },
 
     prefillRateFormFromBeer(beer) {
