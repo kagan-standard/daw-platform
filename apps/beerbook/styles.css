@@ -2670,31 +2670,43 @@ input, select, textarea, button {
     margin-bottom: 0;
 }
 /* Near Me: floating inside map wrapper */
+.map-toggle-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 12px;
+}
+.map-toggle-group {
+    display: inline-flex;
+    gap: 0;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-full);
+    padding: 4px;
+    width: fit-content;
+}
 .map-nearme-btn {
-    position: absolute;
-    bottom: 220px;
-    right: var(--space-lg);
-    z-index: 1002;
-    min-height: 44px;
-    padding: 8px 16px;
-    border-radius: 24px;
-    background: linear-gradient(180deg, var(--gold-hover) 0%, var(--gold) 100%);
-    border: 2px solid var(--gold-hover);
-    box-shadow: var(--shadow-gold-btn);
-    color: var(--text-inverse);
-    font-size: 0.85rem;
-    font-weight: 700;
-    cursor: pointer;
+    position: static;
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    transition: transform var(--transition-base), background var(--transition-base);
+    background: transparent;
+    color: var(--gold-hover, #ED8936);
+    border: 1.5px solid var(--gold-hover, #ED8936);
+    border-radius: 20px;
+    padding: 6px 14px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.15s, color 0.15s;
 }
 .map-nearme-btn:hover {
-    transform: scale(1.08);
-    background: linear-gradient(180deg, var(--gold-hover) 0%, var(--gold) 100%);
+    background: var(--gold-hover, #ED8936);
+    color: var(--text-inverse, #1a1a2e);
 }
-.map-nearme-btn:disabled { opacity: 0.6; cursor: wait; }
+.map-nearme-btn:disabled { opacity: 0.5; cursor: wait; }
 .map-controls {
     display: flex;
     gap: var(--space-md);
@@ -2703,18 +2715,6 @@ input, select, textarea, button {
     align-items: center;
 }
 /* Segmented control: Discover / My Map */
-.map-toggle {
-    display: inline-flex;
-    gap: 0;
-    background: var(--bg-surface);
-    border: 1px solid var(--border-default);
-    border-radius: var(--radius-full);
-    padding: 4px;
-    margin-bottom: 8px;
-    width: fit-content;
-    margin-left: auto;
-    margin-right: auto;
-}
 .map-toggle-btn {
     min-height: 44px;
     padding: 0 var(--space-lg);
@@ -2739,42 +2739,6 @@ input, select, textarea, button {
     box-shadow: 0 2px 8px var(--amber-glow);
 }
 /* Filter chips: 8px gap below toggle; visibility controlled by JS (Discover only) */
-.map-filters {
-    display: flex;
-    gap: var(--space-sm);
-    margin-bottom: var(--space-md);
-    flex-wrap: wrap;
-    margin-top: 0;
-}
-.view-map .map-toggle { margin-bottom: 8px; }
-.view-map .map-filters { margin-top: 0; }
-.map-filters .filter-chip {
-    padding: 10px var(--space-md);
-    border: 1px solid var(--border-subtle);
-    border-radius: var(--radius-full);
-    background: var(--bg-surface);
-    color: var(--text-secondary);
-    font-size: var(--text-sm);
-    cursor: pointer;
-    transition: all var(--transition-base);
-    -webkit-tap-highlight-color: transparent;
-}
-.filter-chip-emoji {
-    font-size: 0.7em;
-    vertical-align: middle;
-    margin-right: 2px;
-}
-.map-filters .filter-chip:hover:not(.active) {
-    background: var(--bg-elevated);
-    color: var(--text-primary);
-    border-color: var(--border-default);
-}
-.map-filters .filter-chip.active {
-    background: var(--gold);
-    color: var(--text-inverse);
-    border-color: var(--gold);
-}
-.map-filters .filter-chip:not(.active) { opacity: 1; }
 .map-locate-btn {
     min-width: 44px;
     min-height: 44px;
@@ -2793,38 +2757,40 @@ input, select, textarea, button {
 }
 .map-locate-btn:hover { background: var(--bg-elevated); transform: scale(1.02); }
 .map-locate-btn:disabled { opacity: 0.6; cursor: not-allowed; }
-.brewery-pin { background: none !important; border: none !important; }
-.brewery-pin-circle {
-    width: 28px;
-    height: 28px;
-    border-radius: 50%;
+.venue-pin {
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 14px;
-    box-shadow: var(--shadow-md);
-    transition: transform 0.2s, box-shadow 0.2s;
 }
-.brewery-pin:hover .brewery-pin-circle {
+.venue-pin-circle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
     width: 32px;
     height: 32px;
-    margin: -2px 0 0 -2px;
-    box-shadow: var(--shadow-lg);
-}
-.brewery-cluster {
-    background: var(--gold) !important;
-    color: var(--bg-base);
-    border: 2px solid var(--gold);
     border-radius: 50%;
-    font-weight: 700;
-    font-size: 0.85rem;
+    font-size: 16px;
+    border: 2px solid rgba(255, 255, 255, 0.5);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
 }
-.brewery-cluster-count {
+.venue-cluster {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 100%;
-    height: 100%;
+}
+.venue-cluster-count {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: var(--bg-elevated, #2a2a4a);
+    color: var(--gold, #F6AD55);
+    font-weight: 700;
+    font-size: 0.9rem;
+    border: 2px solid var(--gold, #F6AD55);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
 }
 .map-popup-brewery .map-popup-brewery-detail { margin-top: var(--space-sm); }
 .brewery-detail-popup ul { margin: var(--space-xs) 0; padding-left: var(--space-lg); }
@@ -2941,50 +2907,39 @@ input, select, textarea, button {
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 12px;
-    margin-bottom: 8px;
-    background: var(--bg-elevated);
-    border: 1px solid var(--border-subtle);
-    border-radius: 12px;
+    padding: 12px 14px;
+    margin-bottom: 6px;
+    background: var(--bg-elevated, #1e1e3a);
+    border: 1px solid var(--border-subtle, #333);
+    border-radius: 10px;
     cursor: pointer;
     transition: background 0.15s;
 }
 .venue-list-card:hover,
 .venue-list-card:active {
-    background: var(--bg-surface);
-}
-.venue-list-card-icon {
-    font-size: 1.5rem;
-    width: 40px;
-    height: 40px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: var(--radius-full);
-    background: var(--bg-surface);
-    flex-shrink: 0;
+    background: var(--bg-surface, #2a2a4a);
 }
 .venue-list-card-info {
     flex: 1;
     min-width: 0;
 }
 .venue-list-card-name {
-    font-weight: 700;
-    color: var(--text-primary);
-    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text-primary, #f5f0e1);
+    font-size: 0.9rem;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 .venue-list-card-meta {
-    font-size: 0.8rem;
-    color: var(--text-muted);
+    font-size: 0.78rem;
+    color: var(--text-muted, #b07d3a);
     margin-top: 2px;
 }
 .venue-list-card-distance {
     font-weight: 700;
-    color: var(--gold);
-    font-size: 0.9rem;
+    color: var(--gold, #F6AD55);
+    font-size: 0.85rem;
     flex-shrink: 0;
     text-align: right;
 }
@@ -3002,51 +2957,6 @@ input, select, textarea, button {
     padding: 0 12px 12px;
 }
 
-.osm-venue-pin,
-.osm-cluster {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-.osm-pin-circle {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 24px;
-    height: 24px;
-    border-radius: var(--radius-full);
-    background: var(--status-success);
-    font-size: 14px;
-    border: 2px solid rgba(255, 255, 255, 0.3);
-}
-.osm-cluster-count {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 36px;
-    height: 36px;
-    border-radius: var(--radius-full);
-    background: var(--status-success);
-    color: var(--text-primary);
-    font-weight: 700;
-    font-size: 0.85rem;
-    border: 2px solid rgba(255, 255, 255, 0.4);
-}
-.osm-source-badge {
-    font-size: 0.7rem;
-    color: var(--status-success);
-    font-style: italic;
-}
-.venue-osm-tag {
-    display: inline-block;
-    font-size: 0.6rem;
-    background: var(--status-success);
-    color: var(--text-primary);
-    border-radius: 4px;
-    padding: 1px 4px;
-    margin-left: 4px;
-    vertical-align: middle;
-}
 .map-sidebar {
     background: var(--bg-surface);
     border: 1px solid var(--bg-elevated);
@@ -3145,8 +3055,7 @@ input, select, textarea, button {
         height: calc(100vh - 60px - 60px - 82px);
     }
     .view-map .view-header { margin-bottom: var(--space-sm); }
-    .view-map .map-toggle { margin-bottom: 8px; }
-    .view-map .map-filters { margin-bottom: 8px; margin-top: 0; }
+    .view-map .map-toggle-row { margin-bottom: 8px; }
     .view-map .map-controls {
         margin-bottom: var(--space-sm);
         display: none;
@@ -3164,8 +3073,6 @@ input, select, textarea, button {
         margin-bottom: 0;
     }
     .view-map .map-nearme-btn {
-        bottom: 220px;
-        right: var(--space-lg);
         padding: 8px 12px;
         font-size: 0.8rem;
     }

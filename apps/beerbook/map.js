@@ -27,11 +27,25 @@ const MapView = {
     _userLng: null,
     currentLayer: 'discover',
     moveEndDebounce: null,
-    BREWERY_CATEGORIES: {
-        brewery: { types: ['micro', 'nano', 'regional', 'large', 'contract', 'proprietor'], icon: '🏭', color: '#F6AD55' },
-        brewpub: { types: ['brewpub'], icon: '🍽️', color: '#ED8936' },
-        bar: { types: ['bar', 'taproom', 'beergarden'], icon: '🍺', color: '#48BB78' },
-        other: { types: ['cidery', 'location'], icon: '📍', color: '#A0AEC0' }
+    VENUE_CATEGORIES: {
+        brewery: {
+            types: ['micro', 'nano', 'regional', 'large', 'contract', 'proprietor', 'brewpub'],
+            icon: '🏭',
+            color: '#F6AD55',
+            label: 'Brewery'
+        },
+        bar: {
+            types: ['bar', 'pub', 'taproom', 'beergarden'],
+            icon: '🍺',
+            color: '#48BB78',
+            label: 'Bar & Pub'
+        },
+        restaurant: {
+            types: ['restaurant'],
+            icon: '🍽️',
+            color: '#E87461',
+            label: 'Restaurant'
+        }
     },
 
     async onShow() {
@@ -48,7 +62,6 @@ const MapView = {
             this.initDone = true;
             this.bindEvents();
         }
-        this.restoreFilterState();
         const viewMap = document.getElementById('view-map');
         if (viewMap) viewMap.classList.toggle('map-mode-mymap', this.currentLayer === 'mymap');
         const nearMeBtn = document.getElementById('map-nearme-btn');
@@ -69,8 +82,6 @@ const MapView = {
             venueSheet.setAttribute('aria-hidden', 'true');
         }
         this.updateLayerVisibility();
-        const filtersEl = document.getElementById('map-filters');
-        if (filtersEl) filtersEl.style.display = this.currentLayer === 'discover' ? 'flex' : 'none';
         this.map.invalidateSize();
     },
 
@@ -89,9 +100,6 @@ const MapView = {
                 this.setLayer(btn.dataset.layer);
             });
         });
-        document.querySelectorAll('.map-filters .filter-chip').forEach((chip) => {
-            chip.addEventListener('click', () => this.toggleBreweryFilter(chip));
-        });
         document.querySelector('.brewery-bottom-sheet-backdrop')?.addEventListener('click', () => this.closeBrewerySheet());
         document.getElementById('venue-sheet-back')?.addEventListener('click', () => this.showVenueListMode());
         this._initSheetDrag();
@@ -108,8 +116,6 @@ const MapView = {
             btn.classList.toggle('active', active);
             btn.setAttribute('aria-pressed', active);
         });
-        const filtersEl = document.getElementById('map-filters');
-        if (filtersEl) filtersEl.style.display = layer === 'discover' ? 'flex' : 'none';
         const viewMap = document.getElementById('view-map');
         if (viewMap) {
             viewMap.classList.toggle('map-mode-mymap', layer === 'mymap');
@@ -154,54 +160,33 @@ const MapView = {
         }
     },
 
-    toggleBreweryFilter(chip) {
-        chip.classList.toggle('active');
-        chip.setAttribute('aria-pressed', chip.classList.contains('active'));
-        this.persistFilterState();
-        this.renderBreweryPins();
-        this.renderOSMPins();
-        this.updateVenueListSheet();
+    toggleBreweryFilter() {
+        // No-op: Discover filters were removed for a simplified UI.
     },
 
     persistFilterState() {
-        try {
-            const types = [];
-            document.querySelectorAll('.map-filters .filter-chip.active').forEach((c) => types.push(c.dataset.type));
-            sessionStorage.setItem('beerbook_map_brewery_filters', JSON.stringify(types));
-        } catch (_) {}
+        // No-op: Discover filters were removed for a simplified UI.
     },
 
     restoreFilterState() {
-        try {
-            const raw = sessionStorage.getItem('beerbook_map_brewery_filters');
-            if (!raw) return;
-            const types = JSON.parse(raw);
-            document.querySelectorAll('.map-filters .filter-chip').forEach((chip) => {
-                const active = types.length === 0 || types.includes(chip.dataset.type);
-                chip.classList.toggle('active', active);
-                chip.setAttribute('aria-pressed', active);
-            });
-        } catch (_) {}
+        // No-op: Discover filters were removed for a simplified UI.
     },
 
-    getBreweryCategory(breweryType) {
-        const t = (breweryType || '').toLowerCase();
-        for (const [cat, { types }] of Object.entries(this.BREWERY_CATEGORIES)) {
+    getVenueCategory(venueType) {
+        const t = (venueType || '').toLowerCase();
+        for (const [cat, { types }] of Object.entries(this.VENUE_CATEGORIES)) {
             if (types.includes(t)) return cat;
         }
-        return 'other';
+        return 'brewery';
     },
 
-    getBreweryPinStyle(category) {
-        const c = this.BREWERY_CATEGORIES[category] || this.BREWERY_CATEGORIES.other;
-        return { icon: c.icon, color: c.color };
+    getVenuePinStyle(category) {
+        const c = this.VENUE_CATEGORIES[category] || this.VENUE_CATEGORIES.brewery;
+        return { icon: c.icon, color: c.color, label: c.label };
     },
 
-    isBreweryTypeVisible(category) {
-        const active = document.querySelectorAll('.map-filters .filter-chip.active');
-        if (active.length === 0) return true;
-        if (category === 'other') return true;
-        return Array.from(active).some((c) => c.dataset.type === category);
+    isBreweryTypeVisible() {
+        return true;
     },
 
     _onMapMoveEnd() {
@@ -268,14 +253,14 @@ const MapView = {
         return { elements: [] };
     },
 
-    createBreweryIcon(b) {
-        const category = this.getBreweryCategory(b.brewery_type);
-        const { icon, color } = this.getBreweryPinStyle(category);
+    createVenueIcon(venueType) {
+        const category = this.getVenueCategory(venueType);
+        const { icon, color } = this.getVenuePinStyle(category);
         return L.divIcon({
-            className: 'brewery-pin',
-            html: `<span class="brewery-pin-circle" style="background-color:${color}">${icon}</span>`,
-            iconSize: [28, 28],
-            iconAnchor: [14, 14]
+            className: 'venue-pin',
+            html: `<span class="venue-pin-circle" style="background-color:${color}">${icon}</span>`,
+            iconSize: [32, 32],
+            iconAnchor: [16, 16]
         });
     },
 
@@ -286,12 +271,12 @@ const MapView = {
         }
         const markers = [];
         this.breweryData.forEach((b) => {
-            const category = this.getBreweryCategory(b.brewery_type);
+            const category = this.getVenueCategory(b.brewery_type);
             if (!this.isBreweryTypeVisible(category)) return;
             const lat = b.latitude;
             const lng = b.longitude;
             if (lat == null || lng == null) return;
-            const m = L.marker([lat, lng], { icon: this.createBreweryIcon(b) });
+            const m = L.marker([lat, lng], { icon: this.createVenueIcon(b.brewery_type) });
             m.breweryId = b.id;
             m.brewerySummary = b;
             const isMobile = typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches;
@@ -318,8 +303,8 @@ const MapView = {
             iconCreateFunction: (cluster) => {
                 const count = cluster.getChildCount();
                 return L.divIcon({
-                    className: 'brewery-cluster',
-                    html: `<span class="brewery-cluster-count">${count}</span>`,
+                    className: 'venue-cluster',
+                    html: `<span class="venue-cluster-count">${count}</span>`,
                     iconSize: [40, 40],
                     iconAnchor: [20, 20]
                 });
@@ -566,13 +551,6 @@ const MapView = {
         return `${miles.toFixed(1)} mi`;
     },
 
-    _venueIcon(v) {
-        if (v.category === 'bar' || v.type === 'pub' || v.type === 'bar') return '🍺';
-        if (v.category === 'brewpub' || v.type === 'brewpub') return '🍽️';
-        if (v.type === 'restaurant') return '🍴';
-        return '🏭';
-    },
-
     updateVenueListSheet() {
         const listEl = document.getElementById('venue-sheet-list');
         const titleEl = document.getElementById('venue-sheet-title');
@@ -585,7 +563,7 @@ const MapView = {
 
         (this.breweryData || []).forEach((b) => {
             if (b.latitude == null || b.longitude == null) return;
-            const category = this.getBreweryCategory(b.brewery_type);
+            const category = this.getVenueCategory(b.brewery_type);
             if (!this.isBreweryTypeVisible(category)) return;
             allVenues.push({
                 id: b.id,
@@ -602,12 +580,13 @@ const MapView = {
         });
 
         (this._osmVenues || []).forEach((v) => {
-            if (!this.isBreweryTypeVisible(v.category)) return;
+            const category = this.getVenueCategory(v.type);
+            if (!this.isBreweryTypeVisible(category)) return;
             allVenues.push({
                 id: 'osm_' + v.id,
                 name: v.name,
                 type: v.type,
-                category: v.category,
+                category: category,
                 lat: v.lat,
                 lng: v.lng,
                 source: 'osm',
@@ -633,15 +612,14 @@ const MapView = {
 
         const display = allVenues.slice(0, 50);
         listEl.innerHTML = display.map((v) => {
-            const icon = this._venueIcon(v);
+            const category = this.getVenueCategory(v.type);
+            const { color, label } = this.getVenuePinStyle(category);
             const distText = v.distance != null ? this._formatDist(v.distance) : '';
-            const meta = [v.type, v.city, v.state].filter(Boolean).join(' · ');
-            const sourceTag = v.source === 'osm' ? '<span class="venue-osm-tag">OSM</span>' : '';
+            const meta = [label, v.city, v.state].filter(Boolean).join(' · ');
             return `
-                <div class="venue-list-card" data-venue-id="${v.id}" data-lat="${v.lat}" data-lng="${v.lng}" data-source="${v.source}">
-                    <div class="venue-list-card-icon">${icon}</div>
+                <div class="venue-list-card" data-venue-id="${v.id}" data-lat="${v.lat}" data-lng="${v.lng}" data-source="${v.source}" style="border-left: 3px solid ${color}">
                     <div class="venue-list-card-info">
-                        <div class="venue-list-card-name">${Utils.escapeHtml(v.name || 'Unknown Venue')} ${sourceTag}</div>
+                        <div class="venue-list-card-name">${Utils.escapeHtml(v.name || 'Unknown Venue')}</div>
                         <div class="venue-list-card-meta">${Utils.escapeHtml(meta)}</div>
                     </div>
                     ${distText ? `<div class="venue-list-card-distance">${distText}</div>` : ''}
@@ -715,17 +693,21 @@ const MapView = {
                     if (lat == null || lng == null) return null;
                     const tags = el.tags || {};
                     let type = tags.amenity || 'bar';
-                    let category = 'bar';
+
                     if (tags.microbrewery === 'yes' || tags.craft === 'brewery') {
-                        type = 'brewery';
-                        category = 'brewery';
+                        type = 'micro';
+                    } else if (type === 'pub') {
+                        type = 'pub';
+                    } else if (type === 'bar') {
+                        type = 'bar';
+                    } else if (type === 'restaurant') {
+                        type = 'restaurant';
                     }
-                    if (type === 'restaurant') category = 'bar';
+
                     return {
                         id: el.id,
                         name: tags.name,
                         type,
-                        category,
                         lat,
                         lng,
                         phone: tags.phone || tags['contact:phone'] || null,
@@ -764,20 +746,15 @@ const MapView = {
 
         const markers = [];
         this._osmVenues.forEach((v) => {
-            if (!this.isBreweryTypeVisible(v.category)) return;
-            const icon = L.divIcon({
-                className: 'osm-venue-pin',
-                html: `<span class="osm-pin-circle">${v.type === 'restaurant' ? '🍴' : '🍺'}</span>`,
-                iconSize: [24, 24],
-                iconAnchor: [12, 12]
-            });
+            const category = this.getVenueCategory(v.type);
+            if (!this.isBreweryTypeVisible(category)) return;
+            const icon = this.createVenueIcon(v.type);
             const m = L.marker([v.lat, v.lng], { icon });
-            const meta = [v.type, v.hours].filter(Boolean).join(' · ');
+            const { label } = this.getVenuePinStyle(category);
             m.bindPopup(`
-                <div class="map-popup map-popup-osm">
+                <div class="map-popup">
                     <strong>${Utils.escapeHtml(v.name)}</strong><br>
-                    <span class="osm-source-badge">via OpenStreetMap</span><br>
-                    ${Utils.escapeHtml(meta)}<br>
+                    ${Utils.escapeHtml(label)}${v.hours ? ' · ' + Utils.escapeHtml(v.hours) : ''}<br>
                     ${v.phone ? `📞 ${Utils.escapeHtml(v.phone)}<br>` : ''}
                     ${v.website ? `<a href="${Utils.escapeHtml(v.website)}" target="_blank" rel="noopener">🌐 Website →</a><br>` : ''}
                     <a href="#" class="osm-rate-link" data-venue-name="${Utils.escapeHtml(v.name)}">⭐ Rate a beer from here →</a>
@@ -797,10 +774,10 @@ const MapView = {
             iconCreateFunction: (cluster) => {
                 const count = cluster.getChildCount();
                 return L.divIcon({
-                    className: 'osm-cluster',
-                    html: `<span class="osm-cluster-count">${count}</span>`,
-                    iconSize: [36, 36],
-                    iconAnchor: [18, 18]
+                    className: 'venue-cluster',
+                    html: `<span class="venue-cluster-count">${count}</span>`,
+                    iconSize: [40, 40],
+                    iconAnchor: [20, 20]
                 });
             }
         });

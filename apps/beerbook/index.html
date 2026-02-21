@@ -566,14 +566,14 @@
                 <h2 class="view-map-title">Beer Map</h2>
                 <p class="view-map-subheader">Discover what the crew is drinking</p>
             </div>
-            <div class="map-toggle" role="group" aria-label="Map mode">
-                <button type="button" class="map-toggle-btn active" data-layer="discover" aria-pressed="true">Discover</button>
-                <button type="button" class="map-toggle-btn" data-layer="mymap" aria-pressed="false">My Map</button>
-            </div>
-            <div class="map-filters" id="map-filters" aria-label="Brewery type filters">
-                <button type="button" class="filter-chip active" data-type="brewery" aria-pressed="true"><span class="filter-chip-emoji">🏭</span> Breweries</button>
-                <button type="button" class="filter-chip active" data-type="brewpub" aria-pressed="true"><span class="filter-chip-emoji">🍻</span> Brewpubs</button>
-                <button type="button" class="filter-chip active" data-type="bar" aria-pressed="true"><span class="filter-chip-emoji">🍺</span> Bars</button>
+            <div class="map-toggle-row">
+                <div class="map-toggle-group" role="group" aria-label="Map mode">
+                    <button type="button" class="map-toggle-btn active" data-layer="discover" aria-pressed="true">Discover</button>
+                    <button type="button" class="map-toggle-btn" data-layer="mymap" aria-pressed="false">My Map</button>
+                </div>
+                <button id="map-nearme-btn" class="map-nearme-btn" title="Near Me" aria-label="Find venues near me">
+                    📍 Near Me
+                </button>
             </div>
             <div class="map-controls">
                 <button class="btn btn-primary" id="btn-near-me">🍺 Best Beer Near Me</button>
@@ -584,9 +584,6 @@
             </div>
             <div class="map-wrapper">
                 <div id="beer-map" class="beer-map-container"></div>
-                <button id="map-nearme-btn" class="map-nearme-btn" title="Near Me" aria-label="Find venues near me">
-                    📍 Near Me
-                </button>
             </div>
             <div id="venue-list-sheet" class="venue-list-sheet collapsed" aria-hidden="false">
                 <div class="venue-sheet-handle" id="venue-sheet-handle">
