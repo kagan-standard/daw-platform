@@ -28,6 +28,7 @@ async function requireOwner(rest, crewId, userId) {
 }
 
 async function createCrewWithUniqueCode(rest, payload, attempts = 3) {
+  let lastError = null;
   for (let i = 0; i < attempts; i += 1) {
     const inviteCode = generateInviteCode();
     const createRes = await rest('POST', '/crews', {
@@ -36,14 +37,15 @@ async function createCrewWithUniqueCode(rest, payload, attempts = 3) {
     });
     if (createRes.status < 400) {
       const crew = Array.isArray(createRes.body) ? createRes.body[0] : createRes.body;
-      return crew;
+      return { crew, error: null };
     }
     const msg = JSON.stringify(createRes.body || {});
+    lastError = { status: createRes.status, body: createRes.body || null };
     if (createRes.status !== 409 && !msg.includes('invite_code')) {
-      return null;
+      break;
     }
   }
-  return null;
+  return { crew: null, error: lastError };
 }
 
 module.exports = function (opts) {
@@ -58,8 +60,13 @@ module.exports = function (opts) {
       if (!name) return res.status(400).json({ error: 'Crew name is required' });
       if (name.length > 50) return res.status(400).json({ error: 'Crew name must be 50 chars or fewer' });
 
-      const crew = await createCrewWithUniqueCode(rest, { name, created_by: me }, 3);
-      if (!crew) return res.status(500).json({ error: 'Failed to create crew' });
+      const { crew, error: createError } = await createCrewWithUniqueCode(rest, { name, created_by: me }, 3);
+      if (!crew) {
+        // Bubble the upstream failure to make schema/config issues diagnosable in clients.
+        return res.status(createError?.status || 500).json(
+          createError?.body || { error: 'Failed to create crew' }
+        );
+      }
 
       const ownerRes = await rest('POST', '/crew_members', {
         headers: { Prefer: 'return=representation' },
