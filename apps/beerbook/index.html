@@ -109,6 +109,7 @@
                 <a class="desktop-nav-link admin-only" data-view="admin" id="nav-admin" href="#" style="display:none;">Admin</a>
                 <a class="desktop-nav-link" data-view="exchange" href="#">YG Exchange</a>
                 <a class="desktop-nav-link" data-view="leaderboard" href="#">Leaderboard</a>
+                <a class="desktop-nav-link" data-view="crews" href="#">Crews</a>
             </nav>
             <div class="top-bar__greeting">
                 <div id="user-greeting"></div>
@@ -134,6 +135,7 @@
                     <nav class="hamburger-nav">
                         <a class="ham-link" data-view="dashboard" href="#">📰 Activity Feed</a>
                         <a class="ham-link" data-view="leaderboard" href="#">🏆 Leaderboard</a>
+                        <a class="ham-link" data-view="crews" href="#">👥 Crews</a>
                         <a class="ham-link admin-only" data-view="admin" id="ham-admin" href="#" style="display:none;">🛠️ Admin</a>
                         <a class="ham-link" data-view="exchange" href="#">💱 YG Exchange</a>
                         <hr class="ham-divider">
@@ -688,6 +690,22 @@
             <div id="admin-economy" class="admin-panel" style="display:none;"></div>
         </main>
 
+        <!-- ========== CREWS VIEW ========== -->
+        <main id="view-crews" class="view">
+            <div class="view-header">
+                <h2>My Crews</h2>
+                <p class="view-desc">Create crews, join by invite code, and manage your members</p>
+            </div>
+            <div class="crew-toolbar">
+                <button type="button" class="btn btn-primary" id="create-crew-btn">+ Create Crew</button>
+                <button type="button" class="btn btn-ghost" id="join-crew-btn">Join with Code</button>
+            </div>
+            <div id="crews-list" class="reviews-list">
+                <p class="empty-state">No crews yet. Create one or join with a code.</p>
+            </div>
+            <div id="crew-detail" style="display:none;"></div>
+        </main>
+
         <!-- ========== PROFILE VIEW ========== -->
         <main id="view-profile" class="view">
             <div class="view-header">
@@ -870,5 +888,7 @@
     <script src="map.js"></script>
     <script src="venues.js"></script>
     <script src="sample-data.js"></script>
+    <script src="social.js"></script>
+    <script src="crews.js"></script>
 </body>
 </html>

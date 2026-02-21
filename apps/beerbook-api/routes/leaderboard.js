@@ -10,16 +10,23 @@ module.exports = function (opts) {
   router.get('/', async (req, res, next) => {
     try {
       const period = req.query.period || 'alltime';
+      const crewId = String(req.query.crew_id || '').trim();
       let since;
       if (period === 'weekly') since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
       else if (period === 'monthly') since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
       const sinceFilter = period === 'alltime' ? '' : `&created_at=gte.${since}`;
       const [ratingsRes, venuesRes] = await Promise.all([
-        rest('GET', `/ratings?order=created_at.desc${sinceFilter}`),
+        rest('GET', `/ratings?order=created_at.desc${sinceFilter}&limit=5000`),
         rest('GET', '/venues'),
       ]);
       if (ratingsRes.status >= 400) return res.status(ratingsRes.status).json(ratingsRes.body || { error: 'Upstream error' });
-      const ratings = Array.isArray(ratingsRes.body) ? ratingsRes.body : [];
+      let ratings = Array.isArray(ratingsRes.body) ? ratingsRes.body : [];
+      if (crewId) {
+        const membersRes = await rest('GET', `/crew_members?crew_id=eq.${encodeURIComponent(crewId)}&select=user_id`);
+        if (membersRes.status >= 400) return res.status(membersRes.status).json(membersRes.body || { error: 'Upstream error' });
+        const allowedIds = new Set((Array.isArray(membersRes.body) ? membersRes.body : []).map((m) => m.user_id));
+        ratings = ratings.filter((r) => allowedIds.has(r.user_id));
+      }
       const venues = Array.isArray(venuesRes.body) ? venuesRes.body : [];
       const userCount = {};
       const beerCount = {};
@@ -44,6 +51,7 @@ module.exports = function (opts) {
       });
       res.json({
         period,
+        crew_id: crewId || null,
         top_reviewers: topReviewers,
         top_beers: topBeers,
         top_yg_values: topYg,

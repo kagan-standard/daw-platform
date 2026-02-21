@@ -69,6 +69,31 @@
 
         Utils.storage.set('reviews', formatted);
 
+        // Phase 3.0 demo social graph: follows + one demo crew
+        const demoFollows = {
+            'user_sam:user_jess': true,
+            'user_sam:user_mike': true,
+            'user_jess:user_sam': true,
+            'user_mike:user_sam': true,
+            'user_alex:user_jess': true
+        };
+        Utils.storage.set('demo_follows', demoFollows);
+        Utils.storage.set('demo_crews', [{
+            id: 'demo_crew_1',
+            name: 'The Demo Crew',
+            created_by: 'user_sam',
+            invite_code: 'BK7M2X',
+            my_role: 'member',
+            member_count: 3,
+            member_user_ids: ['user_sam', 'user_jess', 'user_mike'],
+            members: [
+                { user_id: 'user_sam', role: 'owner', profile: { id: 'user_sam', display_name: 'SamBrews' }, rating_count: 0 },
+                { user_id: 'user_jess', role: 'member', profile: { id: 'user_jess', display_name: 'JessTheHopHead' }, rating_count: 0 },
+                { user_id: 'user_mike', role: 'member', profile: { id: 'user_mike', display_name: 'MikeStout' }, rating_count: 0 }
+            ],
+            stats: { total_ratings: 0, avg_rating: 0, most_popular_style: null, top_beer: null }
+        }]);
+
         // Reload data if app is already showing
         if (document.getElementById('app').style.display !== 'none') {
             App.loadAllData();

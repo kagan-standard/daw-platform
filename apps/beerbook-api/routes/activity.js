@@ -9,14 +9,32 @@ module.exports = function (opts) {
   const router = express.Router();
 
   // GET /api/activity — recent ratings + new venues, limit 50
-  router.get('/activity', (req, res, next) => {
+  router.get('/activity', opts.softAuthMiddleware, (req, res, next) => {
+    const feed = String(req.query.feed || '').trim();
+    const crewId = String(req.query.crew_id || '').trim();
+    const requester = req.claims?.sub || null;
     Promise.all([
-      rest('GET', '/ratings?order=created_at.desc&limit=40'),
+      rest('GET', '/ratings?order=created_at.desc&limit=4000'),
       rest('GET', '/venues?order=created_at.desc&limit=10'),
     ])
-      .then(([ratingsRes, venuesRes]) => {
+      .then(async ([ratingsRes, venuesRes]) => {
         if (ratingsRes.status >= 400) return res.status(ratingsRes.status).json(ratingsRes.body || { error: 'Upstream error' });
-        const ratings = Array.isArray(ratingsRes.body) ? ratingsRes.body : [];
+        let ratings = Array.isArray(ratingsRes.body) ? ratingsRes.body : [];
+        if (feed) {
+          if (!requester) return res.status(401).json({ error: 'Authentication required for feed filters' });
+          if (feed === 'crew') {
+            if (!crewId) return res.status(400).json({ error: 'crew_id is required for feed=crew' });
+            const crewMembersRes = await rest('GET', `/crew_members?crew_id=eq.${encodeURIComponent(crewId)}&select=user_id`);
+            if (crewMembersRes.status >= 400) return res.status(crewMembersRes.status).json(crewMembersRes.body || { error: 'Upstream error' });
+            const ids = new Set((Array.isArray(crewMembersRes.body) ? crewMembersRes.body : []).map((m) => m.user_id));
+            ratings = ratings.filter((r) => ids.has(r.user_id));
+          } else if (feed === 'following') {
+            const followsRes = await rest('GET', `/follows?follower_id=eq.${encodeURIComponent(requester)}&select=followed_id`);
+            if (followsRes.status >= 400) return res.status(followsRes.status).json(followsRes.body || { error: 'Upstream error' });
+            const ids = new Set((Array.isArray(followsRes.body) ? followsRes.body : []).map((f) => f.followed_id));
+            ratings = ratings.filter((r) => ids.has(r.user_id));
+          }
+        }
         const venues = Array.isArray(venuesRes.body) ? venuesRes.body : [];
         const items = [
           ...ratings.map((r) => ({ type: 'rating', ...r })),
@@ -81,10 +99,20 @@ module.exports = function (opts) {
   // GET /api/users/:id/stats (define before /users/:id so path matches)
   router.get('/users/:id/stats', (req, res, next) => {
     const id = encodeURIComponent(req.params.id);
-    rest('GET', `/ratings?user_id=eq.${id}`)
-      .then(({ status, body }) => {
+    Promise.all([
+      rest('GET', `/ratings?user_id=eq.${id}`),
+      rest('GET', `/follow_counts?user_id=eq.${id}&limit=1`),
+      rest('GET', `/crew_members?user_id=eq.${id}&select=crew_id`),
+    ])
+      .then(([ratingsOut, followCountsOut, crewOut]) => {
+        const { status, body } = ratingsOut;
         if (status >= 400) return res.status(status).json(body || { error: 'Upstream error' });
         const ratings = Array.isArray(body) ? body : [];
+        const followRow = Array.isArray(followCountsOut.body) && followCountsOut.body[0] ? followCountsOut.body[0] : null;
+        const crewRows = Array.isArray(crewOut.body) ? crewOut.body : [];
+        const crewCount = new Set(crewRows.map((r) => r.crew_id).filter(Boolean)).size;
+        const followerCount = Number(followRow?.follower_count || 0);
+        const followingCount = Number(followRow?.following_count || 0);
         const totalRatings = ratings.length;
         if (totalRatings === 0) {
           return res.json({
@@ -98,6 +126,9 @@ module.exports = function (opts) {
             style_distribution: {},
             rating_distribution: {},
             monthly_activity: [],
+            follower_count: followerCount,
+            following_count: followingCount,
+            crew_count: crewCount,
           });
         }
         const styles = new Set(ratings.map((r) => r.style || ''));
@@ -133,6 +164,9 @@ module.exports = function (opts) {
           style_distribution: styleCounts,
           rating_distribution: ratingDist,
           monthly_activity: monthlyActivity,
+          follower_count: followerCount,
+          following_count: followingCount,
+          crew_count: crewCount,
         });
       })
       .catch(next);

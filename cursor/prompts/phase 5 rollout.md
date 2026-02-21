@@ -691,4 +691,5 @@ Extend the existing client-side cache (`supabase.js`):
 
 | Date | Task | Assumption | Rationale |
 |------|------|------------|-----------|
-| | | | |
+| 2026-02-20 | Tasks 1-12 | Feed filters and crew leaderboard can be implemented client-side first, using optional API scopes as additive support. | Decision section explicitly sets client-side prioritization for this phase; avoids changing existing default endpoint behavior. |
+| 2026-02-20 | Task 1 | Backup commands are documented and migration file is prepared, but migration execution is environment-specific and not run from this workspace. | System rules require VPS-targeted operations and backup-first; local agent only safely updates code artifacts. |

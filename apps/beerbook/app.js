@@ -2012,6 +2012,9 @@ const App = {
         try {
             const stats = await DB.getStats();
             this.allRatings = stats.ratings || [];
+            if (typeof this.refreshSocialGraph === 'function') {
+                await this.refreshSocialGraph();
+            }
 
             document.getElementById('stat-beers').textContent = stats.totalBeers ?? 0;
             document.getElementById('stat-avg').textContent = stats.avgRating ?? '0.0';
@@ -2316,7 +2319,7 @@ const App = {
             const canDelete = currentUserId && r.user_id === currentUserId;
             const ygBadge = (r.yg_value != null && r.yg_value > 0) ? ` <span class="yg-badge-pill">${r.yg_value} YG</span>` : '';
             const beerIdAttr = (r.beer_id) ? ` data-beer-id="${Utils.escapeHtml(r.beer_id)}"` : '';
-            return `<div class="review-card" data-rating-id="${r.id}">
+            return `<div class="review-card" data-rating-id="${r.id}" data-user-id="${Utils.escapeHtml(r.user_id || '')}" data-user-name="${Utils.escapeHtml(r.user_name || 'Anonymous')}">
                 <div class="review-rating">${this.ratingEmoji(r.rating)}</div>
                 <div class="review-content">
                     <div class="review-beer-name"><span class="beer-name-link" data-beer-name="${Utils.escapeHtml(r.beer_name)}" data-beer-brewery="${Utils.escapeHtml(r.brewery || '')}" data-beer-style="${Utils.escapeHtml(r.style || '')}"${beerIdAttr} role="button" tabindex="0">${Utils.escapeHtml(r.beer_name)}</span></div>
@@ -2510,7 +2513,7 @@ const App = {
         const showCount = this.browseShownCount || 24;
         container.innerHTML = filtered.slice(0, showCount).map(r => {
             const beerIdAttr = (r.beer_id) ? ` data-beer-id="${Utils.escapeHtml(r.beer_id)}"` : '';
-            return `<div class="beer-card">
+            return `<div class="beer-card" data-user-id="${Utils.escapeHtml(r.user_id || '')}" data-user-name="${Utils.escapeHtml(r.user_name || 'Anonymous')}">
                 <div class="beer-card-header">
                     <div class="beer-card-name"><span class="beer-name-link" data-beer-name="${Utils.escapeHtml(r.beer_name)}" data-beer-brewery="${Utils.escapeHtml(r.brewery || '')}" data-beer-style="${Utils.escapeHtml(r.style || '')}"${beerIdAttr} role="button" tabindex="0">${Utils.escapeHtml(r.beer_name)}</span></div>
                     <div class="beer-card-rating">${r.rating.toFixed(1)}</div>
@@ -2716,7 +2719,7 @@ const App = {
             const beerIdAttr = item.beer_id ? ` data-beer-id="${Utils.escapeHtml(item.beer_id)}"` : '';
             const beerLink = beerName ? `<span class="beer-name-link" data-beer-name="${Utils.escapeHtml(beerName)}" data-beer-brewery="${Utils.escapeHtml(item.brewery || '')}" data-beer-style="${Utils.escapeHtml(item.style || '')}"${beerIdAttr} role="button" tabindex="0">${Utils.escapeHtml(beerName)}</span>` : '';
             const cheersBtn = item.id ? `<div class="activity-cheers">${this.cheersButtonHtml(item.id)}</div>` : '';
-            return `<div class="activity-item">
+            return `<div class="activity-item" data-user-id="${Utils.escapeHtml(item.user_id || '')}" data-user-name="${Utils.escapeHtml(name)}">
                 <div class="activity-avatar">${Utils.escapeHtml(initials)}</div>
                 <div class="activity-body">
                     <div class="activity-text">${Utils.escapeHtml(name)} rated ${beerLink} ${Utils.stars(item.rating || 0)}${ygBadge}${item.location_name ? ' at ' + Utils.escapeHtml(item.location_name) : ''}</div>
@@ -2760,7 +2763,7 @@ const App = {
         container.innerHTML = myRatings.map(r => {
             const ygBadge = (r.yg_value != null && r.yg_value > 0) ? ` <span class="yg-badge-pill">${r.yg_value} YG</span>` : '';
             const beerIdAttr = (r.beer_id) ? ` data-beer-id="${Utils.escapeHtml(r.beer_id)}"` : '';
-            return `<div class="review-card" data-rating-id="${r.id}">
+            return `<div class="review-card" data-rating-id="${r.id}" data-user-id="${Utils.escapeHtml(r.user_id || '')}" data-user-name="${Utils.escapeHtml(r.user_name || 'Anonymous')}">
                 <div class="review-rating">${this.ratingEmoji(r.rating)}</div>
                 <div class="review-content">
                     <div class="review-beer-name"><span class="beer-name-link" data-beer-name="${Utils.escapeHtml(r.beer_name)}" data-beer-brewery="${Utils.escapeHtml(r.brewery || '')}" data-beer-style="${Utils.escapeHtml(r.style || '')}"${beerIdAttr} role="button" tabindex="0">${Utils.escapeHtml(r.beer_name)}</span></div>

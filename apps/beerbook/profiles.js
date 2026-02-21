@@ -82,6 +82,15 @@ const Profiles = {
         const favStyle = (stats && stats.most_rated_style) || (recentRatings.length ? Utils.countBy(recentRatings, 'style') : {});
         const favStyleName = typeof favStyle === 'string' ? favStyle : (Object.entries(favStyle || {}).sort((a, b) => b[1] - a[1])[0]?.[0] || '—');
         const joinDate = (profile && profile.created_at) ? new Date(profile.created_at).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : null;
+        const isOwn = userId === DB.currentUser?.id;
+        const followStatus = !isOwn ? await DB.getFollowStatus(userId).catch(() => ({ is_following: false })) : { is_following: false };
+        const followersOut = await DB.getFollowers(userId, 25, 0).catch(() => ({ data: [] }));
+        const followingOut = await DB.getFollowing(userId, 25, 0).catch(() => ({ data: [] }));
+        const followers = Array.isArray(followersOut?.data) ? followersOut.data : [];
+        const following = Array.isArray(followingOut?.data) ? followingOut.data : [];
+        const followerCount = Number(stats?.follower_count || followers.length || 0);
+        const followingCount = Number(stats?.following_count || following.length || 0);
+        const crewCount = Number(stats?.crew_count || 0);
 
         body.innerHTML = `
             <div class="profile-modal-inner">
@@ -90,7 +99,8 @@ const Profiles = {
                     <div class="profile-modal-info">
                         <h2 id="profile-modal-title" class="profile-modal-name">${Utils.escapeHtml(name)}</h2>
                         ${joinDate ? `<p class="profile-modal-joined">Member since ${joinDate}</p>` : ''}
-                        <p class="profile-modal-counts">${totalRatings} ratings · ${totalStyles} styles · ${venueCount} venues</p>
+                        <p class="profile-modal-counts">${totalRatings} ratings · ${followerCount} followers · ${followingCount} following · ${crewCount} crews</p>
+                        ${isOwn ? '' : `<button type="button" class="btn btn-ghost btn-sm follow-mini-btn ${followStatus.is_following ? 'is-following' : ''}" data-follow-user-id="${Utils.escapeHtml(userId)}">${followStatus.is_following ? 'Following' : 'Follow'}</button>`}
                     </div>
                 </div>
                 <div class="profile-stats-row">
@@ -129,6 +139,18 @@ const Profiles = {
                 <section class="profile-section">
                     <h3>Recent Ratings</h3>
                     <div id="profile-recent-ratings" class="profile-recent-ratings"></div>
+                </section>
+                <section class="profile-section">
+                    <h3>Following</h3>
+                    <div class="profile-recent-ratings">
+                        ${following.length ? following.map((u) => `<div class="profile-rating-card"><span>${Utils.escapeHtml(u.display_name || 'Beer Lover')}</span></div>`).join('') : '<p class="empty-state">Not following anyone yet.</p>'}
+                    </div>
+                </section>
+                <section class="profile-section">
+                    <h3>Followers</h3>
+                    <div class="profile-recent-ratings">
+                        ${followers.length ? followers.map((u) => `<div class="profile-rating-card"><span>${Utils.escapeHtml(u.display_name || 'Beer Lover')}</span></div>`).join('') : '<p class="empty-state">No followers yet.</p>'}
+                    </div>
                 </section>
             </div>
         `;

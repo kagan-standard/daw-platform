@@ -21,7 +21,18 @@ function invalidateCache(prefix) {
     }
 }
 
-const CACHE_TTL = { stats: 60000, leaderboard: 60000, exchange: 60000, beerSearch: 30000, userProfile: 120000, map: 120000, activity: 60000 };
+const CACHE_TTL = {
+    stats: 60000,
+    leaderboard: 60000,
+    exchange: 60000,
+    beerSearch: 30000,
+    userProfile: 120000,
+    map: 120000,
+    activity: 60000,
+    follows: 120000,
+    crews: 120000,
+    crewDetail: 60000
+};
 
 const DB = {
     client: null,
@@ -548,6 +559,52 @@ const DB = {
         return (out && out.data) ? out.data : [];
     },
 
+    async getUserProfile(userId) {
+        if (!userId) return null;
+        if (this.isDemo) {
+            const ratings = Utils.storage.get('reviews', []);
+            const match = ratings.find((r) => r.user_id === userId);
+            return {
+                id: userId,
+                display_name: match?.user_name || 'Beer Lover',
+                created_at: new Date().toISOString()
+            };
+        }
+        return await cachedFetch(`userProfile:${userId}`, CACHE_TTL.userProfile, async () => {
+            return await this._api('GET', `/api/users/${encodeURIComponent(userId)}`);
+        });
+    },
+
+    async getUserStats(userId) {
+        if (!userId) return null;
+        if (this.isDemo) {
+            const ratings = Utils.storage.get('reviews', []).filter((r) => r.user_id === userId);
+            const styleCounts = Utils.countBy(ratings, 'style');
+            const mostRated = Object.entries(styleCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+            return {
+                total_ratings: ratings.length,
+                total_styles: new Set(ratings.map((r) => r.style).filter(Boolean)).size,
+                avg_rating: ratings.length ? ratings.reduce((s, r) => s + (Number(r.rating) || 0), 0) / ratings.length : 0,
+                avg_yg_value: 0,
+                total_yg_portfolio: 0,
+                most_rated_style: mostRated,
+                follower_count: this._demoGetFollowers(userId).length,
+                following_count: this._demoGetFollowing(userId).length,
+                crew_count: this._demoGetCrewsForUser(userId).length
+            };
+        }
+        return await this._api('GET', `/api/users/${encodeURIComponent(userId)}/stats`);
+    },
+
+    async getExchangePortfolio(userId) {
+        const ratings = await this.getUserRatings(userId);
+        const withYg = ratings.filter((r) => r.yg_value != null);
+        return {
+            ratings: withYg,
+            total_portfolio_value: withYg.reduce((s, r) => s + (Number(r.yg_value) || 0), 0)
+        };
+    },
+
     async deleteRating(id) {
         if (this.isDemo) {
             const r = Utils.storage.get('reviews', []);
@@ -765,6 +822,148 @@ const DB = {
         try {
             return await cachedFetch('activity', CACHE_TTL.activity, () => this._api('GET', '/api/activity'));
         } catch { return { data: [] }; }
+    },
+
+    async getFollowers(userId, limit = 50, offset = 0) {
+        if (!userId) return { data: [], pagination: { limit, offset, total: 0 } };
+        if (this.isDemo) {
+            const ids = this._demoGetFollowers(userId);
+            const profiles = this._demoProfilesFromIds(ids);
+            return { data: profiles.slice(offset, offset + limit), pagination: { limit, offset, total: profiles.length } };
+        }
+        return await cachedFetch(`followers:${userId}:${limit}:${offset}`, CACHE_TTL.follows, () =>
+            this._api('GET', `/api/follows/${encodeURIComponent(userId)}/followers?limit=${limit}&offset=${offset}`)
+        );
+    },
+
+    async getFollowing(userId, limit = 50, offset = 0) {
+        if (!userId) return { data: [], pagination: { limit, offset, total: 0 } };
+        if (this.isDemo) {
+            const ids = this._demoGetFollowing(userId);
+            const profiles = this._demoProfilesFromIds(ids);
+            return { data: profiles.slice(offset, offset + limit), pagination: { limit, offset, total: profiles.length } };
+        }
+        return await cachedFetch(`following:${userId}:${limit}:${offset}`, CACHE_TTL.follows, () =>
+            this._api('GET', `/api/follows/${encodeURIComponent(userId)}/following?limit=${limit}&offset=${offset}`)
+        );
+    },
+
+    async getFollowStatus(userId) {
+        if (!userId || !this.currentUser) return { is_following: false };
+        if (this.isDemo) {
+            return { is_following: this._demoGetFollowing(this.currentUser.id).includes(userId) };
+        }
+        return await this._api('GET', `/api/follows/${encodeURIComponent(userId)}/status`);
+    },
+
+    async toggleFollow(userId) {
+        if (!userId || !this.currentUser) throw new Error('User required');
+        if (this.isDemo) {
+            const me = this.currentUser.id;
+            const follows = this._demoGetFollows();
+            const key = `${me}:${userId}`;
+            if (follows[key]) delete follows[key];
+            else if (me !== userId) follows[key] = true;
+            this._demoSetFollows(follows);
+            invalidateCache('followers:');
+            invalidateCache('following:');
+            return { following: !!follows[key] };
+        }
+        const out = await this._api('POST', `/api/follows/${encodeURIComponent(userId)}`);
+        invalidateCache('followers:');
+        invalidateCache('following:');
+        invalidateCache('stats');
+        return out;
+    },
+
+    async getCrews() {
+        if (this.isDemo) {
+            const mine = this._demoGetCrewsForUser(this.currentUser?.id);
+            return { data: mine };
+        }
+        return await cachedFetch('crews:mine', CACHE_TTL.crews, () => this._api('GET', '/api/crews'));
+    },
+
+    async getCrewDetail(crewId) {
+        if (!crewId) return null;
+        if (this.isDemo) {
+            return this._demoGetCrewById(crewId);
+        }
+        return await cachedFetch(`crew:${crewId}`, CACHE_TTL.crewDetail, () =>
+            this._api('GET', `/api/crews/${encodeURIComponent(crewId)}`)
+        );
+    },
+
+    async createCrew(name) {
+        if (!name) throw new Error('Crew name is required');
+        if (this.isDemo) {
+            const crew = this._demoCreateCrew(name, this.currentUser?.id);
+            invalidateCache('crews:');
+            return crew;
+        }
+        const out = await this._api('POST', '/api/crews', { body: JSON.stringify({ name }) });
+        invalidateCache('crews:');
+        invalidateCache('crew:');
+        return out;
+    },
+
+    async joinCrew(inviteCode) {
+        if (!inviteCode) throw new Error('Invite code is required');
+        if (this.isDemo) {
+            const crew = this._demoJoinCrew(inviteCode, this.currentUser?.id);
+            invalidateCache('crews:');
+            return crew;
+        }
+        const out = await this._api('POST', '/api/crews/join', { body: JSON.stringify({ invite_code: inviteCode }) });
+        invalidateCache('crews:');
+        invalidateCache('crew:');
+        return out;
+    },
+
+    async updateCrew(crewId, name) {
+        if (this.isDemo) {
+            return this._demoUpdateCrew(crewId, { name });
+        }
+        const out = await this._api('PATCH', `/api/crews/${encodeURIComponent(crewId)}`, { body: JSON.stringify({ name }) });
+        invalidateCache('crews:');
+        invalidateCache(`crew:${crewId}`);
+        return out;
+    },
+
+    async regenerateCrewCode(crewId) {
+        if (this.isDemo) {
+            return this._demoRegenerateCrewCode(crewId);
+        }
+        const out = await this._api('POST', `/api/crews/${encodeURIComponent(crewId)}/regenerate-code`);
+        invalidateCache('crews:');
+        invalidateCache(`crew:${crewId}`);
+        return out;
+    },
+
+    async removeCrewMember(crewId, userId) {
+        if (this.isDemo) {
+            this._demoRemoveCrewMember(crewId, userId);
+            invalidateCache('crews:');
+            invalidateCache(`crew:${crewId}`);
+            return { ok: true };
+        }
+        await this._api('DELETE', `/api/crews/${encodeURIComponent(crewId)}/members/${encodeURIComponent(userId)}`);
+        invalidateCache('crews:');
+        invalidateCache(`crew:${crewId}`);
+        return { ok: true };
+    },
+
+    async deleteCrew(crewId) {
+        if (this.isDemo) {
+            this._demoDeleteCrew(crewId);
+            invalidateCache('crews:');
+            invalidateCache(`crew:${crewId}`);
+            return { ok: true };
+        }
+        await this._api('DELETE', `/api/crews/${encodeURIComponent(crewId)}`);
+        invalidateCache('crews:');
+        invalidateCache(`crew:${crewId}`);
+        return { ok: true };
     },
 
     async getLeaderboard(period = 'alltime') {
@@ -1111,5 +1310,130 @@ const DB = {
     async adminTabsGetStats() {
         if (this.isDemo) return {};
         return await this._api('GET', '/api/admin/tabs/stats');
+    },
+
+    _demoGetFollows() {
+        return Utils.storage.get('demo_follows', {});
+    },
+
+    _demoSetFollows(map) {
+        Utils.storage.set('demo_follows', map || {});
+    },
+
+    _demoGetFollowers(userId) {
+        const follows = this._demoGetFollows();
+        return Object.keys(follows).filter((k) => follows[k]).map((k) => k.split(':')).filter(([, followed]) => followed === userId).map(([follower]) => follower);
+    },
+
+    _demoGetFollowing(userId) {
+        const follows = this._demoGetFollows();
+        return Object.keys(follows).filter((k) => follows[k]).map((k) => k.split(':')).filter(([follower]) => follower === userId).map(([, followed]) => followed);
+    },
+
+    _demoGetCrews() {
+        return Utils.storage.get('demo_crews', []);
+    },
+
+    _demoSetCrews(crews) {
+        Utils.storage.set('demo_crews', crews || []);
+    },
+
+    _demoGetCrewsForUser(userId) {
+        if (!userId) return [];
+        return this._demoGetCrews().filter((c) => (c.member_user_ids || []).includes(userId));
+    },
+
+    _demoGetCrewById(crewId) {
+        return this._demoGetCrews().find((c) => c.id === crewId) || null;
+    },
+
+    _demoCreateCrew(name, ownerId) {
+        const crews = this._demoGetCrews();
+        const inviteChars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+        const code = Array.from({ length: 6 }).map(() => inviteChars[Math.floor(Math.random() * inviteChars.length)]).join('');
+        const crew = {
+            id: Utils.uid(),
+            name,
+            created_by: ownerId,
+            invite_code: code,
+            member_count: 1,
+            my_role: 'owner',
+            member_user_ids: [ownerId],
+            members: [{ user_id: ownerId, role: 'owner', profile: { id: ownerId, display_name: this.currentUser?.display_name || 'Beer Lover' }, rating_count: 0 }],
+            stats: { total_ratings: 0, avg_rating: 0, most_popular_style: null, top_beer: null }
+        };
+        crews.unshift(crew);
+        this._demoSetCrews(crews);
+        return crew;
+    },
+
+    _demoJoinCrew(inviteCode, userId) {
+        const crews = this._demoGetCrews();
+        const code = String(inviteCode || '').trim().toUpperCase();
+        const crew = crews.find((c) => String(c.invite_code || '').toUpperCase() === code);
+        if (!crew) throw new Error('Crew not found');
+        if ((crew.member_user_ids || []).includes(userId)) throw new Error("You're already in this crew!");
+        if ((crew.member_user_ids || []).length >= 50) throw new Error('This crew is full (50/50)');
+        crew.member_user_ids.push(userId);
+        crew.member_count = crew.member_user_ids.length;
+        crew.members = crew.members || [];
+        crew.members.push({
+            user_id: userId,
+            role: 'member',
+            profile: { id: userId, display_name: this.currentUser?.display_name || 'Beer Lover' },
+            rating_count: 0
+        });
+        this._demoSetCrews(crews);
+        return crew;
+    },
+
+    _demoUpdateCrew(crewId, patch) {
+        const crews = this._demoGetCrews();
+        const crew = crews.find((c) => c.id === crewId);
+        if (!crew) throw new Error('Crew not found');
+        Object.assign(crew, patch || {});
+        this._demoSetCrews(crews);
+        return crew;
+    },
+
+    _demoRegenerateCrewCode(crewId) {
+        const inviteChars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+        const code = Array.from({ length: 6 }).map(() => inviteChars[Math.floor(Math.random() * inviteChars.length)]).join('');
+        const crew = this._demoUpdateCrew(crewId, { invite_code: code });
+        return { invite_code: crew.invite_code };
+    },
+
+    _demoRemoveCrewMember(crewId, userId) {
+        const crews = this._demoGetCrews();
+        const crew = crews.find((c) => c.id === crewId);
+        if (!crew) return;
+        crew.member_user_ids = (crew.member_user_ids || []).filter((id) => id !== userId);
+        crew.members = (crew.members || []).filter((m) => m.user_id !== userId);
+        crew.member_count = crew.member_user_ids.length;
+        if (crew.member_count === 0) {
+            this._demoSetCrews(crews.filter((c) => c.id !== crewId));
+            return;
+        }
+        this._demoSetCrews(crews);
+    },
+
+    _demoDeleteCrew(crewId) {
+        const crews = this._demoGetCrews().filter((c) => c.id !== crewId);
+        this._demoSetCrews(crews);
+    },
+
+    _demoProfilesFromIds(ids) {
+        const ratings = Utils.storage.get('reviews', []);
+        const latestByUser = {};
+        ratings.forEach((r) => {
+            if (!r.user_id) return;
+            if (!latestByUser[r.user_id]) latestByUser[r.user_id] = r;
+        });
+        return ids.map((id) => ({
+            id,
+            display_name: latestByUser[id]?.user_name || (id === this.currentUser?.id ? this.currentUser.display_name : 'Beer Lover'),
+            avatar_url: null,
+            rating_count: ratings.filter((r) => r.user_id === id).length
+        }));
     }
 };

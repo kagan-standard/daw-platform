@@ -233,6 +233,8 @@ const highlightsRoutes = require('./routes/highlights')({ ...routeHelpers });
 const adminRoutes = require('./routes/admin')({ ...routeHelpers });
 const trackingRoutes = require('./routes/tracking')({ ...routeHelpers });
 const tabsRoutes = require('./routes/tabs')({ ...routeHelpers });
+const followsRoutes = require('./routes/follows')({ ...routeHelpers });
+const crewsRoutes = require('./routes/crews')({ ...routeHelpers });
 
 app.use('/api', activityRoutes);
 app.use('/api/beers', beersRoutes);
@@ -246,6 +248,8 @@ app.use('/api/highlights', highlightsRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api', trackingRoutes);
 app.use('/api', tabsRoutes);
+app.use('/api', followsRoutes);
+app.use('/api', crewsRoutes);
 
 // ---------- Phase 3.2: Catalog (no auth — public catalog) ----------
 function toNumberOrNull(v) {
@@ -527,9 +531,40 @@ app.get('/api/health', (req, res) => {
 
 // GET /api/ratings — public, paginated
 // BUG FIX #3: Added validateSort middleware
-app.get('/api/ratings', validateSort, async (req, res) => {
+app.get('/api/ratings', softAuthMiddleware, validateSort, async (req, res) => {
   const { limit, offset, sort, order } = parsePagination(req);
   const orderDir = order === 'asc' ? 'asc' : 'desc';
+  const feed = String(req.query.feed || '').trim();
+  const crewId = String(req.query.crew_id || '').trim();
+  const requester = req.claims?.sub || null;
+
+  if (feed) {
+    if (!requester) return res.status(401).json({ error: 'Authentication required for feed filters' });
+    const ratingsRaw = await rest('GET', `/ratings?limit=5000&order=${sort}.${orderDir}`);
+    if (ratingsRaw.status >= 400) {
+      return res.status(ratingsRaw.status).json(ratingsRaw.body || { error: 'Upstream error' });
+    }
+    let filtered = Array.isArray(ratingsRaw.body) ? ratingsRaw.body : [];
+    if (feed === 'crew') {
+      if (!crewId) return res.status(400).json({ error: 'crew_id is required for feed=crew' });
+      const membersRes = await rest('GET', `/crew_members?crew_id=eq.${encodeURIComponent(crewId)}&select=user_id`);
+      if (membersRes.status >= 400) return res.status(membersRes.status).json(membersRes.body || { error: 'Upstream error' });
+      const memberIds = new Set((Array.isArray(membersRes.body) ? membersRes.body : []).map((m) => m.user_id));
+      filtered = filtered.filter((r) => memberIds.has(r.user_id));
+    } else if (feed === 'following') {
+      const followsRes = await rest('GET', `/follows?follower_id=eq.${encodeURIComponent(requester)}&select=followed_id`);
+      if (followsRes.status >= 400) return res.status(followsRes.status).json(followsRes.body || { error: 'Upstream error' });
+      const followingIds = new Set((Array.isArray(followsRes.body) ? followsRes.body : []).map((f) => f.followed_id));
+      filtered = filtered.filter((r) => followingIds.has(r.user_id));
+    }
+    const total = filtered.length;
+    const data = filtered.slice(offset, offset + limit);
+    return res.json({
+      data,
+      pagination: { limit, offset, total },
+    });
+  }
+
   const { status, headers, body } = await rest('GET', `/ratings?limit=${limit}&offset=${offset}&order=${sort}.${orderDir}`, {
     headers: { 'Prefer': 'count=exact' },
   });
@@ -736,8 +771,52 @@ app.get('/api/profile/me', authMiddleware, handleProfileRequest);
 
 // GET /api/stats — public, paginated (beer_averages + summary counts)
 // BUG FIX #4: Use count=exact on beer_averages to get accurate totalBeers
-app.get('/api/stats', async (req, res) => {
+app.get('/api/stats', softAuthMiddleware, async (req, res) => {
+  const crewId = String(req.query.crew_id || '').trim();
   const { limit, offset } = parsePagination(req);
+  if (crewId) {
+    const requester = req.claims?.sub || null;
+    if (!requester) return res.status(401).json({ error: 'Authentication required for crew stats' });
+    const membersRes = await rest('GET', `/crew_members?crew_id=eq.${encodeURIComponent(crewId)}&select=user_id`);
+    if (membersRes.status >= 400) return res.status(membersRes.status).json(membersRes.body || { error: 'Upstream error' });
+    const memberIds = new Set((Array.isArray(membersRes.body) ? membersRes.body : []).map((m) => m.user_id));
+    const ratingsRes = await rest('GET', '/ratings?limit=5000&order=created_at.desc');
+    if (ratingsRes.status >= 400) return res.status(ratingsRes.status).json(ratingsRes.body || { error: 'Upstream error' });
+    const ratings = (Array.isArray(ratingsRes.body) ? ratingsRes.body : []).filter((r) => memberIds.has(r.user_id));
+
+    const byBeer = {};
+    ratings.forEach((r) => {
+      const key = `${r.beer_name || ''}|${r.brewery || ''}|${r.style || ''}`;
+      if (!byBeer[key]) byBeer[key] = { beer_name: r.beer_name || '', brewery: r.brewery || '', style: r.style || '', review_count: 0, rating_sum: 0, last_reviewed: null };
+      byBeer[key].review_count += 1;
+      byBeer[key].rating_sum += Number(r.rating) || 0;
+      const t = new Date(r.created_at || 0).getTime();
+      const prev = byBeer[key].last_reviewed ? new Date(byBeer[key].last_reviewed).getTime() : 0;
+      if (t >= prev) byBeer[key].last_reviewed = r.created_at;
+    });
+    const allBeers = Object.values(byBeer).map((b) => ({
+      beer_name: b.beer_name,
+      brewery: b.brewery,
+      style: b.style,
+      review_count: b.review_count,
+      avg_rating: Math.round((b.rating_sum / Math.max(1, b.review_count)) * 100) / 100,
+      last_reviewed: b.last_reviewed,
+    })).sort((a, b) => b.avg_rating - a.avg_rating);
+    const data = allBeers.slice(offset, offset + limit);
+    const totalBeers = allBeers.length;
+    const totalReviews = ratings.length;
+    const totalUsers = new Set(ratings.map((r) => r.user_id)).size;
+    return res.json({
+      data,
+      pagination: { limit, offset, total: totalBeers },
+      summary: {
+        totalBeers,
+        totalReviews,
+        totalUsers,
+      },
+    });
+  }
+
   const { status: viewStatus, headers: viewHeaders, body: averages } = await rest('GET', `/beer_averages?limit=${limit}&offset=${offset}`, {
     headers: { 'Prefer': 'count=exact' },
   });
