@@ -105,6 +105,19 @@ const Utils = {
         return div.innerHTML;
     },
 
+    // Sanitize external URLs to allow only http/https
+    sanitizeUrl(rawUrl) {
+        const value = String(rawUrl || '').trim();
+        if (!value) return null;
+        try {
+            const parsed = new URL(value);
+            if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+                return parsed.href;
+            }
+        } catch (_) {}
+        return null;
+    },
+
     // Compute average
     average(arr) {
         if (!arr.length) return 0;

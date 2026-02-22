@@ -601,6 +601,11 @@ app.get('/api/ratings/user/:id', validateSort, async (req, res) => {
 app.post('/api/ratings', authMiddleware, async (req, res) => {
   const { sub, preferred_username } = req.claims;
   const b = req.body || {};
+  const ratingRaw = b.rating;
+  const rating = Number(ratingRaw);
+  if (!Number.isFinite(rating) || rating < 1 || rating > 5) {
+    return res.status(400).json({ error: 'rating must be a number between 1 and 5' });
+  }
   const ygValue = b.yg_value ?? b.ygValue ?? null;
   if (ygValue != null) {
     const yg = Number(ygValue);
@@ -627,7 +632,7 @@ app.post('/api/ratings', authMiddleware, async (req, res) => {
     brewery: b.brewery || '',
     style: b.style || '',
     abv: b.abv ?? null,
-    rating: b.rating ?? 0,
+    rating,
     flavor_hoppy: b.flavor_hoppy ?? b.flavors?.hoppy ?? 0,
     flavor_malty: b.flavor_malty ?? b.flavors?.malty ?? 0,
     flavor_bitter: b.flavor_bitter ?? b.flavors?.bitter ?? 0,
@@ -643,7 +648,7 @@ app.post('/api/ratings', authMiddleware, async (req, res) => {
     beer_id: b.beer_id ?? b.beerId ?? null,
     price_cents: priceCentsRaw != null ? Number(priceCentsRaw) : null,
   };
-  if (!record.beer_name || !record.style || !record.rating) {
+  if (!record.beer_name || !record.style || record.rating == null) {
     return res.status(400).json({ error: 'beer_name, style, and rating required' });
   }
 

@@ -512,6 +512,7 @@ const MapView = {
         const cityState = [b.city, b.state].filter(Boolean).join(', ');
         const typePill = this.venueTypePill(b.brewery_type);
         const locationHtml = cityState ? `<span class="venue-detail__location">${Utils.escapeHtml(cityState)}</span>` : '';
+        const websiteUrl = Utils.sanitizeUrl(b.website_url);
         const beers = b.beers || [];
         const beerList = beers.length === 0
             ? '<p>No beers cataloged yet — rate one to be the first!</p>'
@@ -523,7 +524,7 @@ const MapView = {
                 <strong>${Utils.escapeHtml(b.name)}</strong><br>
                 <div class="map-popup-type-row">${typePill}${locationHtml}</div>
                 ${b.phone ? `📞 ${Utils.escapeHtml(b.phone)}<br>` : ''}
-                ${b.website_url ? `<a href="${Utils.escapeHtml(b.website_url)}" target="_blank" rel="noopener" data-track-type="brewery" data-track-id="${Utils.escapeHtml(b.id || '')}" data-track-name="${Utils.escapeHtml(b.name || 'Unknown Brewery')}" data-track-source="brewery_detail">🌐 Visit Website →</a><br>` : ''}
+                ${websiteUrl ? `<a href="${Utils.escapeHtml(websiteUrl)}" target="_blank" rel="noopener noreferrer" data-track-type="brewery" data-track-id="${Utils.escapeHtml(b.id || '')}" data-track-name="${Utils.escapeHtml(b.name || 'Unknown Brewery')}" data-track-source="brewery_detail">🌐 Visit Website →</a><br>` : ''}
                 <p><strong>Beers in catalog:</strong> ${beers.length}</p>
                 <ul>${beerList}</ul>
                 <a href="#" class="brewery-rate-link" data-brewery-id="${Utils.escapeHtml(String(b.id || ''))}" data-venue-name="${Utils.escapeHtml(b.name || '')}" data-lat="${Utils.escapeHtml(String(b.latitude ?? ''))}" data-lng="${Utils.escapeHtml(String(b.longitude ?? ''))}">⭐ Rate a beer from here →</a>
@@ -567,11 +568,12 @@ const MapView = {
                 ).join('') + (beers.length > 3 ? '<li><a href="#" class="brewery-see-all">See all →</a></li>' : '') + '</ul>';
             const typePill = this.venueTypePill(b.brewery_type);
             const locationHtml = cityState ? `<span class="venue-detail__location">${Utils.escapeHtml(cityState)}</span>` : '';
+            const websiteUrl = Utils.sanitizeUrl(b.website_url);
             body.innerHTML = `
                 <h3>${Utils.escapeHtml(b.name)}</h3>
                 <div class="map-popup-type-row">${typePill}${locationHtml}</div>
                 ${b.phone ? `<p>📞 ${Utils.escapeHtml(b.phone)}</p>` : ''}
-                ${b.website_url ? `<p><a href="${Utils.escapeHtml(b.website_url)}" target="_blank" rel="noopener" data-track-type="brewery" data-track-id="${Utils.escapeHtml(b.id || '')}" data-track-name="${Utils.escapeHtml(b.name || 'Unknown Brewery')}" data-track-source="brewery_detail">🌐 Visit Website →</a></p>` : ''}
+                ${websiteUrl ? `<p><a href="${Utils.escapeHtml(websiteUrl)}" target="_blank" rel="noopener noreferrer" data-track-type="brewery" data-track-id="${Utils.escapeHtml(b.id || '')}" data-track-name="${Utils.escapeHtml(b.name || 'Unknown Brewery')}" data-track-source="brewery_detail">🌐 Visit Website →</a></p>` : ''}
                 <p><strong>Beers in catalog:</strong> ${beers.length}</p>
                 ${beerList}
                 <p><a href="#" class="brewery-rate-link" data-brewery-id="${Utils.escapeHtml(String(b.id || ''))}" data-venue-name="${Utils.escapeHtml(b.name || '')}" data-lat="${Utils.escapeHtml(String(b.latitude ?? ''))}" data-lng="${Utils.escapeHtml(String(b.longitude ?? ''))}">⭐ Rate a beer from here →</a></p>
@@ -873,12 +875,13 @@ const MapView = {
             this._osmMarkersById[`osm_${v.id}`] = m;
             const typePill = this.venueTypePill(v.type);
             const hours = v.hours ? `<span class="venue-detail__location">${Utils.escapeHtml(v.hours)}</span>` : '';
+            const websiteUrl = Utils.sanitizeUrl(v.website);
             m.bindPopup(`
                 <div class="map-popup">
                     <strong>${Utils.escapeHtml(v.name)}</strong><br>
                     <div class="map-popup-type-row">${typePill}${hours}</div>
                     ${v.phone ? `📞 ${Utils.escapeHtml(v.phone)}<br>` : ''}
-                    ${v.website ? `<a href="${Utils.escapeHtml(v.website)}" target="_blank" rel="noopener">🌐 Website →</a><br>` : ''}
+                    ${websiteUrl ? `<a href="${Utils.escapeHtml(websiteUrl)}" target="_blank" rel="noopener noreferrer">🌐 Website →</a><br>` : ''}
                     <button type="button" class="btn btn-sm btn-primary map-popup-osm-detail" data-venue-id="osm_${v.id}">View details</button>
                     <a href="#" class="osm-rate-link" data-venue-id="osm_${Utils.escapeHtml(String(v.id))}" data-venue-name="${Utils.escapeHtml(v.name)}" data-lat="${Utils.escapeHtml(String(v.lat))}" data-lng="${Utils.escapeHtml(String(v.lng))}">⭐ Rate a beer from here →</a>
                 </div>
@@ -1013,7 +1016,18 @@ const MapView = {
 
         if (listView) listView.style.display = 'none';
         if (detailView) detailView.style.display = '';
-        if (body) body.innerHTML = this.buildOSMDetailHtml(venue);
+        if (body) {
+            body.innerHTML = this.buildOSMDetailHtml(venue);
+            body.querySelector('.osm-rate-link')?.addEventListener('click', (e) => {
+                e.preventDefault();
+                const link = e.currentTarget;
+                const targetVenueId = link?.dataset?.venueId || `osm_${venue.id}`;
+                const targetVenueName = link?.dataset?.venueName || venue.name || 'Selected Venue';
+                const lat = parseFloat(link?.dataset?.lat || '');
+                const lng = parseFloat(link?.dataset?.lng || '');
+                rateFromVenue(targetVenueId, targetVenueName, lat, lng);
+            });
+        }
 
         if (sheet) {
             sheet.classList.remove('collapsed', 'hidden');
@@ -1023,9 +1037,12 @@ const MapView = {
 
     buildOSMDetailHtml(venue) {
         const pill = venueTypePill(venue.type || '');
-        const safeId = Utils.escapeHtml(String(venue.id || ''));
         const safeName = Utils.escapeHtml(venue.name || 'Unknown Venue');
-        const escapedName = (venue.name || '').replace(/'/g, "\\'");
+        const safeVenueId = Utils.escapeHtml(`osm_${String(venue.id || '')}`);
+        const safeVenueName = Utils.escapeHtml(venue.name || 'Selected Venue');
+        const safeLat = Utils.escapeHtml(String(venue.lat ?? ''));
+        const safeLng = Utils.escapeHtml(String(venue.lng ?? ''));
+        const websiteUrl = Utils.sanitizeUrl(venue.website);
 
         return `
             <div class="venue-detail-header">
@@ -1036,9 +1053,9 @@ const MapView = {
                 </div>
             </div>
             ${venue.phone ? `<div class="venue-detail-row">📞 ${Utils.escapeHtml(venue.phone)}</div>` : ''}
-            ${venue.website ? `<div class="venue-detail-row"><a href="${Utils.escapeHtml(venue.website)}" target="_blank" rel="noopener">🌐 Visit Website →</a></div>` : ''}
+            ${websiteUrl ? `<div class="venue-detail-row"><a href="${Utils.escapeHtml(websiteUrl)}" target="_blank" rel="noopener noreferrer">🌐 Visit Website →</a></div>` : ''}
             <div class="venue-detail-actions" style="margin-top:12px;">
-                <a href="#" onclick="rateFromVenue('osm_${safeId}', '${escapedName}', ${venue.lat}, ${venue.lng}); return false;" class="btn btn-primary btn-sm">
+                <a href="#" class="btn btn-primary btn-sm osm-rate-link" data-venue-id="${safeVenueId}" data-venue-name="${safeVenueName}" data-lat="${safeLat}" data-lng="${safeLng}">
                     ⭐ Rate a beer from here
                 </a>
             </div>
