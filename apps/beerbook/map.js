@@ -88,9 +88,7 @@ const MapView = {
     _userLng: null,
     currentLayer: 'discover',
     moveEndDebounce: null,
-    _sheetMode: 'list',
-    _sheetExpanded: false,
-    _pendingListRefresh: false,
+    _bottomSheet: null,
     VENUE_CATEGORIES: {
         brewery: {
             types: ['micro', 'nano', 'regional', 'large', 'contract', 'proprietor', 'brewpub'],
@@ -131,19 +129,16 @@ const MapView = {
         const nearMeBtn = document.getElementById('map-nearme-btn');
         if (nearMeBtn) nearMeBtn.style.display = this.currentLayer === 'discover' ? 'inline-flex' : 'none';
         await this.loadMap();
-        const venueSheet = document.getElementById('venue-list-sheet');
+        this._ensureBottomSheet();
         if (this.currentLayer === 'discover') {
-            this.showVenueListMode();
+            this._bottomSheet?.show();
+            this._bottomSheet?.snapTo('MIN');
+            this._bottomSheet?.updateVenues();
             this.loadBreweriesInViewport();
             this.loadOSMVenuesInViewport();
-            if (venueSheet) {
-                venueSheet.classList.add('collapsed');
-                venueSheet.classList.remove('expanded', 'hidden');
-                venueSheet.setAttribute('aria-hidden', 'false');
-            }
-        } else if (venueSheet) {
-            venueSheet.classList.add('hidden');
-            venueSheet.setAttribute('aria-hidden', 'true');
+        } else {
+            this._bottomSheet?.clearSelection();
+            this._bottomSheet?.hide();
         }
         this.updateLayerVisibility();
         this.map.invalidateSize();
@@ -165,8 +160,7 @@ const MapView = {
             });
         });
         document.querySelector('.brewery-bottom-sheet-backdrop')?.addEventListener('click', () => this.closeBrewerySheet());
-        document.getElementById('venue-sheet-back')?.addEventListener('click', () => this.showVenueListMode());
-        this._initSheetDrag();
+        this._ensureBottomSheet();
         if (DB.currentUser && DB.currentUser.id) {
             const trailBtn = document.getElementById('btn-my-trail');
             if (trailBtn) trailBtn.style.display = 'inline-flex';
@@ -187,23 +181,19 @@ const MapView = {
         const nearMeBtn = document.getElementById('map-nearme-btn');
         if (nearMeBtn) nearMeBtn.style.display = layer === 'discover' ? 'inline-flex' : 'none';
         this.updateLayerVisibility();
-        const venueSheet = document.getElementById('venue-list-sheet');
+        this._ensureBottomSheet();
         if (layer === 'discover') {
-            if (venueSheet) {
-                venueSheet.classList.add('collapsed');
-                venueSheet.classList.remove('expanded', 'hidden');
-                venueSheet.setAttribute('aria-hidden', 'false');
-            }
-            this.showVenueListMode();
+            this._bottomSheet?.show();
+            this._bottomSheet?.snapTo('MIN');
             if (this.breweryData.length === 0) {
                 this.loadBreweriesInViewport();
             } else {
-                this.updateVenueListSheet();
+                this._bottomSheet?.updateVenues();
             }
             this.loadOSMVenuesInViewport();
-        } else if (venueSheet) {
-            venueSheet.classList.add('hidden');
-            venueSheet.setAttribute('aria-hidden', 'true');
+        } else {
+            this._bottomSheet?.clearSelection();
+            this._bottomSheet?.hide();
         }
     },
 
@@ -238,6 +228,27 @@ const MapView = {
 
     restoreFilterState() {
         // No-op: Discover filters were removed for a simplified UI.
+    },
+
+    _ensureBottomSheet() {
+        if (this._bottomSheet || typeof window.BottomSheet === 'undefined') return;
+        this._bottomSheet = window.BottomSheet.create({
+            mountEl: document.getElementById('view-map'),
+            getVenues: () => this.getAllVenues(),
+            onSelectVenue: ({ id, source, lat, lng }) => {
+                this.focusVenueFromList({ id, source, lat, lng, skipDetail: true });
+            },
+            renderDetail: (venueId, source) => {
+                if (source === 'osm') return this.showVenueSheetOSMDetail(venueId);
+                return this.showVenueSheetBreweryDetail(venueId);
+            }
+        });
+
+        const sheetEl = document.getElementById('bb-sheet');
+        if (sheetEl && typeof L !== 'undefined' && L.DomEvent) {
+            L.DomEvent.disableClickPropagation(sheetEl);
+            L.DomEvent.disableScrollPropagation(sheetEl);
+        }
     },
 
     getVenueCategory(venueType) {
@@ -354,7 +365,7 @@ const MapView = {
             m.brewerySummary = b;
             this._breweryMarkersById[String(b.id)] = m;
             m.on('click', () => {
-                this.showVenueDetail(b.id, 'beerbook');
+                this.showVenueDetail(b.id, 'beerbook', { lat: b.latitude, lng: b.longitude });
             });
             const cityState = [b.city, b.state].filter(Boolean).join(', ');
             const typePill = this.venueTypePill(b.brewery_type);
@@ -370,7 +381,7 @@ const MapView = {
             m.on('popupopen', () => {
                 const popupEl = m.getPopup().getElement();
                 popupEl?.querySelector('.map-popup-brewery-detail')?.addEventListener('click', () => {
-                    this.showVenueDetail(b.id, 'beerbook');
+                    this.showVenueDetail(b.id, 'beerbook', { lat: b.latitude, lng: b.longitude });
                 });
                 popupEl?.querySelector('.brewery-rate-link')?.addEventListener('click', (e) => {
                     e.preventDefault();
@@ -404,96 +415,38 @@ const MapView = {
         }
     },
 
-    showVenueDetail(venueId, source = 'beerbook') {
-        const isMobile = window.innerWidth <= 768;
+    showVenueDetail(venueId, source = 'beerbook', coords = null) {
+        const lat = Number(coords?.lat);
+        const lng = Number(coords?.lng);
+        this._ensureBottomSheet();
 
-        if (source === 'osm') {
-            this.showVenueSheetOSMDetail(venueId);
+        if (this.currentLayer !== 'discover') {
+            if (source === 'beerbook') this.openBreweryDetail(venueId, false);
             return;
         }
 
-        if (isMobile) {
-            this.showVenueSheetBreweryDetail(venueId);
-        } else {
-            this.openBreweryDetail(venueId, false);
-        }
-    },
-
-    _initSheetDrag() {
-        const handle = document.getElementById('venue-sheet-handle');
-        const sheet = document.getElementById('venue-list-sheet');
-        if (!handle || !sheet) return;
-
-        handle.addEventListener('click', () => {
-            sheet.classList.toggle('expanded');
-            sheet.classList.toggle('collapsed', !sheet.classList.contains('expanded'));
-            this._sheetExpanded = sheet.classList.contains('expanded');
-        });
-
-        let startY = 0;
-        handle.addEventListener('touchstart', (e) => {
-            startY = e.touches[0].clientY;
-        }, { passive: true });
-        handle.addEventListener('touchend', (e) => {
-            const endY = e.changedTouches[0].clientY;
-            const diff = startY - endY;
-            if (diff > 30) {
-                sheet.classList.add('expanded');
-                sheet.classList.remove('collapsed');
-                this._sheetExpanded = true;
-            } else if (diff < -30) {
-                sheet.classList.remove('expanded');
-                sheet.classList.add('collapsed');
-                this._sheetExpanded = false;
-            }
-        }, { passive: true });
-    },
-
-    showVenueListMode() {
-        this._sheetMode = 'list';
-        this._sheetExpanded = false;
-        const list = document.getElementById('venue-sheet-list');
-        const detail = document.getElementById('venue-sheet-detail');
-        if (list) list.style.display = '';
-        if (detail) detail.style.display = 'none';
-        if (this._pendingListRefresh) {
-            this._pendingListRefresh = false;
-            this.updateVenueListSheet();
+        if (this._bottomSheet) {
+            this._bottomSheet.selectVenue({
+                id: venueId,
+                source,
+                lat: Number.isFinite(lat) ? lat : undefined,
+                lng: Number.isFinite(lng) ? lng : undefined
+            });
             return;
         }
-        const sheet = document.getElementById('venue-list-sheet');
-        if (sheet) {
-            sheet.classList.add('collapsed');
-            sheet.classList.remove('expanded', 'hidden');
-        }
+
+        if (source === 'beerbook') this.openBreweryDetail(venueId, false);
     },
 
     async showVenueSheetBreweryDetail(breweryId) {
-        const list = document.getElementById('venue-sheet-list');
-        const detail = document.getElementById('venue-sheet-detail');
-        const body = document.getElementById('venue-sheet-detail-body');
-        const sheet = document.getElementById('venue-list-sheet');
-        if (!list || !detail || !body || !sheet) return;
-        if (this.currentLayer !== 'discover') return;
-        this._sheetMode = 'detail';
-        this._sheetExpanded = true;
-
-        body.innerHTML = '<p class="brewery-sheet-loading">Loading…</p>';
-        list.style.display = 'none';
-        detail.style.display = '';
-        sheet.classList.add('expanded');
-        sheet.classList.remove('collapsed');
-
         try {
             const b = await DB.getBrewery(breweryId);
             if (!b) {
-                body.innerHTML = '<p>Brewery not found.</p>';
-                return;
+                return '<p>Brewery not found.</p>';
             }
-            body.innerHTML = this.buildBreweryDetailHtml(b);
-            this._bindBreweryDetailButtons(body, b);
+            return this.buildBreweryDetailHtml(b);
         } catch (_) {
-            body.innerHTML = '<p>Could not load brewery.</p>';
+            return '<p>Could not load brewery.</p>';
         }
     },
 
@@ -673,18 +626,7 @@ const MapView = {
         return `${miles.toFixed(1)} mi`;
     },
 
-    updateVenueListSheet() {
-        const listEl = document.getElementById('venue-sheet-list');
-        const titleEl = document.getElementById('venue-sheet-title');
-        const subtitleEl = document.getElementById('venue-sheet-subtitle');
-        const sheet = document.getElementById('venue-list-sheet');
-        if (!listEl || !sheet) return;
-        if (this.currentLayer !== 'discover') return;
-        if (this._sheetMode === 'detail') {
-            this._pendingListRefresh = true;
-            return;
-        }
-
+    getAllVenues() {
         let allVenues = [];
 
         (this.breweryData || []).forEach((b) => {
@@ -731,45 +673,13 @@ const MapView = {
         } else {
             allVenues.sort((a, b) => a.name.localeCompare(b.name));
         }
+        return allVenues;
+    },
 
-        const count = allVenues.length;
-        if (titleEl) titleEl.textContent = `${count} Venue${count !== 1 ? 's' : ''} Near You`;
-        if (subtitleEl) subtitleEl.textContent = this._userLat != null ? 'Sorted by distance' : 'Based on current map view';
-
-        const display = allVenues.slice(0, 50);
-        listEl.innerHTML = display.map((v) => {
-            const category = this.getVenueCategory(v.type);
-            const { color } = this.getVenuePinStyle(category);
-            const distText = v.distance != null ? this._formatDist(v.distance) : '';
-            const location = [v.city, v.state].filter(Boolean).join(', ');
-            const typePill = this.venueTypePill(v.type);
-            const meta = `${typePill}${location ? `<span class="venue-detail__location">${Utils.escapeHtml(location)}</span>` : ''}`;
-            return `
-                <div class="venue-list-card" data-venue-id="${v.id}" data-lat="${v.lat}" data-lng="${v.lng}" data-source="${v.source}" style="border-left: 3px solid ${color}">
-                    <div class="venue-list-card-info">
-                        <div class="venue-list-card-name">${Utils.escapeHtml(v.name || 'Unknown Venue')}</div>
-                        <div class="venue-list-card-meta">${meta}</div>
-                    </div>
-                    ${distText ? `<div class="venue-list-card-distance">${distText}</div>` : ''}
-                </div>
-            `;
-        }).join('');
-
-        listEl.querySelectorAll('.venue-list-card').forEach((card) => {
-            card.addEventListener('click', () => {
-                const lat = parseFloat(card.dataset.lat);
-                const lng = parseFloat(card.dataset.lng);
-                const id = card.dataset.venueId;
-                const source = card.dataset.source;
-                this.focusVenueFromList({ id, source, lat, lng });
-            });
-        });
-
-        if (!this._sheetExpanded) {
-            sheet.classList.add('collapsed');
-            sheet.classList.remove('expanded', 'hidden');
-        }
-        sheet.setAttribute('aria-hidden', 'false');
+    updateVenueListSheet() {
+        if (this.currentLayer !== 'discover') return;
+        this._ensureBottomSheet();
+        this._bottomSheet?.updateVenues();
     },
 
     async loadOSMVenuesInViewport() {
@@ -895,7 +805,7 @@ const MapView = {
             m.on('popupopen', () => {
                 const popupEl = m.getPopup().getElement();
                 popupEl?.querySelector('.map-popup-osm-detail')?.addEventListener('click', () => {
-                    this.showVenueDetail(`osm_${v.id}`, 'osm');
+                    this.showVenueDetail(`osm_${v.id}`, 'osm', { lat: v.lat, lng: v.lng });
                 });
                 popupEl?.querySelector('.osm-rate-link')?.addEventListener('click', (e) => {
                     e.preventDefault();
@@ -928,19 +838,22 @@ const MapView = {
         }
     },
 
-    focusVenueFromList({ id, source, lat, lng }) {
+    focusVenueFromList({ id, source, lat, lng, skipDetail = false }) {
         const map = this.map || this._map;
         if (!map) return;
-
-        const markerLatLng = L.latLng(lat, lng);
-        const currentZoom = map.getZoom() || 0;
-        const bounds = map.getBounds();
-        const isVisible = bounds.contains(markerLatLng);
 
         const marker = source === 'beerbook'
             ? this._breweryMarkersById[String(id)]
             : this._osmMarkersById[String(id)];
         const cluster = source === 'beerbook' ? this.breweryCluster : this._osmCluster;
+        const fallbackLatLng = marker?.getLatLng?.();
+        const targetLat = Number.isFinite(Number(lat)) ? Number(lat) : fallbackLatLng?.lat;
+        const targetLng = Number.isFinite(Number(lng)) ? Number(lng) : fallbackLatLng?.lng;
+        if (!Number.isFinite(targetLat) || !Number.isFinite(targetLng)) return;
+        const markerLatLng = L.latLng(targetLat, targetLng);
+        const currentZoom = map.getZoom() || 0;
+        const bounds = map.getBounds();
+        const isVisible = bounds.contains(markerLatLng);
 
         const isClustered = marker ? this.isMarkerClustered(marker, cluster) : false;
 
@@ -956,7 +869,7 @@ const MapView = {
 
         if (!marker) {
             map.flyTo(offsetLatLng, targetZoom, { duration: 0.5, easeLinearity: 0.5 });
-            this.showVenueDetail(id, source);
+            if (!skipDetail) this.showVenueDetail(id, source, { lat: targetLat, lng: targetLng });
             return;
         }
 
@@ -974,7 +887,7 @@ const MapView = {
             }, 550);
         }
 
-        this.showVenueDetail(id, source);
+        if (!skipDetail) this.showVenueDetail(id, source, { lat: targetLat, lng: targetLng });
     },
 
     isMarkerClustered(marker, cluster) {
@@ -987,11 +900,9 @@ const MapView = {
     },
 
     getSheetOffset() {
-        const sheet = document.getElementById('venue-list-sheet');
-        if (!sheet) return 80;
-        const sheetRect = sheet.getBoundingClientRect();
-        const viewportHeight = window.innerHeight;
-        const sheetVisibleHeight = viewportHeight - sheetRect.top;
+        if (this.currentLayer !== 'discover') return 60;
+        this._ensureBottomSheet();
+        const sheetVisibleHeight = this._bottomSheet?.getVisibleHeight?.() || 120;
         return Math.max(sheetVisibleHeight / 2, 60);
     },
 
@@ -1010,35 +921,8 @@ const MapView = {
 
     showVenueSheetOSMDetail(venueId) {
         const venue = this.findOSMVenueById(venueId);
-        if (!venue) return;
-
-        this._sheetMode = 'detail';
-        this._sheetExpanded = true;
-
-        const sheet = document.getElementById('venue-list-sheet');
-        const listView = document.getElementById('venue-sheet-list');
-        const detailView = document.getElementById('venue-sheet-detail');
-        const body = document.getElementById('venue-sheet-detail-body');
-
-        if (listView) listView.style.display = 'none';
-        if (detailView) detailView.style.display = '';
-        if (body) {
-            body.innerHTML = this.buildOSMDetailHtml(venue);
-            body.querySelector('.osm-rate-link')?.addEventListener('click', (e) => {
-                e.preventDefault();
-                const link = e.currentTarget;
-                const targetVenueId = link?.dataset?.venueId || `osm_${venue.id}`;
-                const targetVenueName = link?.dataset?.venueName || venue.name || 'Selected Venue';
-                const lat = parseFloat(link?.dataset?.lat || '');
-                const lng = parseFloat(link?.dataset?.lng || '');
-                rateFromVenue(targetVenueId, targetVenueName, lat, lng);
-            });
-        }
-
-        if (sheet) {
-            sheet.classList.remove('collapsed', 'hidden');
-            sheet.classList.add('expanded');
-        }
+        if (!venue) return '<p>Venue not found.</p>';
+        return this.buildOSMDetailHtml(venue);
     },
 
     buildOSMDetailHtml(venue) {

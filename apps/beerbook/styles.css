@@ -3281,64 +3281,136 @@ input, select, textarea, button {
 .brewery-bottom-sheet-body ul { margin: var(--space-sm) 0; padding-left: var(--space-lg); }
 .brewery-sheet-loading { color: var(--text-muted); }
 
-.venue-list-sheet {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
+/* ===== Bottom Sheet v2 - transform-based 3-snap ===== */
+
+.bb-sheet-root {
+    position: fixed;
+    inset: 0;
     z-index: 1001;
-    background: var(--bg-surface, #141428);
-    border-top-left-radius: 16px;
-    border-top-right-radius: 16px;
-    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.5);
-    transition: max-height 0.3s ease;
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-    pointer-events: auto;
-}
-.venue-list-sheet.collapsed {
-    max-height: 200px;
-}
-.venue-list-sheet.expanded {
-    max-height: 55vh;
-}
-.venue-list-sheet.hidden {
-    max-height: 0;
     pointer-events: none;
 }
-.venue-sheet-handle {
-    display: flex;
-    justify-content: center;
-    padding: 10px 0 4px;
-    cursor: grab;
+
+.bb-sheet-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    opacity: var(--sheet-backdrop, 0);
+    pointer-events: none;
+    transition: opacity 0.3s ease;
 }
-.venue-sheet-handle-bar {
+.bb-sheet-root[data-state="LIST"] .bb-sheet-backdrop {
+    pointer-events: auto;
+}
+
+.bb-sheet {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: 100vh;
+    height: 100dvh;
+    background: var(--bg-surface, #141428);
+    border-radius: 16px 16px 0 0;
+    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.5);
+    transform: translate3d(0, var(--sheet-y, 100%), 0);
+    transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+    will-change: transform;
+    pointer-events: auto;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.bb-sheet.dragging {
+    transition: none;
+}
+
+.bb-sheet-chrome {
+    flex-shrink: 0;
+    touch-action: none;
+    cursor: grab;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.bb-sheet-handle {
     width: 40px;
     height: 4px;
     border-radius: 2px;
-    background: var(--text-muted);
-    opacity: 0.7;
+    background: var(--bg-elevated, #555);
+    margin: 10px auto 4px;
 }
-.venue-sheet-header {
+
+.bb-sheet-header {
     padding: 0 16px 8px;
 }
-.venue-sheet-header h3 {
+.bb-sheet-header h3 {
     font-size: 1.1rem;
-    color: var(--gold);
+    color: var(--gold, #F6AD55);
     margin: 0;
+    font-family: var(--font-display, inherit);
 }
-.venue-sheet-subtitle {
+.bb-sheet-subtitle {
     font-size: 0.8rem;
-    color: var(--text-muted);
+    color: var(--text-muted, #b07d3a);
     margin: 4px 0 0;
 }
-.venue-sheet-list {
+
+.bb-sheet-body {
+    flex: 1;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.bb-sheet-scroll {
+    flex: 1;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    padding: 0 12px 12px;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+}
+
+.bb-sheet-root[data-state="MIN"] .bb-sheet-scroll,
+.bb-sheet-root[data-state="DETAIL"] .bb-sheet-scroll {
+    overflow: hidden;
+}
+
+.bb-sheet-min-preview {
+    padding: 0 12px 8px;
+}
+.bb-sheet-min-preview .venue-list-card {
+    margin-bottom: 6px;
+}
+
+.bb-sheet-detail {
+    padding: 0 16px 16px;
     overflow-y: auto;
     flex: 1;
-    padding: 0 12px 12px;
-    -webkit-overflow-scrolling: touch;
 }
+
+.bb-sheet-back {
+    background: none;
+    border: none;
+    color: var(--gold, #ED8936);
+    font-size: 0.9rem;
+    cursor: pointer;
+    padding: 8px 0;
+    margin-bottom: 8px;
+}
+
+.bb-sheet-root[data-state="MIN"] .bb-sheet-min-preview { display: block; }
+.bb-sheet-root[data-state="MIN"] .bb-sheet-detail { display: none !important; }
+.bb-sheet-root[data-state="MIN"] .bb-sheet-scroll { display: none; }
+
+.bb-sheet-root[data-state="DETAIL"] .bb-sheet-min-preview { display: none; }
+.bb-sheet-root[data-state="DETAIL"] .bb-sheet-detail { display: block !important; }
+.bb-sheet-root[data-state="DETAIL"] .bb-sheet-scroll { display: none; }
+
+.bb-sheet-root[data-state="LIST"] .bb-sheet-min-preview { display: none; }
+.bb-sheet-root[data-state="LIST"] .bb-sheet-detail { display: none !important; }
+.bb-sheet-root[data-state="LIST"] .bb-sheet-scroll { display: block; }
 .venue-list-card {
     display: flex;
     align-items: center;
@@ -3383,20 +3455,6 @@ input, select, textarea, button {
     flex-shrink: 0;
     text-align: right;
 }
-.venue-sheet-back {
-    background: none;
-    border: none;
-    color: var(--gold);
-    font-size: 0.9rem;
-    cursor: pointer;
-    padding: 8px 0;
-    margin-bottom: 8px;
-}
-.venue-sheet-detail {
-    overflow-y: auto;
-    padding: 0 12px 12px;
-}
-
 .map-sidebar {
     background: var(--bg-surface);
     border: 1px solid var(--bg-elevated);
@@ -3526,12 +3584,6 @@ input, select, textarea, button {
     .view-map .map-nearme-btn {
         padding: 8px 12px;
         font-size: 0.8rem;
-    }
-    .view-map .venue-list-sheet {
-        max-height: 32vh;
-    }
-    .view-map .venue-list-sheet.expanded {
-        max-height: 70vh;
     }
     .beer-map-container { height: 400px; }
     .map-sidebar {
