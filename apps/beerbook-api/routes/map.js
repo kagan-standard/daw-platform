@@ -15,7 +15,7 @@ module.exports = function (opts) {
 
   // GET /api/map — all geotagged ratings with venue info (for Leaflet pins)
   router.get('/', (req, res, next) => {
-    rest('GET', '/ratings?latitude=not.is.null&longitude=not.is.null&select=id,beer_name,brewery,user_id,user_name,latitude,longitude,location_name,venue_id,rating,created_at')
+    rest('GET', '/ratings?latitude=not.is.null&longitude=not.is.null&select=id,beer_name,brewery,style,user_id,user_name,latitude,longitude,location_name,venue_id,rating,created_at')
       .then(({ status, body }) => {
         if (status >= 400) return res.status(status).json(body || { error: 'Upstream error' });
         let list = (Array.isArray(body) ? body : []).map((r) => ({
@@ -34,6 +34,80 @@ module.exports = function (opts) {
         });
       })
       .catch(next);
+  });
+
+  // GET /api/map/venues — venue-centric map data with aggregated rating stats
+  router.get('/venues', async (req, res, next) => {
+    try {
+      const [venuesRes, ratingsRes] = await Promise.all([
+        rest('GET', '/venues?select=id,name,latitude,longitude,created_by,created_at'),
+        rest('GET', '/ratings?venue_id=not.is.null&select=id,beer_name,rating,venue_id,created_at'),
+      ]);
+      if (venuesRes.status >= 400) {
+        return res.status(venuesRes.status).json(venuesRes.body || { error: 'Upstream error' });
+      }
+      if (ratingsRes.status >= 400) {
+        return res.status(ratingsRes.status).json(ratingsRes.body || { error: 'Upstream error' });
+      }
+
+      const venues = Array.isArray(venuesRes.body) ? venuesRes.body : [];
+      const ratings = Array.isArray(ratingsRes.body) ? ratingsRes.body : [];
+      const aggByVenue = new Map();
+
+      ratings.forEach((r) => {
+        const venueId = r?.venue_id ? String(r.venue_id) : null;
+        if (!venueId) return;
+        if (!aggByVenue.has(venueId)) {
+          aggByVenue.set(venueId, {
+            rating_count: 0,
+            rating_sum: 0,
+            last_rated_at: null,
+            beers: new Map(),
+          });
+        }
+        const agg = aggByVenue.get(venueId);
+        agg.rating_count += 1;
+        const ratingNum = Number(r.rating);
+        if (Number.isFinite(ratingNum)) agg.rating_sum += ratingNum;
+        if (r.created_at && (!agg.last_rated_at || new Date(r.created_at).getTime() > new Date(agg.last_rated_at).getTime())) {
+          agg.last_rated_at = r.created_at;
+        }
+        const beerName = (r.beer_name || '').trim();
+        if (beerName) {
+          const key = beerName.toLowerCase();
+          const prev = agg.beers.get(key) || { name: beerName, count: 0 };
+          prev.count += 1;
+          agg.beers.set(key, prev);
+        }
+      });
+
+      const data = venues
+        .filter((v) => Number.isFinite(Number(v.latitude)) && Number.isFinite(Number(v.longitude)))
+        .map((v) => {
+          const agg = aggByVenue.get(String(v.id));
+          const ratingCount = agg ? agg.rating_count : 0;
+          const avgRating = ratingCount > 0 ? Number((agg.rating_sum / ratingCount).toFixed(2)) : null;
+          const beersList = agg ? [...agg.beers.values()] : [];
+          beersList.sort((a, b) => (b.count - a.count) || a.name.localeCompare(b.name));
+          return {
+            id: v.id,
+            name: v.name,
+            latitude: Number(v.latitude),
+            longitude: Number(v.longitude),
+            rating_count: ratingCount,
+            avg_rating: avgRating,
+            unique_beers: beersList.length,
+            last_rated_at: agg ? agg.last_rated_at : null,
+            top_beer: beersList[0] ? beersList[0].name : null,
+            created_by: v.created_by ?? null,
+            created_at: v.created_at ?? null,
+          };
+        });
+
+      res.json({ data });
+    } catch (err) {
+      next(err);
+    }
   });
 
   // GET /api/map/user/:id — single user's beer trail (geotagged, chronological)

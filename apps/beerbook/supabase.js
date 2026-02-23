@@ -1181,6 +1181,11 @@ const DB = {
         return await this._api('GET', '/api/map');
     },
 
+    async getMapVenues() {
+        if (this.isDemo) return { data: [] };
+        return await this._api('GET', '/api/map/venues');
+    },
+
     async getBreweriesMap(bounds) {
         if (this.isDemo) return { data: [] };
         const q = bounds ? `?bounds=${encodeURIComponent(bounds)}` : '';

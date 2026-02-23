@@ -61,11 +61,13 @@ if (typeof window !== 'undefined') {
 const MapView = {
     map: null,
     markersCluster: null,
+    orphanMarkersCluster: null,
     venueLayer: null,
     userMarker: null,
     trailLayer: null,
     dealsMarkers: [],
     mapData: [],
+    mapVenueData: [],
     styles: [],
     initDone: false,
     trailMarkers: [],
@@ -211,6 +213,10 @@ const MapView = {
         if (this.markersCluster) {
             if (showRatings) this.map.addLayer(this.markersCluster);
             else this.map.removeLayer(this.markersCluster);
+        }
+        if (this.orphanMarkersCluster) {
+            if (showRatings) this.map.addLayer(this.orphanMarkersCluster);
+            else this.map.removeLayer(this.orphanMarkersCluster);
         }
         if (this.breweryCluster) {
             if (showBreweries) this.map.addLayer(this.breweryCluster);
@@ -1089,9 +1095,11 @@ const MapView = {
 
     async loadMap() {
         try {
-            const res = DB.isDemo ? { data: [] } : await DB.getMap();
-            const list = (res && res.data) ? res.data : [];
-            this.mapData = list;
+            const [ratingsRes, venuesRes] = DB.isDemo
+                ? [{ data: [] }, { data: [] }]
+                : await Promise.all([DB.getMap(), DB.getMapVenues()]);
+            this.mapData = (ratingsRes && ratingsRes.data) ? ratingsRes.data : [];
+            this.mapVenueData = (venuesRes && venuesRes.data) ? venuesRes.data : [];
             this.buildStylesList();
             this.renderPins();
         } catch (err) {
@@ -1111,44 +1119,20 @@ const MapView = {
         ).join('');
     },
 
-    venuesFromRatings() {
-        const byVenue = {};
-        this.mapData.forEach(r => {
-            const styleFilter = document.getElementById('map-filter-style')?.value || '';
-            if (styleFilter && r.style !== styleFilter) return;
-            const key = r.venue_id || `pin_${r.latitude}_${r.longitude}`;
-            if (!byVenue[key]) {
-                byVenue[key] = {
-                    id: r.venue_id,
-                    name: r.venue?.name || r.location_name || 'Unknown',
-                    address: r.venue?.address || null,
-                    latitude: r.latitude,
-                    longitude: r.longitude,
-                    ratings: [],
-                    venue: r.venue
-                };
-            }
-            byVenue[key].ratings.push(r);
-        });
-        return Object.values(byVenue).map(v => {
-            const avg = v.ratings.reduce((s, r) => s + (r.rating || 0), 0) / v.ratings.length;
-            const withYg = v.ratings.filter(r => r.yg_value != null).sort((a, b) => (b.yg_value || 0) - (a.yg_value || 0))[0];
-            return {
-                ...v,
-                avgRating: avg,
-                topBeer: withYg ? withYg.beer_name : (v.ratings[0]?.beer_name),
-                topYg: withYg ? withYg.yg_value : null,
-                count: v.ratings.length
-            };
+    orphanGeotaggedRatings() {
+        const styleFilter = document.getElementById('map-filter-style')?.value || '';
+        return (this.mapData || []).filter((r) => {
+            if (r.venue_id) return false;
+            if (r.latitude == null || r.longitude == null) return false;
+            if (styleFilter && r.style && r.style !== styleFilter) return false;
+            return true;
         });
     },
 
-    pinColor(avgRating) {
-        if (avgRating == null || avgRating === undefined) return '#6b7280';
-        if (avgRating >= 4) return '#22c55e';
-        if (avgRating >= 3) return '#f59e0b';
-        if (avgRating >= 2) return '#ef4444';
-        return '#6b7280';
+    pinColorForActivity(ratingCount) {
+        if ((ratingCount || 0) >= 5) return '#F6AD55'; // gold: active spot
+        if ((ratingCount || 0) >= 2) return '#ED8936'; // amber: warming up
+        return '#A0AEC0'; // gray: new discovery
     },
 
     renderPins() {
@@ -1156,10 +1140,20 @@ const MapView = {
             this.map.removeLayer(this.markersCluster);
             this.markersCluster = null;
         }
-        const venues = this.venuesFromRatings();
+        if (this.orphanMarkersCluster) {
+            this.map.removeLayer(this.orphanMarkersCluster);
+            this.orphanMarkersCluster = null;
+        }
+        const venues = Array.isArray(this.mapVenueData) ? this.mapVenueData : [];
         const markers = [];
+        const boundsPoints = [];
         venues.forEach(v => {
-            const fillColor = this.pinColor(v.avgRating);
+            if (v.latitude == null || v.longitude == null) return;
+            const fillColor = this.pinColorForActivity(v.rating_count || 0);
+            const avgText = v.avg_rating != null ? Number(v.avg_rating).toFixed(1) : '—';
+            const lastCheckIn = v.last_rated_at
+                ? (Utils.formatDate ? Utils.formatDate(v.last_rated_at) : new Date(v.last_rated_at).toLocaleDateString())
+                : 'Never';
             const m = L.circleMarker([v.latitude, v.longitude], {
                 radius: 10,
                 weight: 2,
@@ -1167,25 +1161,63 @@ const MapView = {
                 fillColor: fillColor,
                 fillOpacity: 0.85
             });
-            const happyHourText = ''; // could be from venue.happy_hours if we had it
             m.bindPopup(`
                 <div class="map-popup">
                     <strong>${Utils.escapeHtml(v.name)}</strong><br>
-                    ⭐ ${v.avgRating.toFixed(1)} avg · ${v.count} beers rated<br>
-                    ${happyHourText ? '🟢 Happy Hour NOW<br>' : ''}
-                    ${v.topBeer ? `Top beer: ${Utils.escapeHtml(v.topBeer)}${v.topYg != null ? ` (${v.topYg} YG)` : ''}<br>` : ''}
+                    ⭐ ${avgText} avg · ${v.rating_count || 0} ratings · ${v.unique_beers || 0} beers<br>
+                    Last check-in: ${Utils.escapeHtml(lastCheckIn)}<br>
+                    ${v.top_beer ? `Top beer: ${Utils.escapeHtml(v.top_beer)}<br>` : ''}
                     <button type="button" class="btn btn-sm btn-primary map-popup-venue" data-venue-id="${v.id || ''}" data-venue-name="${Utils.escapeHtml(v.name)}">View Venue Detail</button>
+                    <a href="#" class="brewery-rate-link" data-brewery-id="${Utils.escapeHtml(String(v.id || ''))}" data-venue-name="${Utils.escapeHtml(v.name || '')}" data-lat="${Utils.escapeHtml(String(v.latitude ?? ''))}" data-lng="${Utils.escapeHtml(String(v.longitude ?? ''))}">⭐ Rate a beer from here →</a>
                 </div>
             `);
             m.venueId = v.id;
             m.venueName = v.name;
+            m.on('popupopen', () => {
+                const popupEl = m.getPopup().getElement();
+                popupEl?.querySelector('.brewery-rate-link')?.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    rateFromVenue(v.id, v.name || 'Selected Venue', v.latitude, v.longitude);
+                });
+            });
             markers.push(m);
+            boundsPoints.push([v.latitude, v.longitude]);
         });
         this.markersCluster = L.markerClusterGroup();
         markers.forEach(m => this.markersCluster.addLayer(m));
-        this.map.addLayer(this.markersCluster);
-        if (venues.length) {
-            const bounds = L.latLngBounds(venues.map(v => [v.latitude, v.longitude]));
+
+        const orphanRatings = this.orphanGeotaggedRatings();
+        const orphanMarkers = [];
+        orphanRatings.forEach((r) => {
+            const lat = Number(r.latitude);
+            const lng = Number(r.longitude);
+            if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+            const m = L.circleMarker([lat, lng], {
+                radius: 7,
+                weight: 2,
+                color: '#fff',
+                fillColor: '#6B7280',
+                fillOpacity: 0.8,
+            });
+            m.bindPopup(`
+                <div class="map-popup">
+                    <strong>${Utils.escapeHtml(r.location_name || 'Tagged Location')}</strong><br>
+                    ${Utils.escapeHtml(r.beer_name || 'Beer')} · ${r.rating || '—'}★<br>
+                    <span style="opacity:0.8;">Legacy check-in (unlinked venue)</span>
+                </div>
+            `);
+            orphanMarkers.push(m);
+            boundsPoints.push([lat, lng]);
+        });
+        this.orphanMarkersCluster = L.markerClusterGroup();
+        orphanMarkers.forEach((m) => this.orphanMarkersCluster.addLayer(m));
+
+        if (this.currentLayer === 'mymap') {
+            this.map.addLayer(this.markersCluster);
+            this.map.addLayer(this.orphanMarkersCluster);
+        }
+        if (boundsPoints.length) {
+            const bounds = L.latLngBounds(boundsPoints);
             this.map.fitBounds(bounds, { padding: [24, 24], maxZoom: 14 });
         }
     },
@@ -1276,6 +1308,11 @@ const MapView = {
         this.dealsMarkers.forEach(m => { if (this.map.hasLayer(m)) this.map.removeLayer(m); });
         this.dealsMarkers = [];
         const venueCoords = {};
+        (this.mapVenueData || []).forEach((v) => {
+            if (v && v.id && v.latitude != null && v.longitude != null) {
+                venueCoords[v.id] = [v.latitude, v.longitude];
+            }
+        });
         (this.mapData || []).forEach(r => {
             if (r.venue_id && r.latitude != null) venueCoords[r.venue_id] = [r.latitude, r.longitude];
         });

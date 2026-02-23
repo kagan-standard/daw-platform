@@ -601,6 +601,20 @@ app.get('/api/ratings/user/:id', validateSort, async (req, res) => {
 app.post('/api/ratings', authMiddleware, async (req, res) => {
   const { sub, preferred_username } = req.claims;
   const b = req.body || {};
+  const toMaybeTrimmedString = (value) => {
+    if (value == null) return null;
+    const s = String(value).trim();
+    return s ? s : null;
+  };
+  const metersBetween = (latA, lngA, latB, lngB) => {
+    const toRad = (deg) => deg * (Math.PI / 180);
+    const dLat = toRad(latB - latA);
+    const dLng = toRad(lngB - lngA);
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+      + Math.cos(toRad(latA)) * Math.cos(toRad(latB))
+      * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    return 6371000 * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+  };
   const ratingRaw = b.rating;
   const rating = Number(ratingRaw);
   if (!Number.isFinite(rating) || rating < 1 || rating > 5) {
@@ -615,14 +629,52 @@ app.post('/api/ratings', authMiddleware, async (req, res) => {
   }
   const lat = b.latitude ?? b.lat;
   const lng = b.longitude ?? b.lng;
+  const latNum = lat != null ? Number(lat) : null;
+  const lngNum = lng != null ? Number(lng) : null;
+  const locationName = toMaybeTrimmedString(b.location_name ?? b.locationName);
+  let resolvedVenueId = b.venue_id ?? b.venueId ?? null;
   const priceCentsRaw = b.price_cents ?? b.priceCents ?? null;
   if ((lat != null && lng == null) || (lat == null && lng != null)) {
     return res.status(400).json({ error: 'latitude and longitude must be provided together' });
+  }
+  if ((lat != null && lng != null) && (!Number.isFinite(latNum) || !Number.isFinite(lngNum))) {
+    return res.status(400).json({ error: 'latitude and longitude must be valid numbers' });
   }
   if (priceCentsRaw != null) {
     const priceCents = Number(priceCentsRaw);
     if (!Number.isInteger(priceCents) || priceCents <= 0) {
       return res.status(400).json({ error: 'price_cents must be a positive integer' });
+    }
+  }
+  if (!resolvedVenueId && latNum != null && lngNum != null) {
+    try {
+      const nearbyRes = await rest('POST', '/rpc/venues_within_radius', {
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lat: latNum, lng: lngNum, radius_m: 100 }),
+      });
+      const nearby = Array.isArray(nearbyRes.body) ? nearbyRes.body : [];
+      const nearest = nearby
+        .filter((v) => v && v.id && Number.isFinite(Number(v.latitude)) && Number.isFinite(Number(v.longitude)))
+        .map((v) => ({ ...v, distance_m: metersBetween(latNum, lngNum, Number(v.latitude), Number(v.longitude)) }))
+        .sort((a, bDist) => a.distance_m - bDist.distance_m)[0];
+      if (nearest && nearest.id) {
+        resolvedVenueId = nearest.id;
+      } else if (locationName) {
+        const venueRes = await rest('POST', '/venues', {
+          headers: { 'Content-Type': 'application/json', Prefer: 'return=representation' },
+          body: JSON.stringify({
+            name: locationName,
+            latitude: latNum,
+            longitude: lngNum,
+            created_by: sub,
+          }),
+        });
+        if (venueRes.status < 400 && Array.isArray(venueRes.body) && venueRes.body[0]?.id) {
+          resolvedVenueId = venueRes.body[0].id;
+        }
+      }
+    } catch (err) {
+      console.error('Venue upsert failed (non-blocking):', err?.message || err);
     }
   }
   const record = {
@@ -640,10 +692,10 @@ app.post('/api/ratings', authMiddleware, async (req, res) => {
     flavor_fruity: b.flavor_fruity ?? b.flavors?.fruity ?? 0,
     notes: b.notes || '',
     yg_value: ygValue != null ? Number(ygValue) : null,
-    latitude: lat != null ? Number(lat) : null,
-    longitude: lng != null ? Number(lng) : null,
-    location_name: b.location_name ?? b.locationName ?? null,
-    venue_id: b.venue_id ?? b.venueId ?? null,
+    latitude: latNum,
+    longitude: lngNum,
+    location_name: locationName,
+    venue_id: resolvedVenueId,
     photo_url: b.photo_url ?? b.photoUrl ?? null,
     beer_id: b.beer_id ?? b.beerId ?? null,
     price_cents: priceCentsRaw != null ? Number(priceCentsRaw) : null,
