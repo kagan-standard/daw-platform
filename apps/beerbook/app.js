@@ -631,6 +631,27 @@ const App = {
             });
         }
 
+        // Clear validation glow on interaction
+        ['beer-name', 'beer-style', 'star-rating'].forEach(id => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            const event = el.tagName === 'SELECT' ? 'change' : 'input';
+            el.addEventListener(event, () => {
+                const msgEl = document.getElementById('rating-validation-msg');
+                if (msgEl) msgEl.classList.remove('visible');
+                document.querySelectorAll('.field-glow').forEach(g => g.classList.remove('field-glow'));
+            });
+        });
+
+        // Also clear on star click
+        document.querySelectorAll('#star-rating .star').forEach(star => {
+            star.addEventListener('click', () => {
+                const msgEl = document.getElementById('rating-validation-msg');
+                if (msgEl) msgEl.classList.remove('visible');
+                document.querySelectorAll('.field-glow').forEach(g => g.classList.remove('field-glow'));
+            });
+        });
+
         // Flavor sliders
         ['hoppy', 'malty', 'bitter', 'sweet', 'fruity'].forEach(flavor => {
             const slider = document.getElementById(`flavor-${flavor}`);
@@ -643,8 +664,68 @@ const App = {
         // Rating form submit
         document.getElementById('rating-form')?.addEventListener('submit', async (e) => {
             e.preventDefault();
+
+            // --- Enhanced validation with inline message + scroll + glow ---
+            const beerName = document.getElementById('beer-name').value.trim();
+            const style = document.getElementById('beer-style').value;
             const ratingVal = parseInt(document.getElementById('beer-rating').value);
-            if (!ratingVal) { App.toast('Please select a star rating', 'error'); return; }
+
+            const missing = [];
+            if (!beerName) missing.push({ label: 'Beer Name', field: 'beer-name', parent: '.beer-autocomplete-wrap' });
+            if (!style) missing.push({ label: 'Style', field: 'beer-style', parent: null });
+            if (!ratingVal) missing.push({ label: 'Star Rating', field: 'star-rating', parent: '.rating-stars-section' });
+
+            if (missing.length > 0) {
+                // 1. Show inline message under submit button
+                const msgEl = document.getElementById('rating-validation-msg');
+                if (msgEl) {
+                    const names = missing.map(m => m.label);
+                    const joined = names.length === 1
+                        ? names[0]
+                        : names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1];
+                    msgEl.textContent = `⚠️ Please fill in: ${joined}`;
+                    msgEl.classList.add('visible');
+
+                    // Auto-hide after 4 seconds
+                    clearTimeout(App._validationMsgTimeout);
+                    App._validationMsgTimeout = setTimeout(() => {
+                        msgEl.classList.remove('visible');
+                    }, 4000);
+                }
+
+                // 2. After 600ms, scroll to first missing field and add glow
+                setTimeout(() => {
+                    const first = missing[0];
+                    // Find the element to scroll to and glow
+                    let targetEl;
+                    if (first.parent) {
+                        targetEl = document.querySelector(first.parent);
+                    }
+                    if (!targetEl) {
+                        targetEl = document.getElementById(first.field)?.closest('.form-group')
+                            || document.getElementById(first.field);
+                    }
+
+                    if (targetEl) {
+                        // Remove any existing glow first
+                        document.querySelectorAll('.field-glow').forEach(el => el.classList.remove('field-glow'));
+
+                        // Scroll into view
+                        targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+                        // Add glow
+                        targetEl.classList.add('field-glow');
+
+                        // Remove glow after 4 seconds (let it pulse ~2.5 times)
+                        setTimeout(() => {
+                            targetEl.classList.remove('field-glow');
+                        }, 4000);
+                    }
+                }, 600);
+
+                return;
+            }
+            // --- End enhanced validation ---
 
             const ygRaw = document.getElementById('yg-value')?.value;
             const ygInt = Math.max(0, Math.min(12, Math.round(parseFloat(ygRaw) || 0)));

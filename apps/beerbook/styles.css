@@ -4417,3 +4417,46 @@ input, select, textarea, button {
         grid-template-columns: 1fr;
     }
 }
+
+/* ===== Rating Form Validation ===== */
+.rating-validation-msg {
+    margin-top: 8px;
+    padding: 0;
+    font-size: 0.85rem;
+    color: var(--amber-400, #f5a623);
+    text-align: center;
+    min-height: 0;
+    overflow: hidden;
+    transition: opacity 0.3s ease, max-height 0.3s ease;
+    opacity: 0;
+    max-height: 0;
+}
+.rating-validation-msg.visible {
+    opacity: 1;
+    max-height: 60px;
+    padding: 8px 0;
+}
+
+/* Gentle rhythmic glow/bloom on the missing field's parent .form-group or section */
+@keyframes field-glow-pulse {
+    0%, 100% {
+        box-shadow: 0 0 0 0 rgba(245, 166, 35, 0);
+    }
+    50% {
+        box-shadow: 0 0 12px 3px rgba(245, 166, 35, 0.35);
+    }
+}
+
+.field-glow {
+    animation: field-glow-pulse 1.5s ease-in-out infinite;
+    border-radius: 8px;
+}
+
+/* Also highlight the actual input/select inside */
+.field-glow input,
+.field-glow select,
+.field-glow .star-rating {
+    outline: 2px solid var(--amber-400, #f5a623) !important;
+    outline-offset: 2px;
+    border-radius: 6px;
+}
