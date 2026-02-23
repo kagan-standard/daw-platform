@@ -49,7 +49,7 @@ const TabBurstAdmin = (() => {
 
   function render(containerEl) {
     if (!containerEl) return;
-    if (!window.TabBurst) {
+    if (typeof TabBurst === 'undefined') {
       console.error('TabBurstAdmin: TabBurst module not loaded.');
       return;
     }

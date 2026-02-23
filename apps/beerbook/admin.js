@@ -64,7 +64,7 @@ const Admin = {
                 adminViewElement.appendChild(burstContainer);
             }
             burstContainer.innerHTML = '';
-            if (window.TabBurstAdmin && typeof TabBurstAdmin.render === 'function') {
+            if (typeof TabBurstAdmin !== 'undefined' && typeof TabBurstAdmin.render === 'function') {
                 TabBurstAdmin.render(burstContainer);
             }
         }

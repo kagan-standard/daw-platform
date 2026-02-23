@@ -798,7 +798,7 @@ const App = {
                 } else {
                     App.toast(`Rated "${rating.beerName}" ${Utils.stars(ratingVal)}`, 'success');
                     const tabsEarned = Number(result?.tabsEarned ?? result?.tabs_earned ?? 0);
-                    if (window.TabBurst && tabsEarned > 0) {
+                    if (typeof TabBurst !== 'undefined' && tabsEarned > 0) {
                         const submitBtn = e.submitter || e.target.querySelector('button[type="submit"]');
                         if (submitBtn) {
                             const rect = submitBtn.getBoundingClientRect();
