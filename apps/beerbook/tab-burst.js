@@ -314,26 +314,37 @@ const TabBurst = (() => {
       const delay = getDelay(i, intensity);
       const startTime = performance.now() + delay;
       let alive = true;
+      let lastTime = null;
+      const REF_FPS = 60;
+      const MAX_DT = 0.05; // cap delta to avoid spikes when tab was in background
 
       function animate(now) {
         if (!alive) return;
         if (now < startTime) { requestAnimationFrame(animate); return; }
 
+        let dt = 0;
+        if (lastTime != null) {
+          dt = (now - lastTime) / 1000; // seconds
+          if (dt > MAX_DT) dt = MAX_DT;
+        }
+        lastTime = now;
+        const scale = dt * REF_FPS; // 1.0 at 60fps, 0.5 at 30fps, etc.
+
         tab.style.opacity = String(opacity);
 
-        // Gravity
-        vy += gravity * 0.35;
+        // Gravity (time-scaled)
+        vy += gravity * 0.35 * scale;
 
-        // Air drag
-        vy *= 0.998;
-        vx *= 0.996;
+        // Air drag (exponential per reference frame, scaled by time)
+        vy *= Math.pow(0.998, scale);
+        vx *= Math.pow(0.996, scale);
 
-        x += vx;
-        y += vy;
+        x += vx * scale;
+        y += vy * scale;
 
-        // 3D tumble
-        rotation += rotSpeed;
-        rotSpeed *= 0.997;
+        // 3D tumble (time-scaled)
+        rotation += rotSpeed * scale;
+        rotSpeed *= Math.pow(0.997, scale);
         const tumbleX = Math.sin(rotation * 0.02) * 25;
         const tumbleY = Math.cos(rotation * 0.03) * 15;
 
@@ -344,8 +355,8 @@ const TabBurst = (() => {
         if (y > vh * 0.85 && vy > 0) settled = true;
 
         if (settled) {
-          fadeTimer++;
-          if (fadeTimer > 10) opacity -= settings.fadeSpeed;
+          fadeTimer += scale;
+          if (fadeTimer > 10) opacity -= settings.fadeSpeed * scale;
         }
 
         if (opacity <= 0 || y > vh + 40 || x < -80 || x > vw + 80) {
