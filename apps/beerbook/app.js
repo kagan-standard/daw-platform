@@ -2432,30 +2432,30 @@ const App = {
         if (greeting && DB.currentUser) {
             const name = (DB.currentUser.display_name || '').trim() || 'Beer Lover';
             const greetings = [
-                { phrase: `Cheers, ${name}!`, lang: 'English', emoji: '🍻' },
-                { phrase: `Prost, ${name}!`, lang: 'German', emoji: '🍺' },
-                { phrase: `Salud, ${name}!`, lang: 'Spanish', emoji: '🥂' },
-                { phrase: `Sláinte, ${name}!`, lang: 'Irish', emoji: '🍻' },
-                { phrase: `Cin cin, ${name}!`, lang: 'Italian', emoji: '🍺' },
-                { phrase: `Skål, ${name}!`, lang: 'Swedish', emoji: '🍻' },
-                { phrase: `干杯, ${name}!`, lang: 'Mandarin', emoji: '🥂' },
-                { phrase: `건배, ${name}!`, lang: 'Korean', emoji: '🍺' },
-                { phrase: `Na zdraví, ${name}!`, lang: 'Czech', emoji: '🍻' },
-                { phrase: `乾杯, ${name}!`, lang: 'Japanese', emoji: '🍺' },
-                { phrase: `Santé, ${name}!`, lang: 'French', emoji: '🥂' },
-                { phrase: `Proost, ${name}!`, lang: 'Dutch', emoji: '🍻' },
-                { phrase: `Saúde, ${name}!`, lang: 'Portuguese', emoji: '🥂' },
-                { phrase: `Şerefe, ${name}!`, lang: 'Turkish', emoji: '🍻' },
-                { phrase: `L'chaim, ${name}!`, lang: 'Hebrew', emoji: '🍺' },
-                { phrase: `Yamas, ${name}!`, lang: 'Greek', emoji: '🥂' },
-                { phrase: `Na zdrowie, ${name}!`, lang: 'Polish', emoji: '🍻' },
-                { phrase: `Noroc, ${name}!`, lang: 'Romanian', emoji: '🥂' },
-                { phrase: `Chok dee, ${name}!`, lang: 'Thai', emoji: '🍺' },
-                { phrase: `Mabuhay, ${name}!`, lang: 'Filipino', emoji: '🍻' },
+                { phrase: `Cheers, ${name}!`, lang: 'English' },
+                { phrase: `Prost, ${name}!`, lang: 'German' },
+                { phrase: `Salud, ${name}!`, lang: 'Spanish' },
+                { phrase: `Sláinte, ${name}!`, lang: 'Irish' },
+                { phrase: `Cin cin, ${name}!`, lang: 'Italian' },
+                { phrase: `Skål, ${name}!`, lang: 'Swedish' },
+                { phrase: `干杯, ${name}!`, lang: 'Mandarin' },
+                { phrase: `건배, ${name}!`, lang: 'Korean' },
+                { phrase: `Na zdraví, ${name}!`, lang: 'Czech' },
+                { phrase: `乾杯, ${name}!`, lang: 'Japanese' },
+                { phrase: `Santé, ${name}!`, lang: 'French' },
+                { phrase: `Proost, ${name}!`, lang: 'Dutch' },
+                { phrase: `Saúde, ${name}!`, lang: 'Portuguese' },
+                { phrase: `Şerefe, ${name}!`, lang: 'Turkish' },
+                { phrase: `L'chaim, ${name}!`, lang: 'Hebrew' },
+                { phrase: `Yamas, ${name}!`, lang: 'Greek' },
+                { phrase: `Na zdrowie, ${name}!`, lang: 'Polish' },
+                { phrase: `Noroc, ${name}!`, lang: 'Romanian' },
+                { phrase: `Chok dee, ${name}!`, lang: 'Thai' },
+                { phrase: `Mabuhay, ${name}!`, lang: 'Filipino' },
             ];
             const g = greetings[Math.floor(Math.random() * greetings.length)];
             greeting.innerHTML = `
-                <span class="greeting-phrase">${g.emoji} ${g.phrase}</span>
+                <span class="greeting-phrase">${g.phrase}</span>
                 <span class="greeting-lang">${g.lang}</span>
             `;
         }
