@@ -1,0 +1,156 @@
+# DAW Platform Phase 1 — BeerBook + Keycloak + Supabase (internal)
+# Traefik network must exist: docker network create traefik (or use existing)
+# Run from repo root: docker compose -f infra/compose/docker-compose.yml --env-file infra/compose/.env up -d
+
+services:
+  # ---------- Public (Traefik-exposed) ----------
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.1
+    container_name: keycloak
+    restart: unless-stopped
+    command: start
+    environment:
+      KC_HOSTNAME: https://auth.drinksafterwork.net
+      KC_HTTP_ENABLED: "true"
+      KC_PROXY_HEADERS: xforwarded
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${KC_DB_PASSWORD}
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+    depends_on:
+      keycloak-db: { condition: service_healthy }
+    networks:
+      - default
+      - traefik
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.keycloak.rule=Host(`auth.drinksafterwork.net`)"
+      - "traefik.http.routers.keycloak.entrypoints=web-secure"
+      - "traefik.http.routers.keycloak.tls=true"
+      - "traefik.http.routers.keycloak.tls.certresolver=default"
+      - "traefik.http.services.keycloak.loadbalancer.server.port=8080"
+
+  beerbook:
+    image: nginx:1.25-alpine
+    container_name: beerbook
+    restart: unless-stopped
+    volumes:
+      - ../../apps/beerbook:/usr/share/nginx/html:ro
+    networks:
+      - traefik
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.beerbook.rule=Host(`beerbook.drinksafterwork.net`)"
+      - "traefik.http.routers.beerbook.entrypoints=web-secure"
+      - "traefik.http.routers.beerbook.tls=true"
+      - "traefik.http.routers.beerbook.tls.certresolver=default"
+      - "traefik.http.services.beerbook.loadbalancer.server.port=80"
+
+  beerbook-api:
+    build:
+      context: ../../apps/beerbook-api
+      dockerfile: Dockerfile
+    image: beerbook-api:1.0.0
+    container_name: beerbook-api
+    restart: unless-stopped
+    environment:
+      KEYCLOAK_ISSUER: https://auth.drinksafterwork.net/realms/daw
+      KEYCLOAK_JWKS_URI: https://auth.drinksafterwork.net/realms/daw/protocol/openid-connect/certs
+      SUPABASE_REST_URL: http://supabase-rest:3000
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      PORT: "3001"
+      CORS_ORIGIN: https://beerbook.drinksafterwork.net
+      RATE_LIMIT_WINDOW_MS: "60000"
+      RATE_LIMIT_MAX: "100"
+      TOKEN_CLOCK_SKEW_SECONDS: "30"
+    depends_on:
+      supabase-rest: { condition: service_started }
+    networks:
+      - default
+      - traefik
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.beerbook-api.rule=Host(`api.beerbook.drinksafterwork.net`)"
+      - "traefik.http.routers.beerbook-api.entrypoints=web-secure"
+      - "traefik.http.routers.beerbook-api.tls=true"
+      - "traefik.http.routers.beerbook-api.tls.certresolver=default"
+      - "traefik.http.services.beerbook-api.loadbalancer.server.port=3001"
+
+  # ---------- Keycloak DB (internal only) ----------
+  keycloak-db:
+    image: postgres:16-alpine
+    container_name: keycloak-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: ${KC_DB_PASSWORD}
+    volumes:
+      - keycloak_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak -d keycloak"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - default
+
+  # ---------- Supabase stack (internal only, NO Traefik) ----------
+  supabase-db:
+    image: supabase/postgres:15.6.1.143
+    container_name: supabase-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${SUPABASE_DB_PASSWORD}
+    volumes:
+      - supabase_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - default
+
+  supabase-rest:
+    image: postgrest/postgrest:v12.2.3
+    container_name: supabase-rest
+    restart: unless-stopped
+    environment:
+      PGRST_DB_URI: postgres://postgres:${SUPABASE_DB_PASSWORD}@supabase-db:5432/postgres
+      PGRST_DB_SCHEMAS: public
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: ${PGRST_JWT_SECRET}
+    depends_on:
+      supabase-db: { condition: service_healthy }
+    networks:
+      - default
+
+  supabase-realtime:
+    image: supabase/realtime:v2.30.34
+    container_name: supabase-realtime
+    restart: unless-stopped
+    environment:
+      DB_HOST: supabase-db
+      DB_PORT: "5432"
+      DB_USER: postgres
+      DB_PASSWORD: ${SUPABASE_DB_PASSWORD}
+      DB_NAME: postgres
+      DB_AFTER_CONNECT_QUERY: "SET search_path TO _realtime"
+      JWT_SECRET: ${PGRST_JWT_SECRET}
+    depends_on:
+      supabase-db: { condition: service_healthy }
+    networks:
+      - default
+
+networks:
+  default:
+    driver: bridge
+  traefik:
+    external: true
+
+volumes:
+  keycloak_db_data:
+  supabase_db_data:
