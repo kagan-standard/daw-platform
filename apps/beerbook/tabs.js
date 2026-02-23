@@ -206,18 +206,30 @@ const Tabs = {
         }
     },
 
-    formatTabsBreakdown(breakdown = {}) {
+    formatTabsBreakdownLineItems(breakdown = {}) {
         const entries = [
-            ['rating_base', 'Base', ''],
-            ['rating_location', '📍', '+'],
-            ['rating_photo', '📸', '+'],
-            ['rating_price', '💰', '+'],
-            ['rating_review', '📝', '+'],
+            ['rating_base', '⭐ Rating'],
+            ['rating_photo', '📸 Photo'],
+            ['rating_location', '📍 Location'],
+            ['rating_price', '💰 Price'],
+            ['rating_review', '📝 Review'],
         ];
         return entries
-            .filter(([key]) => breakdown[key] != null && Number(breakdown[key]) > 0)
-            .map(([key, label]) => `${label}:${Number(breakdown[key]) >= 0 ? '+' : ''}${Number(breakdown[key])}`)
-            .join(' | ');
+            .filter(([key]) => breakdown[key] != null)
+            .map(([key, label]) => `${label}: ${Number(breakdown[key]) >= 0 ? '+' : ''}${Number(breakdown[key])}`);
+    },
+
+    formatTabsMultiplierLine(result = {}, breakdown = {}) {
+        const toNumberOrNull = (v) => {
+            const n = Number(v);
+            return Number.isFinite(n) ? n : null;
+        };
+        const tier = toNumberOrNull(result.tier_multiplier ?? breakdown.tier_multiplier);
+        const seeder = toNumberOrNull(result.seeder_multiplier ?? breakdown.seeder_multiplier);
+        const parts = [];
+        if (tier != null) parts.push(`× ${tier.toFixed(2).replace(/\.00$/, '')}x Tier`);
+        if (seeder != null) parts.push(`× ${seeder.toFixed(2).replace(/\.00$/, '')}x Seeder`);
+        return parts.join(' · ');
     },
 
     async showRatingFeedback(result) {
@@ -226,20 +238,15 @@ const Tabs = {
             this.toast('Weekly cap reached — no tabs earned. Your first 10 ratings each week earn tabs!', 'tabs');
             return;
         }
-        const earned = Number(result.tabs_earned || 0);
+        const earned = Number(result.tabs_earned ?? result.tabsEarned ?? 0);
         if (earned <= 0) return;
-        let multiplier = '';
-        if (this._tabProfile && this._tabProfile.combined_multiplier) {
-            multiplier = ` × ${Number(this._tabProfile.combined_multiplier).toFixed(2).replace(/\.00$/, '')}x`;
-        } else {
-            try {
-                const out = await DB.getTabsProfile();
-                const p = out && out.data ? out.data : null;
-                if (p && p.combined_multiplier) multiplier = ` × ${Number(p.combined_multiplier).toFixed(2).replace(/\.00$/, '')}x`;
-            } catch (_) {}
-        }
-        const breakdown = this.formatTabsBreakdown(result.tabs_breakdown || {});
-        this.toast(`+${earned} Tabs earned! (${breakdown || 'Base'})${multiplier}`, 'tabs');
+        const breakdown = result.tabs_breakdown || result.breakdown || {};
+        const lineItems = this.formatTabsBreakdownLineItems(breakdown);
+        const multiplierLine = this.formatTabsMultiplierLine(result, breakdown);
+        const parts = [`+${earned} Tabs earned!`];
+        if (lineItems.length) parts.push(lineItems.join(' · '));
+        if (multiplierLine) parts.push(multiplierLine);
+        this.toast(parts.join('\n'), 'tabs');
     },
 
     bindSubmissionModal() {

@@ -4007,6 +4007,7 @@ input, select, textarea, button {
     border-left: 3px solid var(--gold);
     background: linear-gradient(180deg, rgba(212, 160, 48, 0.22) 0%, rgba(160, 82, 45, 0.2) 100%);
     color: var(--gold);
+    white-space: pre-line;
 }
 
 .tier-badge {

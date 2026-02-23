@@ -796,7 +796,6 @@ const App = {
                 if (result && result.updated) {
                     App.toast(`Rating updated! (previously ${result.previous_rating} ★)`, 'success');
                 } else {
-                    App.toast(`Rated "${rating.beerName}" ${Utils.stars(ratingVal)}`, 'success');
                     const tabsEarned = Number(result?.tabsEarned ?? result?.tabs_earned ?? 0);
                     if (typeof TabBurst !== 'undefined' && tabsEarned > 0) {
                         const submitBtn = e.submitter || e.target.querySelector('button[type="submit"]');
