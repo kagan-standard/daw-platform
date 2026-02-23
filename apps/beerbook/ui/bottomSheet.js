@@ -163,7 +163,10 @@
 
         _computeSnapPoints() {
             const vh = window.innerHeight || document.documentElement.clientHeight || 800;
-            const minVisible = 80;
+            const bottomNav = document.querySelector('.bottom-tab-nav');
+            const navVisible = !!(bottomNav && window.getComputedStyle(bottomNav).display !== 'none');
+            const navHeight = navVisible ? (bottomNav.offsetHeight || 82) : 0;
+            const minVisible = Math.max(80, navHeight + 16);
             const detailVisible = Math.round(vh * 0.52);
             const listVisible = Math.round(vh * 0.90);
 
