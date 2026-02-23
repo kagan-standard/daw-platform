@@ -25,6 +25,18 @@ body {
     line-height: 1.6;
     min-height: 100vh;
     overflow-x: hidden;
+    position: relative;
+}
+
+body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background: linear-gradient(180deg, #0B1320 0%, #1A1228 40%, #1E1005 100%);
+    opacity: var(--scroll-grad, 0);
+    transition: opacity 0.6s ease-out;
 }
 
 a { color: var(--gold); text-decoration: none; }
@@ -596,6 +608,7 @@ input, select, textarea, button {
 
 .view-header {
     margin-bottom: var(--section-gap);
+    will-change: transform;
 }
 
 .view-header h2 {

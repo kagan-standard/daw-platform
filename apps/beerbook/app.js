@@ -113,6 +113,16 @@ function getRandomCheers() {
     return pick;
 }
 
+function haptic(pattern) {
+    if (!navigator.vibrate) return;
+    const patterns = {
+        tap: [10],
+        medium: [18],
+        detent: [8, 40, 8]
+    };
+    navigator.vibrate(patterns[pattern] || patterns.tap);
+}
+
 const STYLE_GUIDE = {
     'IPA': { desc: 'American-style India Pale Ale, hop-forward with citrus and pine.', abv: '5.5–7.5%' },
     'Double IPA': { desc: 'Stronger, more intense IPA with bold hop character.', abv: '7.5–10%' },
@@ -213,6 +223,8 @@ const App = {
     _newBeerConfirmed: false,
     _newBeerMatches: [],
     _newBeerValidationTimer: null,
+    _scrollEffectsInitialized: false,
+    _scrollEffectsTicking: false,
 
     toast(message, type = 'info') {
         Utils.toast(message, type, 3000);
@@ -240,6 +252,7 @@ const App = {
         }
 
         this.bindEvents();
+        this.initScrollEffects();
         this.setupInfiniteScroll();
         this.bindStyleTooltip();
         this.bindKeyboardShortcuts();
@@ -606,6 +619,7 @@ const App = {
                         setTimeout(() => s.classList.remove('pulse'), 150);
                     }
                 });
+                haptic('tap');
             };
             starContainer.querySelectorAll('.star').forEach(star => {
                 star.addEventListener('click', () => {
@@ -662,6 +676,7 @@ const App = {
             const display = document.getElementById(`val-${flavor}`);
             if (slider && display) {
                 slider.addEventListener('input', () => { display.textContent = slider.value; });
+                slider.addEventListener('change', () => { haptic('detent'); });
             }
         });
 
@@ -1669,10 +1684,12 @@ const App = {
         let dragging = false;
         let hoverValue = null;
         const setValue = (val) => {
+            const prev = parseInt(ygValueInput.value, 10) || 0;
             const v = Math.max(0, Math.min(12, Math.round(Number(val)) || 0));
             ygValueInput.value = String(v);
             ygTrack.setAttribute('aria-valuenow', String(v));
             updateDisplayFromValue(v);
+            if (v !== prev) haptic('tap');
             if (ygClearBtn) ygClearBtn.style.display = v > 0 ? 'inline-flex' : 'none';
             const glassEls = ygGlasses.querySelectorAll('.yg-glass');
             glassEls.forEach((el, i) => {
@@ -1775,6 +1792,36 @@ const App = {
         if (ygClearBtn) ygClearBtn.addEventListener('click', (e) => { e.preventDefault(); setValue(0); });
 
         App._ygSetValue = setValue;
+    },
+
+    initScrollEffects() {
+        if (this._scrollEffectsInitialized) return;
+        this._scrollEffectsInitialized = true;
+        this._scrollEffectsTicking = false;
+        const runEffects = () => {
+            const scrollY = window.scrollY || 0;
+            const docHeight = document.body.scrollHeight - window.innerHeight;
+            const scrollPct = docHeight > 0 ? Math.min(scrollY / docHeight, 1) : 0;
+            document.body.style.setProperty('--scroll-grad', scrollPct.toFixed(3));
+            const parallax = Math.min(scrollY, 600) * 0.12;
+            const header = document.querySelector('.view.active .view-header');
+            if (header) header.style.transform = `translateY(${parallax}px)`;
+            this._scrollEffectsTicking = false;
+        };
+        window.addEventListener('scroll', () => {
+            if (this._scrollEffectsTicking) return;
+            this._scrollEffectsTicking = true;
+            requestAnimationFrame(runEffects);
+        }, { passive: true });
+        this.resetScrollEffects();
+    },
+
+    resetScrollEffects() {
+        document.body.style.setProperty('--scroll-grad', '0');
+        document.querySelectorAll('.view-header').forEach((header) => {
+            header.style.transform = 'none';
+        });
+        this._scrollEffectsTicking = false;
     },
 
     async captureLocation() {
@@ -2715,6 +2762,7 @@ const App = {
         // Sync desktop nav active state
         document.querySelectorAll('.desktop-nav-link[data-view]').forEach(link => link.classList.remove('active'));
         if (desktopNavLink) desktopNavLink.classList.add('active');
+        this.resetScrollEffects();
 
         if (viewId === 'dashboard' || viewId === 'profile') {
             setTimeout(() => { Object.values(Charts.instances).forEach(c => c.resize()); }, 100);
