@@ -182,6 +182,7 @@
             if (this.root) this.root.dataset.state = state;
             this._updateHeader();
             this._updateBackdrop();
+            this._renderStateContent();
         }
 
         _updateHeader() {
@@ -300,13 +301,13 @@
             if (!venue?.name || !String(venue.name).trim()) return '';
             const border = this._venueBorderColor(venue);
             const dist = this._formatDistance(venue.distance);
-            const name = window.Utils?.escapeHtml(String(venue.name).trim()) || String(venue.name).trim();
+            const safeName = window.Utils?.escapeHtml ? window.Utils.escapeHtml(String(venue.name).trim()) : String(venue.name).trim();
             const metaText = this._venueMeta(venue);
             const meta = window.Utils?.escapeHtml(metaText || '') || (metaText || '');
             return `
                 <div class="venue-list-card" data-venue-id="${venue.id}" data-source="${venue.source}" data-lat="${venue.lat}" data-lng="${venue.lng}" style="border-left: 3px solid ${border}">
                     <div class="venue-list-card-info">
-                        <div class="venue-list-card-name">${name}</div>
+                        <div class="venue-list-card-name">${safeName}</div>
                         <div class="venue-list-card-meta">${meta}</div>
                     </div>
                     ${dist ? `<div class="venue-list-card-distance">${dist}</div>` : ''}
@@ -334,6 +335,7 @@
 
         _renderMinPreview() {
             if (!this.previewEl) return;
+            if (this.scrollEl) this.scrollEl.innerHTML = '';
             if (!this.venues.length) {
                 this.previewEl.innerHTML = '';
                 return;
@@ -344,6 +346,7 @@
 
         _renderList() {
             if (!this.scrollEl) return;
+            if (this.previewEl) this.previewEl.innerHTML = '';
             if (!this.venues.length) {
                 if (this.layer === 'mymap') {
                     this.scrollEl.innerHTML = this.hasPinsOnMap
@@ -371,6 +374,21 @@
             }
             const list = this._sortForDisplay(this.venues).slice(0, 50);
             this.scrollEl.innerHTML = list.map((venue) => this._renderCard(venue)).join('');
+        }
+
+        _renderStateContent() {
+            if (this.state === 'LIST') {
+                this._renderList();
+                return;
+            }
+            if (this.state === 'MIN') {
+                this._renderMinPreview();
+                return;
+            }
+            if (this.state === 'DETAIL') {
+                if (this.previewEl) this.previewEl.innerHTML = '';
+                if (this.scrollEl) this.scrollEl.innerHTML = '';
+            }
         }
 
         async _renderDetail() {
@@ -450,8 +468,7 @@
                 this.hasPinsOnMap = !!data?.hasPinsOnMap;
                 this.layer = data?.layer === 'mymap' ? 'mymap' : 'discover';
             }
-            this._renderMinPreview();
-            this._renderList();
+            this._renderStateContent();
             this._updateHeader();
         }
 
