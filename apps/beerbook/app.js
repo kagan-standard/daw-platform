@@ -1356,6 +1356,16 @@ const App = {
         requiredGroups.forEach((group) => {
             group.classList.toggle('new-beer-required-field', this.isNewBeer);
         });
+        const hintRequired = 'Required to add a beer';
+        const breweryInput = document.getElementById('beer-brewery');
+        const styleSelect = document.getElementById('beer-style');
+        const abvInput = document.getElementById('beer-abv');
+        if (breweryInput) breweryInput.placeholder = this.isNewBeer ? hintRequired : 'e.g. Russian River';
+        if (styleSelect) {
+            const firstOpt = styleSelect.querySelector('option[value=""]');
+            if (firstOpt) firstOpt.textContent = this.isNewBeer ? hintRequired : 'Select style...';
+        }
+        if (abvInput) abvInput.placeholder = this.isNewBeer ? hintRequired : '6.5';
         if (submitText) submitText.textContent = this.isNewBeer ? '🍺 Submit Rating & Add Beer' : '🍺 Submit Rating';
         if (beerIdInput && this.isNewBeer) beerIdInput.value = '';
         if (!this.isNewBeer) {
