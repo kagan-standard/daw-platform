@@ -193,10 +193,7 @@ const DB = {
                 }
             );
         };
-        // #region agent log
-        fetch('http://127.0.0.1:7669/ingest/dcf85816-3d9a-4023-99e0-099b9beddd82',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7a1905'},body:JSON.stringify({sessionId:'7a1905',runId:'run1',hypothesisId:'H1',location:'supabase.js:_api:entry',message:'about to call api',data:{method,path,apiBaseUrl:this.apiBaseUrl,isDemo:this.isDemo},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
-        
+
         // Check token expiry BEFORE making the request (with 60s buffer)
         let tokens = Utils.storage.get('oidc_tokens');
         if (tokens?.expires_at && Date.now() > tokens.expires_at - 60000) {
@@ -231,11 +228,6 @@ const DB = {
         const text = await res.text();
         let body;
         try { body = text ? JSON.parse(text) : null; } catch { body = null; }
-        if (!res.ok) {
-            // #region agent log
-            fetch('http://127.0.0.1:7669/ingest/dcf85816-3d9a-4023-99e0-099b9beddd82',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7a1905'},body:JSON.stringify({sessionId:'7a1905',runId:'run1',hypothesisId:'H2',location:'supabase.js:_api:non_ok',message:'api returned non-ok',data:{method,path,status:res.status,error:body?.error||body?.message||null,bodyType:body?typeof body:'null'},timestamp:Date.now()})}).catch(()=>{});
-            // #endregion
-        }
         if (!res.ok) throw buildError(res, body, `HTTP ${res.status}`);
         return body;
     },
@@ -888,9 +880,6 @@ const DB = {
             const profiles = this._demoProfilesFromIds(ids);
             return { data: profiles.slice(offset, offset + limit), pagination: { limit, offset, total: profiles.length } };
         }
-        // #region agent log
-        fetch('http://127.0.0.1:7669/ingest/dcf85816-3d9a-4023-99e0-099b9beddd82',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7a1905'},body:JSON.stringify({sessionId:'7a1905',runId:'run1',hypothesisId:'H3',location:'supabase.js:getFollowing',message:'requesting following list',data:{userId,limit,offset},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
         return await cachedFetch(`following:${userId}:${limit}:${offset}`, CACHE_TTL.follows, () =>
             this._api('GET', `/api/follows/${encodeURIComponent(userId)}/following?limit=${limit}&offset=${offset}`)
         );
@@ -929,9 +918,6 @@ const DB = {
             const mine = this._demoGetCrewsForUser(this.currentUser?.id);
             return { data: mine };
         }
-        // #region agent log
-        fetch('http://127.0.0.1:7669/ingest/dcf85816-3d9a-4023-99e0-099b9beddd82',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7a1905'},body:JSON.stringify({sessionId:'7a1905',runId:'run1',hypothesisId:'H3',location:'supabase.js:getCrews',message:'requesting crews list',data:{currentUserId:this.currentUser?.id||null},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
         return await cachedFetch('crews:mine', CACHE_TTL.crews, () => this._api('GET', '/api/crews'));
     },
 
@@ -952,9 +938,6 @@ const DB = {
             invalidateCache('crews:');
             return crew;
         }
-        // #region agent log
-        fetch('http://127.0.0.1:7669/ingest/dcf85816-3d9a-4023-99e0-099b9beddd82',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7a1905'},body:JSON.stringify({sessionId:'7a1905',runId:'run1',hypothesisId:'H4',location:'supabase.js:createCrew',message:'creating crew via api',data:{nameLength:String(name).trim().length,currentUserId:this.currentUser?.id||null},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
         const out = await this._api('POST', '/api/crews', { body: JSON.stringify({ name }) });
         invalidateCache('crews:');
         invalidateCache('crew:');
