@@ -130,15 +130,13 @@ const MapView = {
         if (nearMeBtn) nearMeBtn.style.display = this.currentLayer === 'discover' ? 'inline-flex' : 'none';
         await this.loadMap();
         this._ensureBottomSheet();
+        this._bottomSheet?.show();
+        this._bottomSheet?.clearSelection();
+        this._bottomSheet?.snapTo('MIN');
+        this._bottomSheet?.updateVenues();
         if (this.currentLayer === 'discover') {
-            this._bottomSheet?.show();
-            this._bottomSheet?.snapTo('MIN');
-            this._bottomSheet?.updateVenues();
             this.loadBreweriesInViewport();
             this.loadOSMVenuesInViewport();
-        } else {
-            this._bottomSheet?.clearSelection();
-            this._bottomSheet?.hide();
         }
         this.updateLayerVisibility();
         this.map.invalidateSize();
@@ -159,7 +157,6 @@ const MapView = {
                 this.setLayer(btn.dataset.layer);
             });
         });
-        document.querySelector('.brewery-bottom-sheet-backdrop')?.addEventListener('click', () => this.closeBrewerySheet());
         this._ensureBottomSheet();
         if (DB.currentUser && DB.currentUser.id) {
             const trailBtn = document.getElementById('btn-my-trail');
@@ -182,19 +179,16 @@ const MapView = {
         if (nearMeBtn) nearMeBtn.style.display = layer === 'discover' ? 'inline-flex' : 'none';
         this.updateLayerVisibility();
         this._ensureBottomSheet();
+        this._bottomSheet?.show();
+        this._bottomSheet?.clearSelection();
+        this._bottomSheet?.snapTo('MIN');
         if (layer === 'discover') {
-            this._bottomSheet?.show();
-            this._bottomSheet?.snapTo('MIN');
             if (this.breweryData.length === 0) {
                 this.loadBreweriesInViewport();
-            } else {
-                this._bottomSheet?.updateVenues();
             }
             this.loadOSMVenuesInViewport();
-        } else {
-            this._bottomSheet?.clearSelection();
-            this._bottomSheet?.hide();
         }
+        this._bottomSheet?.updateVenues();
     },
 
     updateLayerVisibility() {
@@ -408,8 +402,8 @@ const MapView = {
     },
 
     openBreweryDetail(breweryId, useBottomSheet) {
-        if (useBottomSheet) {
-            this.showBreweryBottomSheet(breweryId);
+        if (useBottomSheet && this._bottomSheet) {
+            this.showVenueDetail(breweryId, 'beerbook');
         } else {
             this.fetchAndShowBreweryPopup(breweryId);
         }
@@ -505,62 +499,6 @@ const MapView = {
         });
     },
 
-    async showBreweryBottomSheet(breweryId) {
-        const sheet = document.getElementById('brewery-bottom-sheet');
-        const body = document.getElementById('brewery-bottom-sheet-body');
-        if (!sheet || !body) return;
-        body.innerHTML = '<p class="brewery-sheet-loading">Loading…</p>';
-        sheet.setAttribute('aria-hidden', 'false');
-        sheet.classList.add('open');
-        try {
-            const b = await DB.getBrewery(breweryId);
-            if (!b) {
-                body.innerHTML = '<p>Brewery not found.</p>';
-                return;
-            }
-            const cityState = [b.city, b.state].filter(Boolean).join(', ');
-            const beers = b.beers || [];
-            const beerList = beers.length === 0
-                ? '<p>No beers cataloged yet — rate one to be the first!</p>'
-                : '<ul>' + beers.slice(0, 3).map((beer) =>
-                    `<li>${Utils.escapeHtml(beer.name)} (${Utils.escapeHtml(beer.style || '')}${beer.abv != null ? ', ' + beer.abv + '%' : ''})</li>`
-                ).join('') + (beers.length > 3 ? '<li><a href="#" class="brewery-see-all">See all →</a></li>' : '') + '</ul>';
-            const typePill = this.venueTypePill(b.brewery_type);
-            const locationHtml = cityState ? `<span class="venue-detail__location">${Utils.escapeHtml(cityState)}</span>` : '';
-            const websiteUrl = Utils.sanitizeUrl(b.website_url);
-            body.innerHTML = `
-                <h3>${Utils.escapeHtml(b.name)}</h3>
-                <div class="map-popup-type-row">${typePill}${locationHtml}</div>
-                ${b.phone ? `<p>📞 ${Utils.escapeHtml(b.phone)}</p>` : ''}
-                ${websiteUrl ? `<p><a href="${Utils.escapeHtml(websiteUrl)}" target="_blank" rel="noopener noreferrer" data-track-type="brewery" data-track-id="${Utils.escapeHtml(b.id || '')}" data-track-name="${Utils.escapeHtml(b.name || 'Unknown Brewery')}" data-track-source="brewery_detail">🌐 Visit Website →</a></p>` : ''}
-                <p><strong>Beers in catalog:</strong> ${beers.length}</p>
-                ${beerList}
-                <p><a href="#" class="brewery-rate-link" data-brewery-id="${Utils.escapeHtml(String(b.id || ''))}" data-venue-name="${Utils.escapeHtml(b.name || '')}" data-lat="${Utils.escapeHtml(String(b.latitude ?? ''))}" data-lng="${Utils.escapeHtml(String(b.longitude ?? ''))}">⭐ Rate a beer from here →</a></p>
-            `;
-            body.querySelector('.brewery-rate-link')?.addEventListener('click', (e) => {
-                e.preventDefault();
-                this.closeBrewerySheet();
-                const link = e.currentTarget;
-                const latFromLink = parseFloat(link?.dataset?.lat || '');
-                const lngFromLink = parseFloat(link?.dataset?.lng || '');
-                const fallback = (this.breweryData || []).find((x) => String(x.id) === String(b.id));
-                const lat = Number.isFinite(latFromLink) ? latFromLink : fallback?.latitude;
-                const lng = Number.isFinite(lngFromLink) ? lngFromLink : fallback?.longitude;
-                rateFromVenue(b.id, b.name || link?.dataset?.venueName || 'Selected Venue', lat, lng);
-            });
-        } catch (err) {
-            body.innerHTML = '<p>Could not load brewery.</p>';
-        }
-    },
-
-    closeBrewerySheet() {
-        const sheet = document.getElementById('brewery-bottom-sheet');
-        if (sheet) {
-            sheet.classList.remove('open');
-            sheet.setAttribute('aria-hidden', 'true');
-        }
-    },
-
     nearMeLocate() {
         if (!navigator.geolocation) {
             if (typeof App !== 'undefined') App.toast('Geolocation not supported', 'error');
@@ -628,41 +566,73 @@ const MapView = {
 
     getAllVenues() {
         let allVenues = [];
+        const layer = this.currentLayer === 'mymap' ? 'mymap' : 'discover';
+        const hasPinsOnMap = layer === 'mymap'
+            ? Array.isArray(this.mapData) && this.mapData.length > 0
+            : (Array.isArray(this.breweryData) && this.breweryData.length > 0) || (Array.isArray(this._osmVenues) && this._osmVenues.length > 0);
 
-        (this.breweryData || []).forEach((b) => {
-            if (b.latitude == null || b.longitude == null) return;
-            const category = this.getVenueCategory(b.brewery_type);
-            if (!this.isBreweryTypeVisible(category)) return;
-            allVenues.push({
-                id: b.id,
-                name: b.name,
-                type: b.brewery_type || 'brewery',
-                category: category,
-                lat: b.latitude,
-                lng: b.longitude,
-                source: 'beerbook',
-                phone: b.phone,
-                city: b.city,
-                state: b.state
+        if (layer === 'discover') {
+            (this.breweryData || []).forEach((b) => {
+                if (b.latitude == null || b.longitude == null) return;
+                if (!b.name || !String(b.name).trim()) return;
+                const category = this.getVenueCategory(b.brewery_type);
+                if (!this.isBreweryTypeVisible(category)) return;
+                allVenues.push({
+                    id: b.id,
+                    name: String(b.name).trim(),
+                    type: b.brewery_type || 'micro',
+                    category,
+                    lat: b.latitude,
+                    lng: b.longitude,
+                    source: 'beerbook',
+                    phone: b.phone,
+                    city: b.city,
+                    state: b.state
+                });
             });
-        });
 
-        (this._osmVenues || []).forEach((v) => {
-            const category = this.getVenueCategory(v.type);
-            if (!this.isBreweryTypeVisible(category)) return;
-            allVenues.push({
-                id: 'osm_' + v.id,
-                name: v.name,
-                type: v.type,
-                category: category,
-                lat: v.lat,
-                lng: v.lng,
-                source: 'osm',
-                phone: v.phone,
-                website: v.website,
-                city: null,
-                state: null
+            (this._osmVenues || []).forEach((v) => {
+                if (!v.name || !String(v.name).trim()) return;
+                const category = this.getVenueCategory(v.type);
+                if (!this.isBreweryTypeVisible(category)) return;
+                allVenues.push({
+                    id: 'osm_' + v.id,
+                    name: String(v.name).trim(),
+                    type: v.type || 'bar',
+                    category,
+                    lat: v.lat,
+                    lng: v.lng,
+                    source: 'osm',
+                    phone: v.phone,
+                    website: v.website,
+                    city: null,
+                    state: null
+                });
             });
+        } else {
+            (this.mapVenueData || []).forEach((v) => {
+                if (v.latitude == null || v.longitude == null) return;
+                if (!v.name || !String(v.name).trim() || String(v.name).trim().toLowerCase() === 'unknown') return;
+                allVenues.push({
+                    id: v.id || `pin_${v.latitude}_${v.longitude}`,
+                    name: String(v.name).trim(),
+                    type: 'rated',
+                    lat: Number(v.latitude),
+                    lng: Number(v.longitude),
+                    source: 'rating',
+                    avgRating: v.avg_rating != null ? Number(v.avg_rating) : null,
+                    count: Number(v.rating_count || 0),
+                    topBeer: v.top_beer || null
+                });
+            });
+        }
+
+        const seen = new Set();
+        allVenues = allVenues.filter((v) => {
+            const key = String(v.id);
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
         });
 
         if (this._userLat != null && this._userLng != null) {
@@ -671,13 +641,13 @@ const MapView = {
             });
             allVenues.sort((a, b) => (a.distance || 9999) - (b.distance || 9999));
         } else {
-            allVenues.sort((a, b) => a.name.localeCompare(b.name));
+            allVenues.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
         }
-        return allVenues;
+
+        return { venues: allVenues, hasPinsOnMap, layer };
     },
 
     updateVenueListSheet() {
-        if (this.currentLayer !== 'discover') return;
         this._ensureBottomSheet();
         this._bottomSheet?.updateVenues();
     },
@@ -927,7 +897,7 @@ const MapView = {
 
     buildOSMDetailHtml(venue) {
         const pill = venueTypePill(venue.type || '');
-        const safeName = Utils.escapeHtml(venue.name || 'Unknown Venue');
+        const safeName = Utils.escapeHtml(venue.name || 'Venue');
         const safeVenueId = Utils.escapeHtml(`osm_${String(venue.id || '')}`);
         const safeVenueName = Utils.escapeHtml(venue.name || 'Selected Venue');
         const safeLat = Utils.escapeHtml(String(venue.lat ?? ''));

@@ -3400,56 +3400,6 @@ input, select, textarea, button {
 }
 .map-popup-brewery .map-popup-brewery-detail { margin-top: var(--space-sm); }
 .brewery-detail-popup ul { margin: var(--space-xs) 0; padding-left: var(--space-lg); }
-.brewery-bottom-sheet {
-    position: fixed;
-    inset: 0;
-    z-index: 1100;
-    pointer-events: none;
-    visibility: hidden;
-    transition: visibility 0.2s;
-}
-.brewery-bottom-sheet.open { pointer-events: auto; visibility: visible; }
-.brewery-bottom-sheet-backdrop {
-    position: absolute;
-    inset: 0;
-    background: var(--bg-overlay);
-    opacity: 0;
-    transition: opacity 0.2s;
-}
-.brewery-bottom-sheet.open .brewery-bottom-sheet-backdrop { opacity: 1; }
-.brewery-bottom-sheet-panel {
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    max-height: 70vh;
-    background: linear-gradient(180deg, var(--bg-surface) 0%, var(--bg-surface-fade) 100%);
-    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
-    box-shadow: var(--shadow-elevated);
-    transform: translateY(100%);
-    transition: transform 0.25s var(--ease-out);
-}
-.brewery-bottom-sheet.open .brewery-bottom-sheet-panel { transform: translateY(0); }
-.brewery-bottom-sheet-drag {
-    width: 36px;
-    height: 4px;
-    background: var(--bg-elevated);
-    border-radius: 2px;
-    margin: var(--space-sm) auto;
-}
-.brewery-bottom-sheet-body {
-    padding: var(--space-lg);
-    padding-top: 0;
-    overflow-y: auto;
-    max-height: calc(70vh - 32px);
-}
-.brewery-bottom-sheet-body h3 {
-    font-family: var(--font-display);
-    color: var(--gold);
-    margin-bottom: var(--space-sm);
-}
-.brewery-bottom-sheet-body ul { margin: var(--space-sm) 0; padding-left: var(--space-lg); }
-.brewery-sheet-loading { color: var(--text-muted); }
 
 /* ===== Bottom Sheet v2 - transform-based 3-snap ===== */
 
@@ -3498,32 +3448,50 @@ input, select, textarea, button {
 .bb-sheet-chrome {
     flex-shrink: 0;
     touch-action: none;
-    cursor: grab;
-    user-select: none;
-    -webkit-user-select: none;
 }
 
 .bb-sheet-handle {
-    width: 40px;
+    display: flex;
+    justify-content: center;
+    padding: 10px 0 2px;
+}
+
+.bb-sheet-handle-bar {
+    width: 36px;
     height: 4px;
     border-radius: 2px;
-    background: var(--bg-elevated, #555);
-    margin: 10px auto 4px;
+    background: var(--dark-500, #555);
 }
 
 .bb-sheet-header {
-    padding: 0 16px 8px;
+    flex-shrink: 0;
+    cursor: grab;
+    padding: 0 16px;
+    user-select: none;
+    -webkit-user-select: none;
 }
-.bb-sheet-header h3 {
-    font-size: 1.1rem;
-    color: var(--gold, #F6AD55);
-    margin: 0;
+.bb-sheet-chevron {
+    display: flex;
+    justify-content: center;
+    padding: 2px 0;
+}
+.bb-sheet-chevron-icon {
+    font-size: 0.9rem;
+    color: var(--amber-500, #b07d3a);
+    transition: transform 0.3s ease;
+    line-height: 1;
+}
+.bb-sheet-root[data-state="LIST"] .bb-sheet-chevron-icon,
+.bb-sheet-root[data-state="DETAIL"] .bb-sheet-chevron-icon {
+    transform: rotate(180deg);
+}
+
+.bb-sheet-title {
+    font-size: 1rem;
+    color: var(--amber-200, #F6AD55);
+    margin: 4px 0 8px;
     font-family: var(--font-display, inherit);
-}
-.bb-sheet-subtitle {
-    font-size: 0.8rem;
-    color: var(--text-muted, #b07d3a);
-    margin: 4px 0 0;
+    font-weight: 700;
 }
 
 .bb-sheet-body {
@@ -3581,6 +3549,26 @@ input, select, textarea, button {
 .bb-sheet-root[data-state="LIST"] .bb-sheet-min-preview { display: none; }
 .bb-sheet-root[data-state="LIST"] .bb-sheet-detail { display: none !important; }
 .bb-sheet-root[data-state="LIST"] .bb-sheet-scroll { display: block; }
+
+.venue-sheet-empty {
+    text-align: center;
+    padding: 20px 16px;
+}
+.venue-sheet-empty-text {
+    color: var(--foam-cream, #f5f0e1);
+    font-size: 0.95rem;
+    font-weight: 600;
+    margin: 0 0 6px;
+}
+.venue-sheet-empty-sub {
+    color: var(--amber-600, #b07d3a);
+    font-size: 0.82rem;
+    margin: 0;
+}
+
+.venue-sheet-loading {
+    color: var(--text-muted, #b07d3a);
+}
 .venue-list-card {
     display: flex;
     align-items: center;

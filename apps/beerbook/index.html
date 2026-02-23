@@ -610,10 +610,16 @@
                 <div class="bb-sheet-backdrop" id="bb-sheet-backdrop"></div>
                 <section class="bb-sheet" id="bb-sheet" role="dialog" aria-modal="false">
                     <div class="bb-sheet-chrome" id="bb-sheet-chrome">
-                        <div class="bb-sheet-handle"></div>
                         <div class="bb-sheet-header" id="bb-sheet-header">
-                            <h3 id="bb-sheet-title">Nearby</h3>
-                            <p id="bb-sheet-subtitle" class="bb-sheet-subtitle"></p>
+                            <div class="bb-sheet-handle">
+                                <span class="bb-sheet-handle-bar"></span>
+                            </div>
+                            <div class="bb-sheet-chevron" id="bb-sheet-chevron" aria-hidden="true">
+                                <span class="bb-sheet-chevron-icon">︿</span>
+                            </div>
+                            <div class="bb-sheet-title-row">
+                                <h3 id="bb-sheet-title" class="bb-sheet-title">Discover Venues</h3>
+                            </div>
                         </div>
                     </div>
                     <div class="bb-sheet-body" id="bb-sheet-body">
@@ -627,13 +633,6 @@
                 </section>
             </div>
             <div id="map-sidebar" class="map-sidebar"></div>
-            <div id="brewery-bottom-sheet" class="brewery-bottom-sheet" aria-hidden="true">
-                <div class="brewery-bottom-sheet-backdrop"></div>
-                <div class="brewery-bottom-sheet-panel">
-                    <div class="brewery-bottom-sheet-drag"></div>
-                    <div id="brewery-bottom-sheet-body" class="brewery-bottom-sheet-body"></div>
-                </div>
-            </div>
         </main>
 
         <!-- ========== BROWSE VIEW ========== -->
