@@ -87,6 +87,7 @@ services:
       RATE_LIMIT_MAX: "100"
       TOKEN_CLOCK_SKEW_SECONDS: "30"
       UPLOAD_DIR: "/data/uploads"
+      ADMIN_USER_ID: ${ADMIN_USER_ID}
     depends_on:
       supabase-rest: { condition: service_started }
     networks:
