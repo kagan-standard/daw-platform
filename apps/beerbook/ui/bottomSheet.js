@@ -1,5 +1,5 @@
 (function () {
-    const STATE_ORDER = ['MIN', 'DETAIL', 'LIST'];
+    const STATE_ORDER = ['MIN', 'DETAIL', 'MID', 'MAX'];
     const SWIPE_THRESHOLD = 40;
     const RUBBER_BAND = 30;
 
@@ -31,6 +31,7 @@
             this.chrome = document.getElementById('bb-sheet-chrome');
             this.headerEl = document.getElementById('bb-sheet-header');
             this.titleEl = document.getElementById('bb-sheet-title');
+            this.subtitleEl = document.getElementById('bb-sheet-subtitle');
             this.previewEl = document.getElementById('bb-sheet-min-preview');
             this.scrollEl = document.getElementById('bb-sheet-scroll');
             this.detailEl = document.getElementById('bb-sheet-detail');
@@ -42,10 +43,11 @@
             this.venues = [];
             this.layer = 'discover';
             this.hasPinsOnMap = false;
-            this._snap = { MIN: 0, DETAIL: 0, LIST: 0 };
+            this._snap = { MIN: 0, DETAIL: 0, MID: 0, MAX: 0 };
             this._drag = null;
             this._scrollTouch = null;
             this._isDestroyed = false;
+            this._detailSource = null; // 'list' | 'pin'
 
             this._onResize = this._onResize.bind(this);
             this._onBackdropClick = this._onBackdropClick.bind(this);
@@ -87,7 +89,7 @@
                 if (!this._drag) return;
                 const dy = e.clientY - this._drag.startY;
                 this._drag.deltaY = dy;
-                const minY = this._snap.LIST;
+                const minY = this._snap.MAX;
                 const maxY = this._snap.MIN + RUBBER_BAND;
                 const nextY = clamp(this._drag.startSheetY + dy, minY, maxY);
                 this._applyY(nextY);
@@ -131,7 +133,7 @@
             if (!this.scrollEl) return;
 
             this.scrollEl.addEventListener('touchstart', (e) => {
-                if (this.state !== 'LIST') return;
+                if (this.state !== 'MID' && this.state !== 'MAX') return;
                 if (!e.touches || !e.touches[0]) return;
                 this._scrollTouch = {
                     startY: e.touches[0].clientY,
@@ -140,7 +142,7 @@
             }, { passive: true });
 
             this.scrollEl.addEventListener('touchmove', (e) => {
-                if (this.state !== 'LIST' || !this._scrollTouch || this._scrollTouch.snapped) return;
+                if ((this.state !== 'MID' && this.state !== 'MAX') || !this._scrollTouch || this._scrollTouch.snapped) return;
                 if (!e.touches || !e.touches[0]) return;
                 const currentY = e.touches[0].clientY;
                 const deltaY = currentY - this._scrollTouch.startY;
@@ -166,16 +168,17 @@
             const bottomNav = document.querySelector('.bottom-tab-nav');
             const navVisible = !!(bottomNav && window.getComputedStyle(bottomNav).display !== 'none');
             const navHeight = navVisible ? (bottomNav.offsetHeight || 82) : 0;
+            const available = Math.max(280, vh - navHeight);
             const headerHeight = this.headerEl?.offsetHeight || 64;
-            // Keep the full collapsed chrome (handle + chevron + title) visible above bottom nav.
-            const collapsedChromeVisible = Math.max(80, headerHeight + 8);
-            const minVisible = navHeight + collapsedChromeVisible;
-            const detailVisible = Math.round(vh * 0.52);
-            const listVisible = Math.round(vh * 0.90);
+            const minVisible = Math.max(80, headerHeight + 8);
+            const midTop = Math.round(available * 0.45);
+            const detailTop = Math.round(available * 0.55);
+            const maxTop = Math.round(available * 0.05);
 
-            this._snap.MIN = vh - minVisible;
-            this._snap.DETAIL = vh - detailVisible;
-            this._snap.LIST = vh - listVisible;
+            this._snap.MIN = available - minVisible;
+            this._snap.MID = midTop;
+            this._snap.DETAIL = detailTop;
+            this._snap.MAX = maxTop;
         }
 
         _stateToY(state) {
@@ -195,9 +198,12 @@
             if (!this.titleEl) return;
             if (this.state === 'DETAIL' && this.selection?.name) {
                 this.titleEl.textContent = this.selection.name;
+                this._updateDetailSubtitle();
+                this._updateBackButtonVisibility();
                 return;
             }
             const count = this.venues.length;
+            if (this.subtitleEl) this.subtitleEl.textContent = '';
             if (this.layer === 'mymap') {
                 this.titleEl.textContent = count
                     ? `${count} Place${count === 1 ? '' : 's'} You & Your Crew Rated`
@@ -209,7 +215,7 @@
 
         _updateBackdrop() {
             if (!this.backdrop) return;
-            this.backdrop.style.setProperty('--sheet-backdrop', this.state === 'LIST' ? '1' : '0');
+            this.backdrop.style.setProperty('--sheet-backdrop', (this.state === 'MID' || this.state === 'MAX') ? '1' : '0');
         }
 
         _applyY(y) {
@@ -220,7 +226,7 @@
         }
 
         _onBackdropClick() {
-            if (this.state === 'LIST') {
+            if (this.state === 'MID' || this.state === 'MAX') {
                 this.snapTo(this.selection ? 'DETAIL' : 'MIN');
             } else if (this.state === 'DETAIL') {
                 this.snapTo('MIN');
@@ -228,12 +234,22 @@
         }
 
         _onBackClick() {
-            this.snapTo('LIST');
+            const mapView = window.MapView;
+            if (mapView && mapView.map && mapView._savedBounds) {
+                mapView._freezeVenueList = true;
+                mapView._programmaticMapMove = true;
+                mapView.map.fitBounds(mapView._savedBounds, { animate: true });
+                mapView._savedBounds = null;
+                setTimeout(() => {
+                    mapView._programmaticMapMove = false;
+                }, 700);
+            }
+            this.snapTo('MID');
         }
 
         _onHeaderClick() {
             if (this.state === 'MIN') {
-                this.snapTo(this.selection ? 'DETAIL' : 'LIST');
+                this.snapTo(this.selection ? 'DETAIL' : 'MID');
                 return;
             }
             this.snapTo('MIN');
@@ -246,7 +262,12 @@
             const source = card.dataset.source;
             const lat = toNum(card.dataset.lat, null);
             const lng = toNum(card.dataset.lng, null);
-            this.selectVenue({ id, source, lat, lng });
+            const mapView = window.MapView;
+            if (mapView?.map) {
+                mapView._freezeVenueList = true;
+                mapView._savedBounds = mapView.map.getBounds();
+            }
+            this.selectVenue({ id, source, lat, lng }, { detailSource: 'list' });
         }
 
         _onDetailActionClick(event) {
@@ -263,15 +284,32 @@
         }
 
         _nextHigherState() {
-            if (this.state === 'MIN') return this.selection ? 'DETAIL' : 'LIST';
-            if (this.state === 'DETAIL') return 'LIST';
-            return 'LIST';
+            if (this.state === 'MIN') return this.selection ? 'DETAIL' : 'MID';
+            if (this.state === 'DETAIL') return 'MID';
+            if (this.state === 'MID') return 'MAX';
+            return 'MAX';
         }
 
         _nextLowerState() {
-            if (this.state === 'LIST') return this.selection ? 'DETAIL' : 'MIN';
+            if (this.state === 'MAX') return 'MID';
+            if (this.state === 'MID') return this.selection ? 'DETAIL' : 'MIN';
             if (this.state === 'DETAIL') return 'MIN';
             return 'MIN';
+        }
+
+        _updateBackButtonVisibility() {
+            if (!this.backBtn) return;
+            this.backBtn.style.display = this._detailSource === 'list' ? '' : 'none';
+        }
+
+        _updateDetailSubtitle() {
+            if (!this.subtitleEl || !this.selection) return;
+            const resolver = this.options.getDetailSubtitle;
+            if (typeof resolver === 'function') {
+                this.subtitleEl.textContent = resolver(this.selection) || '';
+                return;
+            }
+            this.subtitleEl.textContent = '';
         }
 
         _venueBorderColor(venue) {
@@ -383,7 +421,7 @@
         }
 
         _renderStateContent() {
-            if (this.state === 'LIST') {
+            if (this.state === 'MID' || this.state === 'MAX') {
                 this._renderList();
                 return;
             }
@@ -402,6 +440,7 @@
             if (this.selection.source === 'rating') return false;
             const render = this.options.renderDetail;
             if (typeof render !== 'function') return false;
+            this._updateBackButtonVisibility();
             this.detailBodyEl.innerHTML = '<p class="venue-sheet-loading">Loading…</p>';
             try {
                 const html = await render(this.selection.id, this.selection.source);
@@ -419,12 +458,13 @@
         }
 
         snapTo(state) {
-            const target = STATE_ORDER.includes(state) ? state : this.state;
+            const normalized = state === 'LIST' ? 'MID' : state;
+            const target = STATE_ORDER.includes(normalized) ? normalized : this.state;
             this._setState(target);
             this._applyY(this._stateToY(target));
         }
 
-        async selectVenue(venue) {
+        async selectVenue(venue, options = {}) {
             if (!venue || !venue.id) return;
             const picked = { ...venue };
             if (!picked.name) {
@@ -432,6 +472,7 @@
                 if (match) picked.name = match.name;
             }
             this.selection = picked;
+            this._detailSource = options.detailSource || 'pin';
             const onSelect = this.options.onSelectVenue;
             if (typeof onSelect === 'function') {
                 onSelect(picked);
@@ -447,6 +488,7 @@
 
         clearSelection() {
             this.selection = null;
+            this._detailSource = null;
             if (this.detailBodyEl) this.detailBodyEl.innerHTML = '';
             if (this.state === 'DETAIL') this.snapTo('MIN');
             this._updateHeader();

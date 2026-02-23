@@ -89,6 +89,9 @@ const MapView = {
     currentLayer: 'discover',
     moveEndDebounce: null,
     _bottomSheet: null,
+    _freezeVenueList: false,
+    _savedBounds: null,
+    _programmaticMapMove: false,
     VENUE_CATEGORIES: {
         brewery: {
             types: ['micro', 'nano', 'regional', 'large', 'contract', 'proprietor', 'brewpub'],
@@ -119,6 +122,16 @@ const MapView = {
                 attribution: '&copy; OpenStreetMap &copy; CARTO'
             }).addTo(this.map);
             this.map.on('moveend', () => this._onMapMoveEnd());
+            this.map.on('dragstart', () => {
+                if (this._programmaticMapMove) return;
+                this._freezeVenueList = false;
+                this._savedBounds = null;
+            });
+            this.map.on('zoomstart', () => {
+                if (this._programmaticMapMove) return;
+                this._freezeVenueList = false;
+                this._savedBounds = null;
+            });
         }
         if (!this.initDone) {
             this.initDone = true;
@@ -229,6 +242,7 @@ const MapView = {
         this._bottomSheet = window.BottomSheet.create({
             mountEl: document.getElementById('view-map'),
             getVenues: () => this.getAllVenues(),
+            getDetailSubtitle: (selection) => this.getDetailSubtitle(selection),
             onSelectVenue: ({ id, source, lat, lng }) => {
                 this.focusVenueFromList({ id, source, lat, lng, skipDetail: true });
             },
@@ -271,7 +285,7 @@ const MapView = {
         this.moveEndDebounce = setTimeout(() => {
             this.moveEndDebounce = null;
             if (this.currentLayer === 'discover') {
-                console.log('MapView: moveend fired discover');
+                if (this._freezeVenueList) return;
                 this.loadBreweriesInViewport();
                 this.loadOSMVenuesInViewport();
             }
@@ -420,12 +434,15 @@ const MapView = {
         }
 
         if (this._bottomSheet) {
+            if (Number.isFinite(lat) && Number.isFinite(lng)) {
+                this.centerOnVenue(lat, lng, 15);
+            }
             this._bottomSheet.selectVenue({
                 id: venueId,
                 source,
                 lat: Number.isFinite(lat) ? lat : undefined,
                 lng: Number.isFinite(lng) ? lng : undefined
-            });
+            }, { detailSource: 'pin' });
             return;
         }
 
@@ -462,25 +479,32 @@ const MapView = {
     },
 
     buildBreweryDetailHtml(b) {
-        const cityState = [b.city, b.state].filter(Boolean).join(', ');
-        const typePill = this.venueTypePill(b.brewery_type);
-        const locationHtml = cityState ? `<span class="venue-detail__location">${Utils.escapeHtml(cityState)}</span>` : '';
+        const safePhone = String(b.phone || '').replace(/[^\d+]/g, '');
         const websiteUrl = Utils.sanitizeUrl(b.website_url);
         const beers = b.beers || [];
-        const beerList = beers.length === 0
-            ? '<p>No beers cataloged yet — rate one to be the first!</p>'
-            : beers.slice(0, 3).map((beer) =>
-                `<li>${Utils.escapeHtml(beer.name)} (${Utils.escapeHtml(beer.style || '')}${beer.abv != null ? ', ' + beer.abv + '%' : ''})</li>`
-            ).join('') + (beers.length > 3 ? `<li><a href="#" class="brewery-see-all" data-brewery-id="${b.id}">See all →</a></li>` : '');
+        const beerListItems = beers.slice(0, 3).map((beer) =>
+            `<li>${Utils.escapeHtml(beer.name)} (${Utils.escapeHtml(beer.style || '')}${beer.abv != null ? ', ' + beer.abv + '%' : ''})</li>`
+        ).join('');
+        const beerSection = beers.length === 0
+            ? '<p class="venue-detail-no-beers">No beers cataloged yet — rate one to be the first!</p>'
+            : `
+                <div class="venue-detail-beers">
+                    <h4 class="venue-detail-beers-title">${beers.length} Beer${beers.length === 1 ? '' : 's'} in Catalog</h4>
+                    <ul class="venue-detail-beer-list">${beerListItems}</ul>
+                    ${beers.length > 3 ? `<a href="#" class="venue-detail-see-all brewery-see-all" data-brewery-id="${b.id}">See all →</a>` : ''}
+                </div>
+            `;
+
         return `
-            <div class="map-popup brewery-detail-popup">
-                <strong>${Utils.escapeHtml(b.name)}</strong><br>
-                <div class="map-popup-type-row">${typePill}${locationHtml}</div>
-                ${b.phone ? `📞 ${Utils.escapeHtml(b.phone)}<br>` : ''}
-                ${websiteUrl ? `<a href="${Utils.escapeHtml(websiteUrl)}" target="_blank" rel="noopener noreferrer" data-track-type="brewery" data-track-id="${Utils.escapeHtml(b.id || '')}" data-track-name="${Utils.escapeHtml(b.name || 'Unknown Brewery')}" data-track-source="brewery_detail">🌐 Visit Website →</a><br>` : ''}
-                <p><strong>Beers in catalog:</strong> ${beers.length}</p>
-                <ul>${beerList}</ul>
-                <a href="#" class="brewery-rate-link" data-brewery-id="${Utils.escapeHtml(String(b.id || ''))}" data-venue-name="${Utils.escapeHtml(b.name || '')}" data-lat="${Utils.escapeHtml(String(b.latitude ?? ''))}" data-lng="${Utils.escapeHtml(String(b.longitude ?? ''))}">⭐ Rate a beer from here →</a>
+            <div class="venue-detail-body">
+                ${(b.phone || websiteUrl) ? `
+                    <div class="venue-detail-contact">
+                        ${b.phone ? `<a href="tel:${Utils.escapeHtml(safePhone)}" class="venue-detail-phone">📞 ${Utils.escapeHtml(b.phone)}</a>` : ''}
+                        ${websiteUrl ? `<a href="${Utils.escapeHtml(websiteUrl)}" target="_blank" rel="noopener noreferrer" class="venue-detail-website" data-track-type="brewery" data-track-id="${Utils.escapeHtml(b.id || '')}" data-track-name="${Utils.escapeHtml(b.name || 'Unknown Brewery')}" data-track-source="brewery_detail">🌐 Website →</a>` : ''}
+                    </div>
+                ` : ''}
+                ${beerSection}
+                <a href="#" class="venue-detail-rate-cta brewery-rate-link" data-brewery-id="${Utils.escapeHtml(String(b.id || ''))}" data-venue-name="${Utils.escapeHtml(b.name || '')}" data-lat="${Utils.escapeHtml(String(b.latitude ?? ''))}" data-lng="${Utils.escapeHtml(String(b.longitude ?? ''))}">⭐ Rate a beer from here →</a>
             </div>
         `;
     },
@@ -515,7 +539,7 @@ const MapView = {
                 const lng = pos.coords.longitude;
                 this._userLat = lat;
                 this._userLng = lng;
-                this.map.setView([lat, lng], 13);
+                this.centerOnVenue(lat, lng, 13);
                 if (this.userMarker) this.map.removeLayer(this.userMarker);
                 this.userMarker = L.circleMarker([lat, lng], {
                     radius: 10,
@@ -835,22 +859,20 @@ const MapView = {
         }
         targetZoom = Math.min(targetZoom, 17);
 
-        const offsetLatLng = this.getOffsetCenter(markerLatLng, targetZoom);
-
         if (!marker) {
-            map.flyTo(offsetLatLng, targetZoom, { duration: 0.5, easeLinearity: 0.5 });
+            this.centerOnVenue(targetLat, targetLng, targetZoom);
             if (!skipDetail) this.showVenueDetail(id, source, { lat: targetLat, lng: targetLng });
             return;
         }
 
         if (cluster && typeof cluster.zoomToShowLayer === 'function') {
-            map.flyTo(offsetLatLng, targetZoom, { duration: 0.5, easeLinearity: 0.5 });
+            this.centerOnVenue(targetLat, targetLng, targetZoom);
             cluster.zoomToShowLayer(marker, () => {
                 marker.openPopup();
                 this.highlightVenueMarker(marker);
             });
         } else {
-            map.flyTo(offsetLatLng, targetZoom, { duration: 0.5, easeLinearity: 0.5 });
+            this.centerOnVenue(targetLat, targetLng, targetZoom);
             setTimeout(() => {
                 if (marker.openPopup) marker.openPopup();
                 this.highlightVenueMarker(marker);
@@ -884,6 +906,34 @@ const MapView = {
         return this.map.unproject(offsetPoint, zoom);
     },
 
+    centerOnVenue(lat, lng, zoom = 15) {
+        if (!this.map || !Number.isFinite(Number(lat)) || !Number.isFinite(Number(lng))) return;
+        this._programmaticMapMove = true;
+        this.map.setView([lat, lng], zoom, { animate: false });
+        const offset = this.getSheetOffset();
+        if (offset > 0) {
+            this.map.panBy([0, Math.round(offset)], { animate: true, duration: 0.3 });
+        }
+        setTimeout(() => {
+            this._programmaticMapMove = false;
+        }, 700);
+    },
+
+    getDetailSubtitle(selection) {
+        if (!selection) return '';
+        if (selection.source === 'osm') {
+            const venue = this.findOSMVenueById(selection.id);
+            const category = this.getVenueCategory(venue?.type);
+            const label = this.getVenuePinStyle(category)?.label || '';
+            return [label, venue?.hours].filter(Boolean).join(' · ');
+        }
+        const brewery = (this.breweryData || []).find((b) => String(b.id) === String(selection.id));
+        const category = this.getVenueCategory(brewery?.brewery_type || selection.type);
+        const label = this.getVenuePinStyle(category)?.label || '';
+        const cityState = [brewery?.city, brewery?.state].filter(Boolean).join(', ');
+        return [label, cityState].filter(Boolean).join(' · ');
+    },
+
     findOSMVenueById(venueId) {
         const rawId = String(venueId).replace(/^osm_/, '');
         return (this._osmVenues || []).find((v) => String(v.id) === rawId);
@@ -896,28 +946,27 @@ const MapView = {
     },
 
     buildOSMDetailHtml(venue) {
-        const pill = venueTypePill(venue.type || '');
-        const safeName = Utils.escapeHtml(venue.name || 'Venue');
         const safeVenueId = Utils.escapeHtml(`osm_${String(venue.id || '')}`);
         const safeVenueName = Utils.escapeHtml(venue.name || 'Selected Venue');
         const safeLat = Utils.escapeHtml(String(venue.lat ?? ''));
         const safeLng = Utils.escapeHtml(String(venue.lng ?? ''));
         const websiteUrl = Utils.sanitizeUrl(venue.website);
+        const safePhone = String(venue.phone || '').replace(/[^\d+]/g, '');
 
         return `
-            <div class="venue-detail-header">
-                <h3 class="venue-detail-name">${safeName}</h3>
-                <div class="venue-detail-meta">
-                    ${pill}
-                    ${venue.hours ? `<span class="venue-detail__location">${Utils.escapeHtml(venue.hours)}</span>` : ''}
+            <div class="venue-detail-body">
+                ${(venue.phone || websiteUrl) ? `
+                    <div class="venue-detail-contact">
+                        ${venue.phone ? `<a href="tel:${Utils.escapeHtml(safePhone)}" class="venue-detail-phone">📞 ${Utils.escapeHtml(venue.phone)}</a>` : ''}
+                        ${websiteUrl ? `<a href="${Utils.escapeHtml(websiteUrl)}" target="_blank" rel="noopener noreferrer" class="venue-detail-website">🌐 Website →</a>` : ''}
+                    </div>
+                ` : ''}
+                ${venue.hours ? `<p class="venue-detail-no-beers">Hours: ${Utils.escapeHtml(venue.hours)}</p>` : ''}
+                <div class="venue-detail-actions">
+                    <a href="#" class="venue-detail-rate-cta osm-rate-link" data-venue-id="${safeVenueId}" data-venue-name="${safeVenueName}" data-lat="${safeLat}" data-lng="${safeLng}">
+                        ⭐ Rate a beer from here
+                    </a>
                 </div>
-            </div>
-            ${venue.phone ? `<div class="venue-detail-row">📞 ${Utils.escapeHtml(venue.phone)}</div>` : ''}
-            ${websiteUrl ? `<div class="venue-detail-row"><a href="${Utils.escapeHtml(websiteUrl)}" target="_blank" rel="noopener noreferrer">🌐 Visit Website →</a></div>` : ''}
-            <div class="venue-detail-actions" style="margin-top:12px;">
-                <a href="#" class="btn btn-primary btn-sm osm-rate-link" data-venue-id="${safeVenueId}" data-venue-name="${safeVenueName}" data-lat="${safeLat}" data-lng="${safeLng}">
-                    ⭐ Rate a beer from here
-                </a>
             </div>
         `;
     },
