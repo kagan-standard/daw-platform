@@ -504,30 +504,54 @@ app.get('/api/catalog/styles', async (req, res) => {
   }
 });
 
-// GET /api/catalog/validate-new?name=<name>&brewery=<brewery> — auth required
-app.get('/api/catalog/validate-new', authMiddleware, async (req, res) => {
-  const name = String(req.query.name || '').trim();
-  const brewery = String(req.query.brewery || '').trim();
-  if (name.length < 2 || brewery.length < 2) {
-    return res.status(400).json({ error: 'name and brewery must be at least 2 characters' });
-  }
+// GET /api/catalog/validate-new?name=...&brewery=...
+// Returns similar beers from the catalog to prevent duplicates when adding new beers
+app.get('/api/catalog/validate-new', async (req, res) => {
+  const name = (req.query.name || '').trim();
+  const brewery = (req.query.brewery || '').trim();
+  if (name.length < 2) return res.json({ data: [] });
 
   try {
-    const rawMatches = await findSimilarBeers(name, brewery, 5);
-    const matches = rawMatches
-      .filter((m) => m.name_sim > 0.6 || (m.name_sim > 0.4 && m.brewery_sim > 0.5))
-      .map((m) => ({
-        id: m.id,
-        name: m.name,
-        brewery_name: m.brewery_name,
-        style: m.style,
-        abv: m.abv,
-        similarity: Number(m.similarity.toFixed(2)),
-      }));
-    return res.json({ matches });
+    const nameSearchRes = await rest('POST', '/rpc/search_beer_catalog', {
+      body: JSON.stringify({ search_term: name, max_results: 20 }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    if (nameSearchRes.status >= 400) {
+      return res.json({ data: [] });
+    }
+
+    const candidates = Array.isArray(nameSearchRes.body) ? nameSearchRes.body : [];
+
+    const results = candidates
+      .map(beer => {
+        const nameSim = beer.similarity_score || 0;
+        const beerBrewery = (beer.brewery_name || '').toLowerCase();
+        const inputBrewery = brewery.toLowerCase();
+        const breweryMatch = brewery.length >= 2 && (
+          beerBrewery.includes(inputBrewery) ||
+          inputBrewery.includes(beerBrewery) ||
+          beerBrewery === inputBrewery
+        );
+        return {
+          id: beer.id,
+          name: beer.name,
+          brewery_name: beer.brewery_name,
+          style: beer.style,
+          abv: beer.abv != null ? Number(beer.abv) : null,
+          name_similarity: nameSim,
+          brewery_match: breweryMatch,
+          similarity: nameSim,
+        };
+      })
+      .filter(b => b.name_similarity > 0.4 || (b.name_similarity > 0.25 && b.brewery_match))
+      .sort((a, b) => b.name_similarity - a.name_similarity)
+      .slice(0, 5);
+
+    res.json({ data: results });
   } catch (e) {
-    console.error('Validate new beer failed:', e);
-    return res.status(502).json({ error: 'Beer validation failed' });
+    console.error('Validate new beer error:', e);
+    res.json({ data: [] });
   }
 });
 
