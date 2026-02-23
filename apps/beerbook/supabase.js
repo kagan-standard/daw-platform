@@ -716,13 +716,16 @@ const DB = {
 
     async validateNewBeer(name, brewery) {
         if (this.isDemo) return { matches: [] };
-        const safeName = String(name || '').trim();
-        const safeBrewery = String(brewery || '').trim();
-        if (safeName.length < 2 || safeBrewery.length < 2) return { matches: [] };
-        return await this._api(
-            'GET',
-            `/api/catalog/validate-new?name=${encodeURIComponent(safeName)}&brewery=${encodeURIComponent(safeBrewery)}`
-        );
+        try {
+            const out = await this._api(
+                'GET',
+                `/api/catalog/validate-new?name=${encodeURIComponent(String(name || '').trim())}&brewery=${encodeURIComponent(String(brewery || '').trim())}`
+            );
+            return { matches: (out && Array.isArray(out.data)) ? out.data : [] };
+        } catch (err) {
+            console.warn('validateNewBeer failed:', err.message);
+            return { matches: [] };
+        }
     },
 
     async browseCatalog(opts = {}) {

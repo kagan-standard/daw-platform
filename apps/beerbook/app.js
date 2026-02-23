@@ -888,14 +888,6 @@ const App = {
                 this.resetRatingForm(e.target);
                 this.loadAllData();
             } catch (err) {
-                if (err?.status === 409 && Array.isArray(err?.details?.matches)) {
-                    this.setNewBeerMode(true);
-                    this._newBeerMatches = err.details.matches;
-                    this._newBeerConfirmed = false;
-                    this.renderNewBeerMatches();
-                    App.toast('A very similar beer already exists. Please choose one of the matches.', 'warning');
-                    return;
-                }
                 App.toast('Failed to save: ' + err.message, 'error');
             } finally {
                 this.setLoading(e.target, false);
@@ -1134,6 +1126,9 @@ const App = {
         const hintEl = document.getElementById('autocomplete-hint');
         const beerIdInput = document.getElementById('rating-beer-id');
         if (!input || !dropdown) return;
+        // Prevent blur from destroying dropdown before click can fire
+        dropdown.addEventListener('mousedown', (e) => e.preventDefault());
+        dropdown.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
         let debounceTimer;
         input.addEventListener('input', () => {
             clearTimeout(debounceTimer);
@@ -1323,6 +1318,7 @@ const App = {
                 if (beerId) beerId.value = '';
                 dropdown.innerHTML = '';
                 dropdown.setAttribute('aria-hidden', 'true');
+                const hintEl = document.getElementById('autocomplete-hint');
                 if (hintEl) hintEl.style.display = 'none';
                 this.setNewBeerMode(true, q);
             });
@@ -1528,6 +1524,9 @@ const App = {
         const input = document.getElementById('beer-brewery');
         const dropdown = document.getElementById('brewery-autocomplete');
         if (!input || !dropdown) return;
+        // Prevent blur from destroying dropdown before click can fire
+        dropdown.addEventListener('mousedown', (e) => e.preventDefault());
+        dropdown.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
         let debounceTimer;
         input.addEventListener('input', () => {
             clearTimeout(debounceTimer);
@@ -1574,6 +1573,9 @@ const App = {
         const dropdown = document.getElementById('venue-suggestions');
         const picker = document.getElementById('venue-picker');
         if (!input || !dropdown) return;
+        // Prevent blur from destroying dropdown before click can fire
+        dropdown.addEventListener('mousedown', (e) => e.preventDefault());
+        dropdown.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
         let debounceTimer;
 
         input.addEventListener('input', () => {
