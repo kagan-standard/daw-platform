@@ -2492,9 +2492,8 @@ const App = {
             { phrase: 'Chok dee', lang: 'Thai' },
         ];
 
-        const name = (DB.currentUser.display_name || '').trim() || 'Beer Lover';
         const maxCycles = 11;
-        const intervalMs = 4000;
+        const intervalMs = 5500;
         const animMs = 560;
 
         const state = {
@@ -2513,8 +2512,7 @@ const App = {
         };
 
         const normalize = (phrase) => {
-            if (/[\u0600-\u06FF\u4E00-\u9FFF\u3040-\u30FF\uAC00-\uD7AF]/.test(phrase)) return phrase;
-            return `${phrase}, ${name}!`;
+            return phrase;
         };
 
         const hashString = (value) => {
@@ -2562,7 +2560,8 @@ const App = {
         const lines = [lineA, lineB];
         state.lines = lines;
 
-        state.activeIndex = hashString(String(DB.currentUser.id || name).toLowerCase()) % TOASTS.length;
+        const userSeed = String(DB.currentUser.id || DB.currentUser.display_name || 'beerbook').toLowerCase();
+        state.activeIndex = hashString(userSeed) % TOASTS.length;
         setLineContent(lines[state.activeSlot], TOASTS[state.activeIndex]);
         lines[state.activeSlot].style.transform = 'translateY(0%)';
         lines[state.activeSlot].style.opacity = '1';
