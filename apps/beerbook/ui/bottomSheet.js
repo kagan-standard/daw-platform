@@ -29,8 +29,8 @@
             this.sheet = document.getElementById('bb-sheet');
             this.backdrop = document.getElementById('bb-sheet-backdrop');
             this.chrome = document.getElementById('bb-sheet-chrome');
+            this.headerEl = document.getElementById('bb-sheet-header');
             this.titleEl = document.getElementById('bb-sheet-title');
-            this.subtitleEl = document.getElementById('bb-sheet-subtitle');
             this.previewEl = document.getElementById('bb-sheet-min-preview');
             this.scrollEl = document.getElementById('bb-sheet-scroll');
             this.detailEl = document.getElementById('bb-sheet-detail');
@@ -40,6 +40,8 @@
             this.state = 'MIN';
             this.selection = null;
             this.venues = [];
+            this.layer = 'discover';
+            this.hasPinsOnMap = false;
             this._snap = { MIN: 0, DETAIL: 0, LIST: 0 };
             this._drag = null;
             this._scrollTouch = null;
@@ -49,6 +51,7 @@
             this._onBackdropClick = this._onBackdropClick.bind(this);
             this._onBackClick = this._onBackClick.bind(this);
             this._onCardClick = this._onCardClick.bind(this);
+            this._onHeaderClick = this._onHeaderClick.bind(this);
 
             this._init();
         }
@@ -68,6 +71,7 @@
             this.backBtn?.addEventListener('click', this._onBackClick);
             this.previewEl?.addEventListener('click', this._onCardClick);
             this.scrollEl?.addEventListener('click', this._onCardClick);
+            this.headerEl?.addEventListener('click', this._onHeaderClick);
             this.detailBodyEl?.addEventListener('click', (e) => this._onDetailActionClick(e));
 
             this._bindChromeDrag();
@@ -159,7 +163,7 @@
 
         _computeSnapPoints() {
             const vh = window.innerHeight || document.documentElement.clientHeight || 800;
-            const minVisible = 110;
+            const minVisible = 80;
             const detailVisible = Math.round(vh * 0.52);
             const listVisible = Math.round(vh * 0.90);
 
@@ -181,15 +185,19 @@
         }
 
         _updateHeader() {
-            if (!this.titleEl || !this.subtitleEl) return;
+            if (!this.titleEl) return;
             if (this.state === 'DETAIL' && this.selection?.name) {
                 this.titleEl.textContent = this.selection.name;
-                this.subtitleEl.textContent = 'Venue detail';
                 return;
             }
             const count = this.venues.length;
-            this.titleEl.textContent = count ? `${count} Venue${count === 1 ? '' : 's'} Nearby` : 'Nearby';
-            this.subtitleEl.textContent = this._hasMapCenter() ? 'Sorted by distance' : 'Based on current map view';
+            if (this.layer === 'mymap') {
+                this.titleEl.textContent = count
+                    ? `${count} Place${count === 1 ? '' : 's'} You & Your Crew Rated`
+                    : 'Your Beer Map';
+                return;
+            }
+            this.titleEl.textContent = count ? `${count} Venue${count === 1 ? '' : 's'} Nearby` : 'Discover Venues';
         }
 
         _updateBackdrop() {
@@ -214,6 +222,14 @@
 
         _onBackClick() {
             this.snapTo('LIST');
+        }
+
+        _onHeaderClick() {
+            if (this.state === 'MIN') {
+                this.snapTo(this.selection ? 'DETAIL' : 'LIST');
+                return;
+            }
+            this.snapTo('MIN');
         }
 
         _onCardClick(event) {
@@ -252,6 +268,7 @@
         }
 
         _venueBorderColor(venue) {
+            if (venue?.source === 'rating') return 'var(--amber-500, #F6AD55)';
             const mapView = window.MapView;
             if (!mapView || !mapView.getVenueCategory || !mapView.getVenuePinStyle) return '#F6AD55';
             const category = mapView.getVenueCategory(venue.type);
@@ -261,9 +278,16 @@
 
         _venueMeta(venue) {
             const mapView = window.MapView;
-            const location = [venue.city, venue.state].filter(Boolean).join(', ');
-            const typePill = mapView?.venueTypePill ? mapView.venueTypePill(venue.type) : '';
-            return `${typePill}${location ? `<span class="venue-detail__location">${window.Utils?.escapeHtml(location) || location}</span>` : ''}`;
+            if (venue?.source === 'rating') {
+                const avg = Number.isFinite(venue.avgRating) ? `⭐ ${venue.avgRating.toFixed(1)} avg` : '';
+                const count = venue.count ? `${venue.count} beer${venue.count === 1 ? '' : 's'} rated` : '';
+                return [avg, count].filter(Boolean).join(' · ');
+            }
+
+            const category = mapView?.getVenueCategory ? mapView.getVenueCategory(venue.type) : 'brewery';
+            const label = mapView?.getVenuePinStyle ? mapView.getVenuePinStyle(category)?.label : '';
+            const location = [venue.city, venue.state].filter(Boolean).join(' · ');
+            return [label, location].filter(Boolean).join(' · ');
         }
 
         _formatDistance(distance) {
@@ -273,10 +297,12 @@
         }
 
         _renderCard(venue) {
+            if (!venue?.name || !String(venue.name).trim()) return '';
             const border = this._venueBorderColor(venue);
             const dist = this._formatDistance(venue.distance);
-            const name = window.Utils?.escapeHtml(venue.name || 'Unknown Venue') || 'Unknown Venue';
-            const meta = this._venueMeta(venue);
+            const name = window.Utils?.escapeHtml(String(venue.name).trim()) || String(venue.name).trim();
+            const metaText = this._venueMeta(venue);
+            const meta = window.Utils?.escapeHtml(metaText || '') || (metaText || '');
             return `
                 <div class="venue-list-card" data-venue-id="${venue.id}" data-source="${venue.source}" data-lat="${venue.lat}" data-lng="${venue.lng}" style="border-left: 3px solid ${border}">
                     <div class="venue-list-card-info">
@@ -309,7 +335,7 @@
         _renderMinPreview() {
             if (!this.previewEl) return;
             if (!this.venues.length) {
-                this.previewEl.innerHTML = '<p class="map-sidebar-empty">Loading nearby venues…</p>';
+                this.previewEl.innerHTML = '';
                 return;
             }
             const preview = this._sortForDisplay(this.venues).slice(0, 2);
@@ -319,7 +345,28 @@
         _renderList() {
             if (!this.scrollEl) return;
             if (!this.venues.length) {
-                this.scrollEl.innerHTML = '<p class="map-sidebar-empty">No venues in this area yet.</p>';
+                if (this.layer === 'mymap') {
+                    this.scrollEl.innerHTML = this.hasPinsOnMap
+                        ? `
+                            <div class="venue-sheet-empty">
+                                <p class="venue-sheet-empty-text">Beers rated around here, but no venues tagged</p>
+                                <p class="venue-sheet-empty-sub">Someone's drinking at home 🏠</p>
+                            </div>
+                        `
+                        : `
+                            <div class="venue-sheet-empty">
+                                <p class="venue-sheet-empty-text">No ratings in this area yet</p>
+                                <p class="venue-sheet-empty-sub">Be the first — grab a beer and rate it here 🍻</p>
+                            </div>
+                        `;
+                    return;
+                }
+                this.scrollEl.innerHTML = `
+                    <div class="venue-sheet-empty">
+                        <p class="venue-sheet-empty-text">No breweries or bars mapped here yet</p>
+                        <p class="venue-sheet-empty-sub">Know a spot? Rate a beer there to put it on the map 🍺</p>
+                    </div>
+                `;
                 return;
             }
             const list = this._sortForDisplay(this.venues).slice(0, 50);
@@ -328,9 +375,10 @@
 
         async _renderDetail() {
             if (!this.detailBodyEl || !this.selection) return false;
+            if (this.selection.source === 'rating') return false;
             const render = this.options.renderDetail;
             if (typeof render !== 'function') return false;
-            this.detailBodyEl.innerHTML = '<p class="brewery-sheet-loading">Loading…</p>';
+            this.detailBodyEl.innerHTML = '<p class="venue-sheet-loading">Loading…</p>';
             try {
                 const html = await render(this.selection.id, this.selection.source);
                 if (!this.selection) return false;
@@ -392,8 +440,16 @@
 
         updateVenues() {
             const getter = this.options.getVenues;
-            const venues = typeof getter === 'function' ? getter() : [];
-            this.venues = Array.isArray(venues) ? venues : [];
+            const data = typeof getter === 'function' ? getter() : [];
+            if (Array.isArray(data)) {
+                this.venues = data;
+                this.hasPinsOnMap = this.venues.length > 0;
+                this.layer = window.MapView?.currentLayer === 'mymap' ? 'mymap' : 'discover';
+            } else {
+                this.venues = Array.isArray(data?.venues) ? data.venues : [];
+                this.hasPinsOnMap = !!data?.hasPinsOnMap;
+                this.layer = data?.layer === 'mymap' ? 'mymap' : 'discover';
+            }
             this._renderMinPreview();
             this._renderList();
             this._updateHeader();
@@ -416,6 +472,7 @@
             this.backBtn?.removeEventListener('click', this._onBackClick);
             this.previewEl?.removeEventListener('click', this._onCardClick);
             this.scrollEl?.removeEventListener('click', this._onCardClick);
+            this.headerEl?.removeEventListener('click', this._onHeaderClick);
         }
     }
 
