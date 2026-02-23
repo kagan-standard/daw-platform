@@ -225,6 +225,7 @@ const App = {
     _newBeerValidationTimer: null,
     _scrollEffectsInitialized: false,
     _scrollEffectsTicking: false,
+    _greetingRoller: null,
 
     toast(message, type = 'info') {
         Utils.toast(message, type, 3000);
@@ -2413,6 +2414,251 @@ const App = {
         this.renderActivityFeed(this.activityItems, this.activityPage * 10);
     },
 
+    teardownGreetingRoller() {
+        const state = this._greetingRoller;
+        if (!state) return;
+        if (state.rotateTimer) clearTimeout(state.rotateTimer);
+        if (state.idleTimer) clearTimeout(state.idleTimer);
+        if (state.onVisibilityChange) document.removeEventListener('visibilitychange', state.onVisibilityChange);
+        if (state.onInteraction) {
+            state.interactionEvents.forEach((evt) => {
+                window.removeEventListener(evt, state.onInteraction, state.interactionPassiveOpt);
+            });
+        }
+        if (state.onTap && state.root) {
+            state.root.removeEventListener('click', state.onTap);
+        }
+        if (state.onKeyActivate && state.root) {
+            state.root.removeEventListener('keydown', state.onKeyActivate);
+        }
+        this._greetingRoller = null;
+    },
+
+    initGreetingRoller() {
+        const root = document.getElementById('user-greeting');
+        if (!root || !DB.currentUser) return;
+
+        this.teardownGreetingRoller();
+
+        const TOASTS = [
+            { phrase: 'Cheers', lang: 'English' },
+            { phrase: 'Salud', lang: 'Spanish' },
+            { phrase: 'Santé', lang: 'French' },
+            { phrase: 'Prost', lang: 'German' },
+            { phrase: 'Cin cin', lang: 'Italian' },
+            { phrase: 'Saúde', lang: 'Portuguese' },
+            { phrase: 'Şerefe', lang: 'Turkish' },
+            { phrase: 'Sláinte', lang: 'Irish (Gaelic)' },
+            { phrase: '干杯', lang: 'Chinese (Mandarin)' },
+            { phrase: '乾杯', lang: 'Japanese' },
+            { phrase: '건배', lang: 'Korean' },
+            { phrase: 'На здоровье', lang: 'Russian' },
+            { phrase: 'Na zdrowie', lang: 'Polish' },
+            { phrase: 'Na zdraví', lang: 'Czech' },
+            { phrase: 'Egészségedre', lang: 'Hungarian' },
+            { phrase: 'Noroc', lang: 'Romanian' },
+            { phrase: 'Živjeli', lang: 'Croatian' },
+            { phrase: 'Sănătate', lang: 'Romanian (Moldovan variant)' },
+            { phrase: 'Saħħa', lang: 'Maltese' },
+            { phrase: 'Yamas', lang: 'Greek' },
+            { phrase: "L'chaim", lang: 'Hebrew' },
+            { phrase: 'في صحتك', lang: 'Arabic' },
+            { phrase: 'Afiyet olsun', lang: 'Turkish (Alt)' },
+            { phrase: 'Skål', lang: 'Swedish' },
+            { phrase: 'Skoal', lang: 'Stylized Toast' },
+            { phrase: 'Kippis', lang: 'Finnish' },
+            { phrase: 'Terve!', lang: 'Finnish (Alt)' },
+            { phrase: 'Slaatê', lang: 'Frisian' },
+            { phrase: 'Proost', lang: 'Dutch' },
+            { phrase: 'Gezondheid', lang: 'Dutch (Alt)' },
+            { phrase: 'Na zdravie', lang: 'Slovak' },
+            { phrase: 'Nazdravlje', lang: 'Serbian' },
+            { phrase: 'Gëzuar', lang: 'Albanian' },
+            { phrase: 'Qindarka', lang: 'Albanian (Alt)' },
+            { phrase: 'Sveiks!', lang: 'Latvian' },
+            { phrase: 'Priekā', lang: 'Latvian (Toast)' },
+            { phrase: 'Į sveikatą', lang: 'Lithuanian' },
+            { phrase: 'Uz zdravlje', lang: 'Bosnian' },
+            { phrase: 'Zdraví', lang: 'Slovenian' },
+            { phrase: 'Vivat', lang: 'Latin' },
+            { phrase: 'Sağlığına', lang: 'Azerbaijani' },
+            { phrase: 'Şnorhavor', lang: 'Armenian' },
+            { phrase: 'Ga-mbei', lang: 'Cantonese (Romanized)' },
+            { phrase: 'Mabuhay', lang: 'Filipino (Tagalog)' },
+            { phrase: 'Tagay', lang: 'Tagalog (Toast)' },
+            { phrase: 'To your health', lang: 'English (Alt)' },
+            { phrase: 'Bottoms up', lang: 'English (Fun)' },
+            { phrase: 'Sante!', lang: 'French (Fun)' },
+            { phrase: 'Cheers mate', lang: 'English (UK)' },
+            { phrase: 'Chok dee', lang: 'Thai' },
+        ];
+
+        const name = (DB.currentUser.display_name || '').trim() || 'Beer Lover';
+        const maxCycles = 11;
+        const intervalMs = 4000;
+        const animMs = 560;
+
+        const state = {
+            root,
+            rotateTimer: null,
+            idleTimer: null,
+            pausedForInteraction: false,
+            activeSlot: 0,
+            activeIndex: 0,
+            cycles: 0,
+            maxCycles,
+            animMs,
+            isAnimating: false,
+            interactionEvents: ['scroll', 'wheel', 'touchstart', 'touchmove', 'keydown', 'input', 'pointerdown'],
+            interactionPassiveOpt: { passive: true },
+        };
+
+        const normalize = (phrase) => {
+            if (/[\u0600-\u06FF\u4E00-\u9FFF\u3040-\u30FF\uAC00-\uD7AF]/.test(phrase)) return phrase;
+            return `${phrase}, ${name}!`;
+        };
+
+        const hashString = (value) => {
+            let hash = 0;
+            for (let i = 0; i < value.length; i += 1) {
+                hash = ((hash << 5) - hash) + value.charCodeAt(i);
+                hash |= 0;
+            }
+            return Math.abs(hash);
+        };
+
+        const createLine = () => {
+            const line = document.createElement('div');
+            line.className = 'greeting-roll-line';
+            const phrase = document.createElement('span');
+            phrase.className = 'greeting-phrase';
+            const chip = document.createElement('span');
+            chip.className = 'greeting-lang-chip';
+            line.appendChild(phrase);
+            line.appendChild(chip);
+            return line;
+        };
+
+        const setLineContent = (line, toast) => {
+            const phraseNode = line.firstChild;
+            const chipNode = line.lastChild;
+            phraseNode.textContent = normalize(toast.phrase);
+            chipNode.textContent = toast.lang;
+        };
+
+        root.textContent = '';
+        root.classList.add('greeting-roller');
+        root.setAttribute('role', 'button');
+        root.setAttribute('tabindex', '0');
+        root.setAttribute('aria-label', 'Rotate toast greeting');
+
+        const viewport = document.createElement('div');
+        viewport.className = 'greeting-roll-viewport';
+        const lineA = createLine();
+        const lineB = createLine();
+        viewport.appendChild(lineA);
+        viewport.appendChild(lineB);
+        root.appendChild(viewport);
+
+        const lines = [lineA, lineB];
+        state.lines = lines;
+
+        state.activeIndex = hashString(String(DB.currentUser.id || name).toLowerCase()) % TOASTS.length;
+        setLineContent(lines[state.activeSlot], TOASTS[state.activeIndex]);
+        lines[state.activeSlot].style.transform = 'translateY(0%)';
+        lines[state.activeSlot].style.opacity = '1';
+        lines[1 - state.activeSlot].style.transform = 'translateY(100%)';
+        lines[1 - state.activeSlot].style.opacity = '0';
+
+        const shouldRun = () => !document.hidden && !state.pausedForInteraction && state.cycles < state.maxCycles;
+
+        const queueNext = () => {
+            if (state.rotateTimer) clearTimeout(state.rotateTimer);
+            if (!shouldRun()) return;
+            state.rotateTimer = setTimeout(() => {
+                rotate(true);
+            }, intervalMs);
+        };
+
+        const rotate = (fromTimer = false) => {
+            if (state.isAnimating || !shouldRun()) return;
+            const outgoing = lines[state.activeSlot];
+            const incomingSlot = 1 - state.activeSlot;
+            const incoming = lines[incomingSlot];
+            const nextIndex = (state.activeIndex + 1) % TOASTS.length;
+
+            setLineContent(incoming, TOASTS[nextIndex]);
+            incoming.style.transition = 'none';
+            outgoing.style.transition = 'none';
+            incoming.style.transform = 'translateY(100%)';
+            incoming.style.opacity = '0';
+            outgoing.style.transform = 'translateY(0%)';
+            outgoing.style.opacity = '1';
+            incoming.offsetHeight;
+
+            state.isAnimating = true;
+            const transition = `transform ${animMs}ms cubic-bezier(0.22, 1, 0.36, 1), opacity ${animMs}ms cubic-bezier(0.22, 1, 0.36, 1)`;
+            incoming.style.transition = transition;
+            outgoing.style.transition = transition;
+            incoming.style.transform = 'translateY(0%)';
+            incoming.style.opacity = '1';
+            outgoing.style.transform = 'translateY(-100%)';
+            outgoing.style.opacity = '0';
+
+            setTimeout(() => {
+                outgoing.style.transition = 'none';
+                outgoing.style.transform = 'translateY(100%)';
+                state.activeSlot = incomingSlot;
+                state.activeIndex = nextIndex;
+                state.isAnimating = false;
+                if (fromTimer) state.cycles += 1;
+                queueNext();
+            }, animMs + 30);
+        };
+
+        state.onVisibilityChange = () => {
+            if (document.hidden) {
+                if (state.rotateTimer) clearTimeout(state.rotateTimer);
+                return;
+            }
+            queueNext();
+        };
+
+        state.onInteraction = () => {
+            state.pausedForInteraction = true;
+            if (state.rotateTimer) clearTimeout(state.rotateTimer);
+            if (state.idleTimer) clearTimeout(state.idleTimer);
+            state.idleTimer = setTimeout(() => {
+                state.pausedForInteraction = false;
+                queueNext();
+            }, 1200);
+        };
+
+        state.onTap = () => {
+            state.cycles = 0;
+            state.pausedForInteraction = false;
+            if (state.idleTimer) clearTimeout(state.idleTimer);
+            rotate(false);
+            queueNext();
+        };
+
+        document.addEventListener('visibilitychange', state.onVisibilityChange);
+        state.interactionEvents.forEach((evt) => {
+            window.addEventListener(evt, state.onInteraction, state.interactionPassiveOpt);
+        });
+        root.addEventListener('click', state.onTap);
+        state.onKeyActivate = (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                state.onTap();
+            }
+        };
+        root.addEventListener('keydown', state.onKeyActivate);
+
+        this._greetingRoller = state;
+        queueNext();
+    },
+
     // ========== APP ENTRY ==========
     async enterApp() {
         document.getElementById('auth-screen').style.display = 'none';
@@ -2428,37 +2674,7 @@ const App = {
             Admin.init();
         }
 
-        const greeting = document.getElementById('user-greeting');
-        if (greeting && DB.currentUser) {
-            const name = (DB.currentUser.display_name || '').trim() || 'Beer Lover';
-            const greetings = [
-                { phrase: `Cheers, ${name}!`, lang: 'English' },
-                { phrase: `Prost, ${name}!`, lang: 'German' },
-                { phrase: `Salud, ${name}!`, lang: 'Spanish' },
-                { phrase: `Sláinte, ${name}!`, lang: 'Irish' },
-                { phrase: `Cin cin, ${name}!`, lang: 'Italian' },
-                { phrase: `Skål, ${name}!`, lang: 'Swedish' },
-                { phrase: `干杯, ${name}!`, lang: 'Mandarin' },
-                { phrase: `건배, ${name}!`, lang: 'Korean' },
-                { phrase: `Na zdraví, ${name}!`, lang: 'Czech' },
-                { phrase: `乾杯, ${name}!`, lang: 'Japanese' },
-                { phrase: `Santé, ${name}!`, lang: 'French' },
-                { phrase: `Proost, ${name}!`, lang: 'Dutch' },
-                { phrase: `Saúde, ${name}!`, lang: 'Portuguese' },
-                { phrase: `Şerefe, ${name}!`, lang: 'Turkish' },
-                { phrase: `L'chaim, ${name}!`, lang: 'Hebrew' },
-                { phrase: `Yamas, ${name}!`, lang: 'Greek' },
-                { phrase: `Na zdrowie, ${name}!`, lang: 'Polish' },
-                { phrase: `Noroc, ${name}!`, lang: 'Romanian' },
-                { phrase: `Chok dee, ${name}!`, lang: 'Thai' },
-                { phrase: `Mabuhay, ${name}!`, lang: 'Filipino' },
-            ];
-            const g = greetings[Math.floor(Math.random() * greetings.length)];
-            greeting.innerHTML = `
-                <span class="greeting-phrase">${g.phrase}</span>
-                <span class="greeting-lang">${g.lang}</span>
-            `;
-        }
+        this.initGreetingRoller();
 
         this.initBrowseFilters();
         await this.loadAllData();

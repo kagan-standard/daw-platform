@@ -452,10 +452,35 @@ input, select, textarea, button {
 }
 
 #user-greeting {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
+    display: inline-flex;
     line-height: 1.2;
+}
+
+#user-greeting.greeting-roller {
+    position: relative;
+    cursor: pointer;
+    user-select: none;
+}
+
+#user-greeting .greeting-roll-viewport {
+    --greeting-row-height: 1.5rem;
+    position: relative;
+    height: var(--greeting-row-height);
+    overflow: hidden;
+    min-width: 9.75rem;
+}
+
+#user-greeting .greeting-roll-line {
+    position: absolute;
+    inset: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
+    white-space: nowrap;
+    transform: translateY(100%);
+    opacity: 0;
+    will-change: transform, opacity;
 }
 
 .greeting-phrase {
@@ -464,12 +489,20 @@ input, select, textarea, button {
     color: var(--gold);
 }
 
-.greeting-lang {
-    font-size: 0.6rem;
-    font-style: italic;
+#user-greeting .greeting-lang-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 2.05rem;
+    padding: 0.08rem 0.38rem;
+    border-radius: 999px;
+    border: 1px solid var(--border-subtle);
+    background: rgba(20, 20, 20, 0.42);
     color: var(--text-muted);
-    opacity: 0.9;
-    letter-spacing: 0.05em;
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
 }
 
 /* Hamburger button (icon swap in-place) */
