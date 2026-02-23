@@ -2212,6 +2212,22 @@ const App = {
         });
     },
 
+    primeCheersCache(ratings) {
+        if (!Array.isArray(ratings) || !ratings.length) return;
+        ratings.forEach((r) => {
+            const ratingId = r && r.id ? String(r.id) : '';
+            if (!ratingId) return;
+            const hasCount = r.cheers_count != null && Number.isFinite(Number(r.cheers_count));
+            const hasYouCheered = r.you_cheered != null;
+            if (!hasCount && !hasYouCheered) return;
+            const current = this.cheersCache[ratingId] || { count: 0, youCheered: false };
+            this.cheersCache[ratingId] = {
+                count: hasCount ? Number(r.cheers_count) : current.count,
+                youCheered: hasYouCheered ? !!r.you_cheered : current.youCheered
+            };
+        });
+    },
+
     async fillCheersForCards(ratingIds) {
         if (!ratingIds.length) return;
         for (const id of ratingIds) {
@@ -2225,6 +2241,10 @@ const App = {
                     return !!(view && view.classList.contains('active'));
                 });
                 if (!shouldFetch) continue;
+                if (this.cheersCache[id]) {
+                    this.setCheersOnCard(id, this.cheersCache[id].count, this.cheersCache[id].youCheered);
+                    continue;
+                }
                 const data = await this.getCheersForRating(id);
                 this.setCheersOnCard(id, data.count, data.youCheered);
             } catch (_) {}
@@ -2389,6 +2409,7 @@ const App = {
                 });
             });
         }
+        this.primeCheersCache((beer.ratings || []).slice(0, 20));
         this.fillCheersForCards((beer.ratings || []).slice(0, 20).map(r => r.id));
 
         // Add direct click handlers to cheers buttons inside modal (stopPropagation blocks delegation)
@@ -2728,6 +2749,7 @@ const App = {
         try {
             const stats = await DB.getStats();
             this.allRatings = stats.ratings || [];
+            this.primeCheersCache(this.allRatings);
             if (typeof this.refreshSocialGraph === 'function') {
                 if (force || !this._socialGraphLoaded) {
                     await this.refreshSocialGraph({ force });
@@ -2767,6 +2789,7 @@ const App = {
 
             const activityRes = await DB.getActivity();
             this.activityItems = (activityRes && activityRes.data) ? activityRes.data : [];
+            this.primeCheersCache(this.activityItems);
             this.renderActivityFeed(this.activityItems, 10);
             this.activityPage = 1;
         } catch (err) {

@@ -58,6 +58,47 @@ function totalFromContentRange(contentRange) {
   return m ? parseInt(m[1], 10) : null;
 }
 
+async function attachCheersDataToRatings(ratings, requester = null) {
+  if (!Array.isArray(ratings) || !ratings.length) return ratings;
+  const ratingIds = [...new Set(ratings.map((r) => String(r?.id || '').trim()).filter(Boolean))];
+  if (!ratingIds.length) return ratings;
+  const idList = ratingIds.map((id) => encodeURIComponent(id)).join(',');
+  if (!idList) return ratings;
+
+  const [allCheersRes, myCheersRes] = await Promise.all([
+    rest('GET', `/reactions?rating_id=in.(${idList})&reaction_type=eq.cheers&select=rating_id&limit=20000`),
+    requester
+      ? rest('GET', `/reactions?rating_id=in.(${idList})&reaction_type=eq.cheers&user_id=eq.${encodeURIComponent(requester)}&select=rating_id&limit=20000`)
+      : Promise.resolve({ status: 200, body: [] }),
+  ]);
+
+  if (allCheersRes.status >= 400) return ratings;
+  if (requester && myCheersRes.status >= 400) return ratings;
+
+  const cheersByRating = Object.create(null);
+  const allRows = Array.isArray(allCheersRes.body) ? allCheersRes.body : [];
+  allRows.forEach((row) => {
+    const rid = row && row.rating_id ? String(row.rating_id) : '';
+    if (!rid) return;
+    cheersByRating[rid] = (cheersByRating[rid] || 0) + 1;
+  });
+
+  const myCheered = new Set(
+    (Array.isArray(myCheersRes.body) ? myCheersRes.body : [])
+      .map((row) => (row && row.rating_id ? String(row.rating_id) : ''))
+      .filter(Boolean)
+  );
+
+  return ratings.map((r) => {
+    const rid = String(r?.id || '');
+    return {
+      ...r,
+      cheers_count: cheersByRating[rid] || 0,
+      you_cheered: requester ? myCheered.has(rid) : false,
+    };
+  });
+}
+
 function requestIdMiddleware(req, res, next) {
   const headerId = String(req.headers['x-request-id'] || '').trim();
   req.requestId = headerId || crypto.randomUUID();
@@ -654,7 +695,8 @@ app.get('/api/ratings', softAuthMiddleware, validateSort, async (req, res) => {
       filtered = filtered.filter((r) => followingIds.has(r.user_id));
     }
     const total = filtered.length;
-    const data = filtered.slice(offset, offset + limit);
+    const page = filtered.slice(offset, offset + limit);
+    const data = await attachCheersDataToRatings(page, requester);
     return res.json({
       data,
       pagination: { limit, offset, total },
@@ -668,8 +710,9 @@ app.get('/api/ratings', softAuthMiddleware, validateSort, async (req, res) => {
   if (status >= 400) {
     return res.status(status).json(body || { error: 'Upstream error' });
   }
+  const enriched = await attachCheersDataToRatings(Array.isArray(body) ? body : [], requester);
   res.json({
-    data: Array.isArray(body) ? body : [],
+    data: enriched,
     pagination: { limit, offset, total },
   });
 });

@@ -8,6 +8,47 @@ module.exports = function (opts) {
   const { rest } = opts;
   const router = express.Router();
 
+  async function attachCheersData(ratings, requester) {
+    if (!Array.isArray(ratings) || !ratings.length) return ratings;
+    const ratingIds = [...new Set(ratings.map((r) => String(r?.id || '').trim()).filter(Boolean))];
+    if (!ratingIds.length) return ratings;
+    const idList = ratingIds.map((id) => encodeURIComponent(id)).join(',');
+    if (!idList) return ratings;
+
+    const [allCheersRes, myCheersRes] = await Promise.all([
+      rest('GET', `/reactions?rating_id=in.(${idList})&reaction_type=eq.cheers&select=rating_id&limit=20000`),
+      requester
+        ? rest('GET', `/reactions?rating_id=in.(${idList})&reaction_type=eq.cheers&user_id=eq.${encodeURIComponent(requester)}&select=rating_id&limit=20000`)
+        : Promise.resolve({ status: 200, body: [] }),
+    ]);
+
+    if (allCheersRes.status >= 400) return ratings;
+    if (requester && myCheersRes.status >= 400) return ratings;
+
+    const cheersByRating = Object.create(null);
+    const allCheers = Array.isArray(allCheersRes.body) ? allCheersRes.body : [];
+    allCheers.forEach((row) => {
+      const rid = row && row.rating_id ? String(row.rating_id) : '';
+      if (!rid) return;
+      cheersByRating[rid] = (cheersByRating[rid] || 0) + 1;
+    });
+
+    const myCheered = new Set(
+      (Array.isArray(myCheersRes.body) ? myCheersRes.body : [])
+        .map((row) => (row && row.rating_id ? String(row.rating_id) : ''))
+        .filter(Boolean)
+    );
+
+    return ratings.map((r) => {
+      const rid = String(r?.id || '');
+      return {
+        ...r,
+        cheers_count: cheersByRating[rid] || 0,
+        you_cheered: requester ? myCheered.has(rid) : false,
+      };
+    });
+  }
+
   // GET /api/activity — recent ratings + new venues, limit 50
   router.get('/activity', opts.softAuthMiddleware, (req, res, next) => {
     const feed = String(req.query.feed || '').trim();
@@ -44,7 +85,14 @@ module.exports = function (opts) {
           const tb = new Date(b.created_at || 0).getTime();
           return tb - ta;
         }).slice(0, 50);
-        res.json({ data: items });
+        const ratingItems = items.filter((item) => item.type === 'rating');
+        const ratingsWithCheers = await attachCheersData(ratingItems, requester);
+        const ratingsById = new Map(ratingsWithCheers.map((r) => [String(r.id), r]));
+        const enrichedItems = items.map((item) => {
+          if (item.type !== 'rating') return item;
+          return ratingsById.get(String(item.id)) || item;
+        });
+        res.json({ data: enrichedItems });
       })
       .catch(next);
   });
