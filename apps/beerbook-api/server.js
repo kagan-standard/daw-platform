@@ -193,7 +193,7 @@ async function authMiddleware(req, res, next) {
     });
     const aud = payload.aud;
     const azp = payload.azp;
-    const audOk = aud === 'beerbook' || (Array.isArray(aud) && aud.includes('beerbook'));
+    const audOk = aud === 'beerbook' || aud === 'beerbook-mobile' || (Array.isArray(aud) && (aud.includes('beerbook') || aud.includes('beerbook-mobile')));
     if (!audOk) {
       return res.status(403).json({
         error_code: 'TOKEN_AUDIENCE_NOT_ALLOWED',
@@ -201,7 +201,8 @@ async function authMiddleware(req, res, next) {
         request_id: req.requestId || null,
       });
     }
-    if (azp !== 'beerbook') {
+    const azpOk = azp === 'beerbook' || azp === 'beerbook-mobile';
+    if (!azpOk) {
       return res.status(403).json({
         error_code: 'TOKEN_AZP_NOT_ALLOWED',
         error: 'Token azp not allowed',
@@ -249,8 +250,9 @@ async function softAuthMiddleware(req, res, next) {
     });
     const aud = payload.aud;
     const azp = payload.azp;
-    const audOk = aud === 'beerbook' || (Array.isArray(aud) && aud.includes('beerbook'));
-    if (!audOk || azp !== 'beerbook') return next();
+    const audOk = aud === 'beerbook' || aud === 'beerbook-mobile' || (Array.isArray(aud) && (aud.includes('beerbook') || aud.includes('beerbook-mobile')));
+    const azpOk = azp === 'beerbook' || azp === 'beerbook-mobile';
+    if (!audOk || !azpOk) return next();
     req.claims = {
       sub: payload.sub,
       preferred_username: payload.preferred_username || payload.sub,
