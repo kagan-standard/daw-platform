@@ -793,22 +793,23 @@ const App = {
             try {
                 this.setLoadingText(e.target, 'Saving rating...');
                 const result = await DB.addRating(rating);
-                if (window.TabBurst && Number(result?.tabsEarned) > 0) {
-                    const submitBtn = e.submitter || e.target.querySelector('button[type="submit"]');
-                    if (submitBtn) {
-                        const rect = submitBtn.getBoundingClientRect();
-                        TabBurst.fire(result.tabsEarned, {
-                            x: rect.left + (rect.width / 2),
-                            y: rect.top
-                        });
-                    } else {
-                        TabBurst.fire(result.tabsEarned);
-                    }
-                }
                 if (result && result.updated) {
                     App.toast(`Rating updated! (previously ${result.previous_rating} ★)`, 'success');
                 } else {
                     App.toast(`Rated "${rating.beerName}" ${Utils.stars(ratingVal)}`, 'success');
+                    const tabsEarned = Number(result?.tabsEarned ?? result?.tabs_earned ?? 0);
+                    if (window.TabBurst && tabsEarned > 0) {
+                        const submitBtn = e.submitter || e.target.querySelector('button[type="submit"]');
+                        if (submitBtn) {
+                            const rect = submitBtn.getBoundingClientRect();
+                            TabBurst.fire(tabsEarned, {
+                                x: rect.left + (rect.width / 2),
+                                y: rect.top
+                            });
+                        } else {
+                            TabBurst.fire(tabsEarned);
+                        }
+                    }
                     if (typeof Tabs !== 'undefined' && Tabs && typeof Tabs.showRatingFeedback === 'function') {
                         await Tabs.showRatingFeedback(result);
                     }
