@@ -203,6 +203,7 @@ const App = {
     adminState: { usersSort: 'last_active', usersSearchDebounce: null, activeTab: 'users' },
     allRatings: [],
     cheersCache: {},
+    cheersInFlight: {},
     _demoCheersKey: 'beerbook_demo_cheers',
     _loadAllDataDebounceTimer: null,
     browseTab: 'community',
@@ -2142,6 +2143,8 @@ const App = {
 
     async getCheersForRating(ratingId) {
         if (this.cheersCache[ratingId]) return this.cheersCache[ratingId];
+        if (this.cheersInFlight[ratingId]) return this.cheersInFlight[ratingId];
+        this.cheersInFlight[ratingId] = (async () => {
         if (DB.isDemo) {
             const raw = Utils.storage.get(this._demoCheersKey) || {};
             const entry = raw[ratingId] || { count: 0, userIds: [] };
@@ -2155,6 +2158,12 @@ const App = {
         const out = { count: data.count || 0, youCheered };
         this.cheersCache[ratingId] = out;
         return out;
+        })();
+        try {
+            return await this.cheersInFlight[ratingId];
+        } finally {
+            delete this.cheersInFlight[ratingId];
+        }
     },
 
     async handleCheersClick(btn, ratingId) {
@@ -2205,9 +2214,17 @@ const App = {
 
     async fillCheersForCards(ratingIds) {
         if (!ratingIds.length) return;
-        const loggedIn = !!(DB.currentUser && DB.currentUser.id);
         for (const id of ratingIds) {
             try {
+                // Avoid flooding API from hidden views; fetch only for active view or open detail modal.
+                const buttons = Array.from(document.querySelectorAll(`.cheers-btn[data-rating-id="${id}"]`));
+                const shouldFetch = buttons.some((btn) => {
+                    const modal = btn.closest('#beer-detail-modal');
+                    if (modal && modal.style.display === 'flex') return true;
+                    const view = btn.closest('.view');
+                    return !!(view && view.classList.contains('active'));
+                });
+                if (!shouldFetch) continue;
                 const data = await this.getCheersForRating(id);
                 this.setCheersOnCard(id, data.count, data.youCheered);
             } catch (_) {}
