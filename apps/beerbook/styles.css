@@ -3418,7 +3418,8 @@ input, select, textarea, button {
     pointer-events: none;
     transition: opacity 0.3s ease;
 }
-.bb-sheet-root[data-state="LIST"] .bb-sheet-backdrop {
+.bb-sheet-root[data-state="MID"] .bb-sheet-backdrop,
+.bb-sheet-root[data-state="MAX"] .bb-sheet-backdrop {
     pointer-events: auto;
 }
 
@@ -3481,8 +3482,9 @@ input, select, textarea, button {
     transition: transform 0.3s ease;
     line-height: 1;
 }
-.bb-sheet-root[data-state="LIST"] .bb-sheet-chevron-icon,
-.bb-sheet-root[data-state="DETAIL"] .bb-sheet-chevron-icon {
+.bb-sheet-root[data-state="DETAIL"] .bb-sheet-chevron-icon,
+.bb-sheet-root[data-state="MID"] .bb-sheet-chevron-icon,
+.bb-sheet-root[data-state="MAX"] .bb-sheet-chevron-icon {
     transform: rotate(180deg);
 }
 
@@ -3492,6 +3494,12 @@ input, select, textarea, button {
     margin: 4px 0 8px;
     font-family: var(--font-display, inherit);
     font-weight: 700;
+}
+.bb-sheet-subtitle {
+    font-size: 0.8rem;
+    color: var(--text-muted, #b07d3a);
+    margin: -2px 0 8px;
+    min-height: 1.1em;
 }
 
 .bb-sheet-body {
@@ -3546,9 +3554,17 @@ input, select, textarea, button {
 .bb-sheet-root[data-state="DETAIL"] .bb-sheet-detail { display: block !important; }
 .bb-sheet-root[data-state="DETAIL"] .bb-sheet-scroll { display: none; }
 
-.bb-sheet-root[data-state="LIST"] .bb-sheet-min-preview { display: none; }
-.bb-sheet-root[data-state="LIST"] .bb-sheet-detail { display: none !important; }
-.bb-sheet-root[data-state="LIST"] .bb-sheet-scroll { display: block; }
+.bb-sheet-root[data-state="MID"] .bb-sheet-min-preview,
+.bb-sheet-root[data-state="MAX"] .bb-sheet-min-preview { display: none; }
+.bb-sheet-root[data-state="MID"] .bb-sheet-detail,
+.bb-sheet-root[data-state="MAX"] .bb-sheet-detail { display: none !important; }
+.bb-sheet-root[data-state="MID"] .bb-sheet-scroll,
+.bb-sheet-root[data-state="MAX"] .bb-sheet-scroll { display: block; }
+
+.bb-sheet-root[data-state="MAX"] .bb-sheet {
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+}
 
 .venue-sheet-empty {
     text-align: center;
@@ -3569,6 +3585,76 @@ input, select, textarea, button {
 .venue-sheet-loading {
     color: var(--text-muted, #b07d3a);
 }
+
+.venue-detail-contact {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--dark-600, #333);
+    margin-bottom: 12px;
+}
+
+.venue-detail-phone,
+.venue-detail-website {
+    color: var(--amber-400, #ED8936);
+    text-decoration: none;
+    font-size: 0.9rem;
+    padding: 6px 0;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+}
+
+.venue-detail-phone:hover,
+.venue-detail-website:hover {
+    color: var(--amber-300, #F6AD55);
+}
+
+.venue-detail-beers-title {
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: var(--foam-cream, #f5f0e1);
+    margin: 0 0 8px;
+}
+
+.venue-detail-beer-list {
+    margin: 0;
+    padding: 0 0 0 16px;
+    font-size: 0.85rem;
+    color: var(--amber-500, #b07d3a);
+}
+
+.venue-detail-beer-list li {
+    padding: 3px 0;
+}
+
+.venue-detail-see-all {
+    display: inline-block;
+    color: var(--amber-400, #ED8936);
+    font-size: 0.85rem;
+    text-decoration: none;
+    padding: 6px 0;
+}
+
+.venue-detail-no-beers {
+    color: var(--amber-600, #b07d3a);
+    font-size: 0.85rem;
+    font-style: italic;
+    margin: 8px 0;
+}
+
+.venue-detail-rate-cta {
+    display: block;
+    color: var(--amber-400, #ED8936);
+    font-size: 0.95rem;
+    font-weight: 600;
+    text-decoration: none;
+    padding: 12px 0;
+    margin-top: 8px;
+    border-top: 1px solid var(--dark-600, #333);
+}
+
 .venue-list-card {
     display: flex;
     align-items: center;
