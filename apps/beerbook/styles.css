@@ -479,7 +479,7 @@ input, select, textarea, button {
     --greeting-row-height: 1.5rem;
     position: relative;
     height: var(--greeting-row-height);
-    width: max-content;
+    width: clamp(10.5rem, 34vw, 18rem);
     max-width: 100%;
     overflow: hidden;
     min-width: 10.5rem;
@@ -4064,7 +4064,8 @@ input, select, textarea, button {
         padding: 0 0.35rem;
     }
     #user-greeting .greeting-roll-viewport {
-        min-width: 0;
+        width: clamp(9.5rem, 42vw, 16rem);
+        min-width: 9.5rem;
     }
     .notification-btn {
         width: 38px;
