@@ -490,7 +490,7 @@
             this.selection = null;
             this._detailSource = null;
             if (this.detailBodyEl) this.detailBodyEl.innerHTML = '';
-            if (this.state === 'DETAIL') this.snapTo('MIN');
+            this._renderStateContent();
             this._updateHeader();
         }
 

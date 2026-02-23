@@ -126,11 +126,20 @@ const MapView = {
                 if (this._programmaticMapMove) return;
                 this._freezeVenueList = false;
                 this._savedBounds = null;
+                this._programmaticMapMove = false;
+                if (this._bottomSheet) {
+                    this._bottomSheet.clearSelection();
+                    this._bottomSheet.snapTo('MIN');
+                }
             });
             this.map.on('zoomstart', () => {
                 if (this._programmaticMapMove) return;
                 this._freezeVenueList = false;
                 this._savedBounds = null;
+                if (this._bottomSheet) {
+                    this._bottomSheet.clearSelection();
+                    this._bottomSheet.snapTo('MIN');
+                }
             });
         }
         if (!this.initDone) {
