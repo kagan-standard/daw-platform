@@ -55,6 +55,19 @@ const Admin = {
         await this.renderUsersPanel();
         await this.renderSubmissionsPanel();
         await this.renderEconomyPanel();
+        const adminViewElement = document.getElementById('view-admin');
+        if (adminViewElement) {
+            let burstContainer = document.getElementById('admin-tab-burst');
+            if (!burstContainer) {
+                burstContainer = document.createElement('div');
+                burstContainer.id = 'admin-tab-burst';
+                adminViewElement.appendChild(burstContainer);
+            }
+            burstContainer.innerHTML = '';
+            if (window.TabBurstAdmin && typeof TabBurstAdmin.render === 'function') {
+                TabBurstAdmin.render(burstContainer);
+            }
+        }
         this.switchView(this.activeView || 'users');
     },
 

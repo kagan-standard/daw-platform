@@ -712,6 +712,18 @@ const App = {
             try {
                 this.setLoadingText(e.target, 'Saving rating...');
                 const result = await DB.addRating(rating);
+                if (window.TabBurst && Number(result?.tabsEarned) > 0) {
+                    const submitBtn = e.submitter || e.target.querySelector('button[type="submit"]');
+                    if (submitBtn) {
+                        const rect = submitBtn.getBoundingClientRect();
+                        TabBurst.fire(result.tabsEarned, {
+                            x: rect.left + (rect.width / 2),
+                            y: rect.top
+                        });
+                    } else {
+                        TabBurst.fire(result.tabsEarned);
+                    }
+                }
                 if (result && result.updated) {
                     App.toast(`Rating updated! (previously ${result.previous_rating} ★)`, 'success');
                 } else {
