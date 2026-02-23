@@ -316,6 +316,7 @@ const TabBurst = (() => {
       let alive = true;
       let lastTime = null;
       const REF_FPS = 60;
+      const SPEED = 1.5;   // real-time speed multiplier (restore snappy feel vs raw 60fps reference)
       const MAX_DT = 0.05; // cap delta to avoid spikes when tab was in background
 
       function animate(now) {
@@ -326,9 +327,12 @@ const TabBurst = (() => {
         if (lastTime != null) {
           dt = (now - lastTime) / 1000; // seconds
           if (dt > MAX_DT) dt = MAX_DT;
+        } else {
+          // First physics frame: pretend previous frame was 1/60s ago so we apply a full step immediately
+          dt = 1 / REF_FPS;
         }
         lastTime = now;
-        const scale = dt * REF_FPS; // 1.0 at 60fps, 0.5 at 30fps, etc.
+        const scale = dt * REF_FPS * SPEED; // 1.0 at 60fps with SPEED=1; SPEED=1.5 = snappier
 
         tab.style.opacity = String(opacity);
 
