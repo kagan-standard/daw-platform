@@ -2465,7 +2465,6 @@ const App = {
             { phrase: 'في صحتك', lang: 'Arabic' },
             { phrase: 'Afiyet olsun', lang: 'Turkish (Alt)' },
             { phrase: 'Skål', lang: 'Swedish' },
-            { phrase: 'Skoal', lang: 'Stylized Toast' },
             { phrase: 'Kippis', lang: 'Finnish' },
             { phrase: 'Terve!', lang: 'Finnish (Alt)' },
             { phrase: 'Slaatê', lang: 'Frisian' },
