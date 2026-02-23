@@ -454,21 +454,35 @@ input, select, textarea, button {
 #user-greeting {
     display: inline-flex;
     line-height: 1.2;
+    max-width: 100%;
 }
 
 #user-greeting.greeting-roller {
     position: relative;
     cursor: pointer;
     user-select: none;
+    border: 0;
+    outline: none;
+}
+
+#user-greeting.greeting-roller:focus {
+    outline: none;
+}
+
+#user-greeting.greeting-roller:focus-visible {
+    outline: 1px solid rgba(244, 178, 35, 0.55);
+    outline-offset: 2px;
+    border-radius: 6px;
 }
 
 #user-greeting .greeting-roll-viewport {
     --greeting-row-height: 1.5rem;
     position: relative;
     height: var(--greeting-row-height);
-    overflow-y: hidden;
-    overflow-x: visible;
-    min-width: 10rem;
+    width: max-content;
+    max-width: 100%;
+    overflow: hidden;
+    min-width: 10.5rem;
 }
 
 #user-greeting .greeting-roll-line {
@@ -4044,6 +4058,29 @@ input, select, textarea, button {
     .view { padding-bottom: 100px; }
     .topbar { height: 60px; }
     .topbar-logo { height: 40px; width: auto; }
+    .top-bar__greeting {
+        flex: 1 1 auto;
+        min-width: 0;
+        padding: 0 0.35rem;
+    }
+    #user-greeting .greeting-roll-viewport {
+        min-width: 0;
+    }
+    .notification-btn {
+        width: 38px;
+        height: 38px;
+        padding: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.15rem;
+    }
+    .hamburger-btn {
+        width: 38px;
+        height: 38px;
+        margin-left: 0.35rem;
+        font-size: 1.48rem;
+    }
     .toast-container { bottom: 96px; }
     .map-sidebar { bottom: 82px; }
 }
