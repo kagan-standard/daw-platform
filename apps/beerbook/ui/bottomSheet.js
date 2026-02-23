@@ -166,7 +166,10 @@
             const bottomNav = document.querySelector('.bottom-tab-nav');
             const navVisible = !!(bottomNav && window.getComputedStyle(bottomNav).display !== 'none');
             const navHeight = navVisible ? (bottomNav.offsetHeight || 82) : 0;
-            const minVisible = Math.max(80, navHeight + 16);
+            const headerHeight = this.headerEl?.offsetHeight || 64;
+            // Keep the full collapsed chrome (handle + chevron + title) visible above bottom nav.
+            const collapsedChromeVisible = Math.max(80, headerHeight + 8);
+            const minVisible = navHeight + collapsedChromeVisible;
             const detailVisible = Math.round(vh * 0.52);
             const listVisible = Math.round(vh * 0.90);
 
