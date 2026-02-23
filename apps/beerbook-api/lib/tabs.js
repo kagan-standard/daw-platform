@@ -115,7 +115,7 @@ async function patchUserTabsProfile(rest, userId, patch) {
   return Array.isArray(out.body) && out.body[0] ? out.body[0] : null;
 }
 
-async function awardTabsForRating(rest, userId, ratingId, ratingData, profileDefaults = {}) {
+async function awardTabsForRating(rest, userId, ratingId, ratingData, profileDefaults = {}, isNewBeer = false) {
   const profile = await ensureUserTabsProfile(rest, userId, profileDefaults);
   if ((profile.ratings_this_week || 0) >= 10) {
     return {
@@ -129,16 +129,18 @@ async function awardTabsForRating(rest, userId, ratingId, ratingData, profileDef
   const tierInfo = await getTierMultiplier(rest, profile.current_tier);
   const tierMultiplier = Number(tierInfo.multiplier) || 1.0;
   const seederMultiplier = profile.is_seeder ? 1.5 : 1.0;
+  const newBeerMultiplier = isNewBeer ? 1.5 : 1.0;
   const components = calculateRatingComponents(ratingData);
 
   const txRows = components.map((component) => ({
     user_id: userId,
     transaction_type: 'earn',
-    amount: Math.round(component.base * tierMultiplier * seederMultiplier),
+    amount: Math.round(component.base * newBeerMultiplier * tierMultiplier * seederMultiplier),
     earn_source: component.source,
     base_amount: component.base,
     tier_multiplier: tierMultiplier,
     seeder_multiplier: seederMultiplier,
+    new_beer_multiplier: newBeerMultiplier,
     rating_id: ratingId,
   }));
   const tabsEarned = txRows.reduce((sum, tx) => sum + (Number(tx.amount) || 0), 0);
@@ -159,6 +161,8 @@ async function awardTabsForRating(rest, userId, ratingId, ratingData, profileDef
     ratings_this_week: (Number(profile.ratings_this_week) || 0) + 1,
     tier_multiplier: tierMultiplier,
     seeder_multiplier: seederMultiplier,
+    new_beer_multiplier: newBeerMultiplier,
+    is_new_beer: !!isNewBeer,
   };
 }
 

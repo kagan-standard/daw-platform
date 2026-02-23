@@ -209,6 +209,10 @@ const App = {
     _browseFiltersInitialized: false,
     _pendingPhotoFile: null,
     _pendingPhotoPreviewUrl: null,
+    isNewBeer: false,
+    _newBeerConfirmed: false,
+    _newBeerMatches: [],
+    _newBeerValidationTimer: null,
 
     toast(message, type = 'info') {
         Utils.toast(message, type, 3000);
@@ -669,11 +673,24 @@ const App = {
             const beerName = document.getElementById('beer-name').value.trim();
             const style = document.getElementById('beer-style').value;
             const ratingVal = parseInt(document.getElementById('beer-rating').value);
+            const brewery = document.getElementById('beer-brewery').value.trim();
+            const abvRaw = document.getElementById('beer-abv').value;
+            const abv = abvRaw !== '' ? Number(abvRaw) : null;
+            const selectedBeerId = document.getElementById('rating-beer-id')?.value?.trim() || '';
 
             const missing = [];
             if (!beerName) missing.push({ label: 'Beer Name', field: 'beer-name', parent: '.beer-autocomplete-wrap' });
-            if (!style) missing.push({ label: 'Style', field: 'beer-style', parent: null });
             if (!ratingVal) missing.push({ label: 'Star Rating', field: 'star-rating', parent: '.rating-stars-section' });
+            if (!this.isNewBeer && !selectedBeerId && !style) {
+                missing.push({ label: 'Select an existing beer, or add this as a new beer', field: 'beer-name', parent: '.beer-autocomplete-wrap' });
+            }
+            if (this.isNewBeer) {
+                if (!brewery || brewery.length < 2) missing.push({ label: 'Brewery', field: 'beer-brewery', parent: '#beer-brewery-group' });
+                if (!style) missing.push({ label: 'Style', field: 'beer-style', parent: '#beer-style-group' });
+                if (abv == null || !Number.isFinite(abv) || abv < 0 || abv > 30) {
+                    missing.push({ label: 'ABV', field: 'beer-abv', parent: '#beer-abv-group' });
+                }
+            }
 
             if (missing.length > 0) {
                 // 1. Show inline message under submit button
@@ -725,6 +742,18 @@ const App = {
 
                 return;
             }
+            if (this.isNewBeer && this._newBeerMatches.length > 0 && !this._newBeerConfirmed) {
+                const msgEl = document.getElementById('rating-validation-msg');
+                if (msgEl) {
+                    msgEl.textContent = '⚠️ Please select a similar beer above, or confirm this is a brand-new beer.';
+                    msgEl.classList.add('visible');
+                }
+                const matchPanel = document.getElementById('new-beer-match-check');
+                if (matchPanel) {
+                    matchPanel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+                return;
+            }
             // --- End enhanced validation ---
 
             const ygRaw = document.getElementById('yg-value')?.value;
@@ -773,6 +802,7 @@ const App = {
                 style: document.getElementById('beer-style').value,
                 abv: parseFloat(document.getElementById('beer-abv').value) || null,
                 rating: ratingVal,
+                is_new_beer: this.isNewBeer,
                 beer_id: beerIdVal || null,
                 flavors: {
                     hoppy: parseInt(document.getElementById('flavor-hoppy').value) || 0,
@@ -844,6 +874,14 @@ const App = {
                 this.resetRatingForm(e.target);
                 this.loadAllData();
             } catch (err) {
+                if (err?.status === 409 && Array.isArray(err?.details?.matches)) {
+                    this.setNewBeerMode(true);
+                    this._newBeerMatches = err.details.matches;
+                    this._newBeerConfirmed = false;
+                    this.renderNewBeerMatches();
+                    App.toast('A very similar beer already exists. Please choose one of the matches.', 'warning');
+                    return;
+                }
                 App.toast('Failed to save: ' + err.message, 'error');
             } finally {
                 this.setLoading(e.target, false);
@@ -1090,6 +1128,12 @@ const App = {
             dropdown.innerHTML = '';
             if (hintEl) hintEl.style.display = 'none';
             if (beerIdInput) beerIdInput.value = '';
+            if (!q) {
+                this.setNewBeerMode(false);
+            } else if (this.isNewBeer) {
+                this._newBeerConfirmed = false;
+                this.queueNewBeerValidation();
+            }
             if (q.length < 2) return;
             debounceTimer = setTimeout(async () => {
                 if (DB.isDemo) {
@@ -1156,6 +1200,8 @@ const App = {
                             }
                         });
                     }
+                    const hasExact = allResults.some((item) => item.type === 'item' && this._normalizedBeerName(item.beer_name) === this._normalizedBeerName(q));
+                    allResults.push({ type: 'add_new', query: q, showNoResults: !allResults.some((item) => item.type === 'item'), exactMatch: hasExact });
                     App._renderBeerAutocompleteDropdown(dropdown, allResults, false);
                     return;
                 }
@@ -1163,8 +1209,7 @@ const App = {
                 if (hintEl && q.length >= 3 && (!searchResults || searchResults.length === 0)) {
                     hintEl.style.display = 'block';
                 }
-                if (!searchResults || searchResults.length === 0) return;
-                const items = searchResults.map((r) => ({
+                const items = (searchResults || []).map((r) => ({
                     type: 'item',
                     beer_name: r.beer_name || r.name || '',
                     brewery: r.brewery || r.brewery_name || '',
@@ -1175,6 +1220,8 @@ const App = {
                     review_overall: r.review_overall != null ? Number(r.review_overall) : null,
                     review_count: r.review_count != null ? Number(r.review_count) : 0,
                 }));
+                const hasExact = items.some((item) => this._normalizedBeerName(item.beer_name) === this._normalizedBeerName(q));
+                items.push({ type: 'add_new', query: q, showNoResults: items.length === 0, exactMatch: hasExact });
                 App._renderBeerAutocompleteDropdown(dropdown, items, false);
             }, 300);
         });
@@ -1199,6 +1246,14 @@ const App = {
             if (item.type === 'group') {
                 return `<div class="autocomplete-group-label">${Utils.escapeHtml(item.label)}</div>`;
             }
+            if (item.type === 'add_new') {
+                const query = Utils.escapeHtml(item.query || '');
+                const noResultsCopy = item.showNoResults ? '<div class="autocomplete-empty">No results found</div>' : '';
+                const addRow = item.exactMatch
+                    ? ''
+                    : `<button type="button" class="autocomplete-add-new" data-add-new-beer="1" data-query="${query}">➕ Add "${query}"<span class="autocomplete-add-new-sub">as a new beer</span></button>`;
+                return `${noResultsCopy}${addRow}`;
+            }
             const breweryAndStyle = [item.brewery, item.style].filter(Boolean).map((part) => Utils.escapeHtml(part)).join(' · ');
             const ratingBadge = item.review_overall != null
                 ? `<span class="autocomplete-rating">${Number(item.review_overall).toFixed(1)} / 5</span>`
@@ -1217,6 +1272,7 @@ const App = {
         dropdown.setAttribute('aria-hidden', 'false');
         dropdown.querySelectorAll('.autocomplete-item').forEach((el) => {
             el.addEventListener('click', () => {
+                this.setNewBeerMode(false);
                 document.getElementById('beer-name').value = el.dataset.name || '';
                 document.getElementById('beer-brewery').value = el.dataset.brewery || '';
                 const beerIdInput = document.getElementById('rating-beer-id');
@@ -1244,10 +1300,152 @@ const App = {
                 this._handleSelectedBeerExistingRatings(el.dataset.beerId || null, el.dataset.name || '');
             });
         });
+        dropdown.querySelectorAll('[data-add-new-beer="1"]').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const q = btn.getAttribute('data-query') || '';
+                const beerNameInput = document.getElementById('beer-name');
+                const beerId = document.getElementById('rating-beer-id');
+                if (beerNameInput) beerNameInput.value = q;
+                if (beerId) beerId.value = '';
+                dropdown.innerHTML = '';
+                dropdown.setAttribute('aria-hidden', 'true');
+                if (hintEl) hintEl.style.display = 'none';
+                this.setNewBeerMode(true, q);
+            });
+        });
     },
 
     _normalizedBeerName(name) {
         return String(name || '').toLowerCase().trim().replace(/\s+/g, ' ');
+    },
+
+    setNewBeerMode(enabled, query = '') {
+        this.isNewBeer = !!enabled;
+        this._newBeerConfirmed = false;
+        if (!this.isNewBeer) {
+            this._newBeerMatches = [];
+            clearTimeout(this._newBeerValidationTimer);
+        }
+        const helperBanner = document.getElementById('new-beer-helper-banner');
+        const submitText = document.querySelector('.rate-submit-btn .btn-text');
+        const beerIdInput = document.getElementById('rating-beer-id');
+        const requiredIndicators = document.querySelectorAll('.new-beer-required-indicator');
+        const requiredGroups = [
+            document.getElementById('beer-brewery-group'),
+            document.getElementById('beer-style-group'),
+            document.getElementById('beer-abv-group'),
+        ].filter(Boolean);
+        if (helperBanner) helperBanner.style.display = this.isNewBeer ? '' : 'none';
+        requiredIndicators.forEach((el) => {
+            el.style.display = this.isNewBeer ? '' : 'none';
+        });
+        requiredGroups.forEach((group) => {
+            group.classList.toggle('new-beer-required-field', this.isNewBeer);
+        });
+        if (submitText) submitText.textContent = this.isNewBeer ? '🍺 Submit Rating & Add Beer' : '🍺 Submit Rating';
+        if (beerIdInput && this.isNewBeer) beerIdInput.value = '';
+        if (!this.isNewBeer) {
+            this.clearNewBeerMatches();
+        } else if (query) {
+            const nameInput = document.getElementById('beer-name');
+            if (nameInput && !nameInput.value.trim()) nameInput.value = query;
+            this.queueNewBeerValidation();
+        }
+    },
+
+    clearNewBeerMatches() {
+        const panel = document.getElementById('new-beer-match-check');
+        if (!panel) return;
+        panel.innerHTML = '';
+        panel.style.display = 'none';
+    },
+
+    queueNewBeerValidation() {
+        if (!this.isNewBeer || DB.isDemo) return;
+        clearTimeout(this._newBeerValidationTimer);
+        this._newBeerValidationTimer = setTimeout(async () => {
+            const name = document.getElementById('beer-name')?.value?.trim() || '';
+            const brewery = document.getElementById('beer-brewery')?.value?.trim() || '';
+            if (name.length < 2 || brewery.length < 2) {
+                this._newBeerMatches = [];
+                this._newBeerConfirmed = false;
+                this.clearNewBeerMatches();
+                return;
+            }
+            try {
+                const result = await DB.validateNewBeer(name, brewery);
+                this._newBeerMatches = Array.isArray(result?.matches) ? result.matches : [];
+                this._newBeerConfirmed = this._newBeerMatches.length === 0;
+                this.renderNewBeerMatches();
+            } catch (err) {
+                this._newBeerMatches = [];
+                this._newBeerConfirmed = false;
+                this.clearNewBeerMatches();
+            }
+        }, 300);
+    },
+
+    renderNewBeerMatches() {
+        const panel = document.getElementById('new-beer-match-check');
+        if (!panel) return;
+        if (!this.isNewBeer || this._newBeerMatches.length === 0) {
+            this.clearNewBeerMatches();
+            return;
+        }
+        panel.style.display = '';
+        panel.innerHTML = `
+            <div class="new-beer-match-title">⚠️ Similar beers already exist:</div>
+            <div class="new-beer-match-list">
+                ${this._newBeerMatches.map((m) => `
+                    <div class="new-beer-match-item">
+                        <div class="new-beer-match-meta">
+                            <div class="new-beer-match-name">${Utils.escapeHtml(m.name || '')}</div>
+                            <div>${Utils.escapeHtml(m.brewery_name || 'Unknown brewery')} ${m.similarity != null ? `(${Math.round(Number(m.similarity) * 100)}% match)` : ''}</div>
+                        </div>
+                        <button type="button" class="btn btn-ghost btn-sm" data-rate-existing-id="${Utils.escapeHtml(String(m.id || ''))}" data-rate-existing-name="${Utils.escapeHtml(m.name || '')}" data-rate-existing-brewery="${Utils.escapeHtml(m.brewery_name || '')}" data-rate-existing-style="${Utils.escapeHtml(m.style || '')}" data-rate-existing-abv="${Utils.escapeHtml(m.abv != null ? String(m.abv) : '')}">Rate This Instead</button>
+                    </div>
+                `).join('')}
+            </div>
+            <div class="new-beer-match-actions">
+                <button type="button" class="btn btn-primary btn-sm" id="confirm-new-beer-btn">None of these? Confirm New Beer</button>
+            </div>
+        `;
+        panel.querySelectorAll('[data-rate-existing-id]').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const id = btn.getAttribute('data-rate-existing-id') || '';
+                const name = btn.getAttribute('data-rate-existing-name') || '';
+                const brewery = btn.getAttribute('data-rate-existing-brewery') || '';
+                const style = btn.getAttribute('data-rate-existing-style') || '';
+                const abv = btn.getAttribute('data-rate-existing-abv') || '';
+                this.selectExistingBeerFromMatch({ id, name, brewery_name: brewery, style, abv });
+            });
+        });
+        const confirmBtn = panel.querySelector('#confirm-new-beer-btn');
+        if (confirmBtn) {
+            confirmBtn.addEventListener('click', () => {
+                this._newBeerConfirmed = true;
+                confirmBtn.textContent = '✅ New beer confirmed';
+                confirmBtn.disabled = true;
+            });
+        }
+    },
+
+    selectExistingBeerFromMatch(match) {
+        const beerNameInput = document.getElementById('beer-name');
+        const breweryInput = document.getElementById('beer-brewery');
+        const styleInput = document.getElementById('beer-style');
+        const abvInput = document.getElementById('beer-abv');
+        const beerIdInput = document.getElementById('rating-beer-id');
+        if (beerNameInput) beerNameInput.value = match.name || '';
+        if (breweryInput) breweryInput.value = match.brewery_name || '';
+        if (styleInput) {
+            const mapped = this._mapStyleToDropdown(match.style || '');
+            if (mapped) styleInput.value = mapped;
+        }
+        if (abvInput && match.abv != null) abvInput.value = Number(match.abv).toFixed(1);
+        if (beerIdInput) beerIdInput.value = match.id || '';
+        this.setNewBeerMode(false);
+        this._handleSelectedBeerExistingRatings(match.id || null, match.name || '');
     },
 
     _applyExistingRatingToForm(existing) {
@@ -1310,6 +1508,10 @@ const App = {
         input.addEventListener('input', () => {
             clearTimeout(debounceTimer);
             const q = input.value.trim();
+            if (this.isNewBeer) {
+                this._newBeerConfirmed = false;
+                this.queueNewBeerValidation();
+            }
             dropdown.setAttribute('aria-hidden', 'true');
             dropdown.innerHTML = '';
             if (q.length < 2) return;
@@ -1326,6 +1528,10 @@ const App = {
                     dropdown.querySelectorAll('.autocomplete-item').forEach((el) => {
                         el.addEventListener('click', () => {
                             document.getElementById('beer-brewery').value = el.dataset.name;
+                            if (this.isNewBeer) {
+                                this._newBeerConfirmed = false;
+                                this.queueNewBeerValidation();
+                            }
                             dropdown.innerHTML = '';
                             dropdown.setAttribute('aria-hidden', 'true');
                         });
@@ -3192,6 +3398,7 @@ const App = {
 
     prefillRateFormFromBeer(beer) {
         if (!beer) return;
+        this.setNewBeerMode(false);
         const name = beer.name || beer.beer_name || '';
         const brewery = beer.brewery_name || beer.brewery || '';
         const rawStyle = beer.style || '';
@@ -3250,6 +3457,7 @@ const App = {
 
     resetRatingForm(form) {
         form.reset();
+        this.setNewBeerMode(false);
         document.getElementById('beer-rating').value = '';
         document.getElementById('rating-label').textContent = 'Select a rating';
         document.querySelectorAll('#star-rating .star').forEach(s => s.classList.remove('active'));

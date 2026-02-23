@@ -332,6 +332,37 @@ function mapCatalogBeer(row) {
   };
 }
 
+async function findSimilarBeers(name, brewery, limit = 5) {
+  const safeName = String(name || '').trim();
+  const safeBrewery = String(brewery || '').trim();
+  if (!safeName || !safeBrewery) return [];
+
+  const { status, body } = await rest('POST', '/rpc/validate_new_beer_matches', {
+    body: JSON.stringify({
+      p_name: safeName,
+      p_brewery: safeBrewery,
+      p_limit: Math.min(Math.max(Number(limit) || 5, 1), 10),
+    }),
+  });
+  if (status >= 400) throw new Error('validate_new_beer_matches failed');
+
+  const rows = Array.isArray(body) ? body : [];
+  return rows.map((row) => {
+    const nameSim = Number(row.name_sim || 0);
+    const brewerySim = Number(row.brewery_sim || 0);
+    return {
+      id: row.id,
+      name: row.name,
+      brewery_name: row.brewery_name ?? null,
+      style: row.style ?? null,
+      abv: row.abv != null ? Number(row.abv) : null,
+      name_sim: nameSim,
+      brewery_sim: brewerySim,
+      similarity: Number(Math.max(nameSim, brewerySim).toFixed(4)),
+    };
+  });
+}
+
 // GET /api/catalog/search?q=<query>&limit=<n>
 app.get('/api/catalog/search', async (req, res) => {
   const q = (req.query.q || '').trim();
@@ -429,6 +460,33 @@ app.get('/api/catalog/styles', async (req, res) => {
   } catch (e) {
     console.error('Catalog styles error:', e);
     res.status(502).json({ error: 'Catalog styles failed' });
+  }
+});
+
+// GET /api/catalog/validate-new?name=<name>&brewery=<brewery> — auth required
+app.get('/api/catalog/validate-new', authMiddleware, async (req, res) => {
+  const name = String(req.query.name || '').trim();
+  const brewery = String(req.query.brewery || '').trim();
+  if (name.length < 2 || brewery.length < 2) {
+    return res.status(400).json({ error: 'name and brewery must be at least 2 characters' });
+  }
+
+  try {
+    const rawMatches = await findSimilarBeers(name, brewery, 5);
+    const matches = rawMatches
+      .filter((m) => m.name_sim > 0.6 || (m.name_sim > 0.4 && m.brewery_sim > 0.5))
+      .map((m) => ({
+        id: m.id,
+        name: m.name,
+        brewery_name: m.brewery_name,
+        style: m.style,
+        abv: m.abv,
+        similarity: Number(m.similarity.toFixed(2)),
+      }));
+    return res.json({ matches });
+  } catch (e) {
+    console.error('Validate new beer failed:', e);
+    return res.status(502).json({ error: 'Beer validation failed' });
   }
 });
 
@@ -639,6 +697,7 @@ app.get('/api/ratings/user/:id', validateSort, async (req, res) => {
 app.post('/api/ratings', authMiddleware, async (req, res) => {
   const { sub, preferred_username } = req.claims;
   const b = req.body || {};
+  const isNewBeer = b.is_new_beer === true;
   const toMaybeTrimmedString = (value) => {
     if (value == null) return null;
     const s = String(value).trim();
@@ -672,6 +731,11 @@ app.post('/api/ratings', authMiddleware, async (req, res) => {
   const locationName = toMaybeTrimmedString(b.location_name ?? b.locationName);
   let resolvedVenueId = b.venue_id ?? b.venueId ?? null;
   const priceCentsRaw = b.price_cents ?? b.priceCents ?? null;
+  const incomingBeerName = toMaybeTrimmedString(b.beer_name || b.beerName);
+  const incomingBrewery = toMaybeTrimmedString(b.brewery);
+  const incomingStyle = toMaybeTrimmedString(b.style);
+  const incomingAbv = b.abv != null && b.abv !== '' ? Number(b.abv) : null;
+  const incomingBeerId = toMaybeTrimmedString(b.beer_id ?? b.beerId);
   if ((lat != null && lng == null) || (lat == null && lng != null)) {
     return res.status(400).json({ error: 'latitude and longitude must be provided together' });
   }
@@ -682,6 +746,40 @@ app.post('/api/ratings', authMiddleware, async (req, res) => {
     const priceCents = Number(priceCentsRaw);
     if (!Number.isInteger(priceCents) || priceCents <= 0) {
       return res.status(400).json({ error: 'price_cents must be a positive integer' });
+    }
+  }
+  if (isNewBeer) {
+    if (!incomingBeerName || incomingBeerName.length < 2) {
+      return res.status(400).json({ error: 'beer_name is required for new beer flow' });
+    }
+    if (!incomingBrewery || incomingBrewery.length < 2) {
+      return res.status(400).json({ error: 'brewery is required and must be at least 2 characters' });
+    }
+    if (!incomingStyle) {
+      return res.status(400).json({ error: 'style is required for new beer flow' });
+    }
+    if (!Number.isFinite(incomingAbv) || incomingAbv < 0 || incomingAbv > 30) {
+      return res.status(400).json({ error: 'abv must be a number between 0 and 30' });
+    }
+    try {
+      const rawMatches = await findSimilarBeers(incomingBeerName, incomingBrewery, 5);
+      const blocking = rawMatches.filter((m) => m.similarity > 0.85);
+      if (blocking.length) {
+        return res.status(409).json({
+          error: 'Very similar beer already exists',
+          matches: blocking.map((m) => ({
+            id: m.id,
+            name: m.name,
+            brewery_name: m.brewery_name,
+            style: m.style,
+            abv: m.abv,
+            similarity: Number(m.similarity.toFixed(2)),
+          })),
+        });
+      }
+    } catch (err) {
+      console.error('Strict new beer validation failed:', err);
+      return res.status(502).json({ error: 'New beer validation failed' });
     }
   }
   if (!resolvedVenueId && latNum != null && lngNum != null) {
@@ -718,10 +816,10 @@ app.post('/api/ratings', authMiddleware, async (req, res) => {
   const record = {
     user_id: sub,
     user_name: preferred_username || 'Anonymous',
-    beer_name: b.beer_name || b.beerName,
-    brewery: b.brewery || '',
-    style: b.style || '',
-    abv: b.abv ?? null,
+    beer_name: incomingBeerName || '',
+    brewery: incomingBrewery || '',
+    style: incomingStyle || '',
+    abv: incomingAbv,
     rating,
     flavor_hoppy: b.flavor_hoppy ?? b.flavors?.hoppy ?? 0,
     flavor_malty: b.flavor_malty ?? b.flavors?.malty ?? 0,
@@ -735,11 +833,48 @@ app.post('/api/ratings', authMiddleware, async (req, res) => {
     location_name: locationName,
     venue_id: resolvedVenueId,
     photo_url: b.photo_url ?? b.photoUrl ?? null,
-    beer_id: b.beer_id ?? b.beerId ?? null,
+    beer_id: incomingBeerId,
     price_cents: priceCentsRaw != null ? Number(priceCentsRaw) : null,
   };
-  if (!record.beer_name || !record.style || record.rating == null) {
-    return res.status(400).json({ error: 'beer_name, style, and rating required' });
+  if (!record.beer_name || record.rating == null) {
+    return res.status(400).json({ error: 'beer_name and rating required' });
+  }
+
+  if (isNewBeer) {
+    const createBeerRes = await rest('POST', '/beers', {
+      headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({
+        name: record.beer_name,
+        brewery_name: record.brewery,
+        style: record.style,
+        abv: record.abv,
+        source: 'user_submitted',
+        submitted_by: sub,
+        verified: false,
+      }),
+    });
+    if (createBeerRes.status >= 400) {
+      return res.status(createBeerRes.status >= 500 ? 502 : createBeerRes.status).json(createBeerRes.body || { error: 'Failed to create beer' });
+    }
+    const newBeer = Array.isArray(createBeerRes.body) ? createBeerRes.body[0] : createBeerRes.body;
+    if (!newBeer?.id) {
+      return res.status(502).json({ error: 'Created beer missing id' });
+    }
+    record.beer_id = newBeer.id;
+  }
+
+  if (!record.style && record.beer_id) {
+    const beerInfo = await rest('GET', `/beers?id=eq.${encodeURIComponent(record.beer_id)}&select=name,brewery_name,style,abv&limit=1`);
+    if (beerInfo.status < 400 && Array.isArray(beerInfo.body) && beerInfo.body[0]) {
+      const existingBeer = beerInfo.body[0];
+      if (!record.style && existingBeer.style) record.style = existingBeer.style;
+      if (!record.brewery && existingBeer.brewery_name) record.brewery = existingBeer.brewery_name;
+      if (record.abv == null && existingBeer.abv != null) record.abv = Number(existingBeer.abv);
+      if (!record.beer_name && existingBeer.name) record.beer_name = existingBeer.name;
+    }
+  }
+  if (!record.style) {
+    return res.status(400).json({ error: 'style required when beer style is unknown' });
   }
 
   let existing = null;
@@ -804,13 +939,17 @@ app.post('/api/ratings', authMiddleware, async (req, res) => {
   const tabsResult = await awardTabsForRating(rest, sub, row?.id || null, row || record, {
     displayName: preferred_username,
     email: req.claims.email,
-  });
+  }, isNewBeer);
   res.status(201).json({
     data: row || record,
     updated: false,
     tabs_earned: tabsResult.tabs_earned,
     tabs_breakdown: tabsResult.breakdown,
     tabs_reason: tabsResult.reason,
+    tier_multiplier: tabsResult.tier_multiplier ?? 1.0,
+    seeder_multiplier: tabsResult.seeder_multiplier ?? 1.0,
+    new_beer_multiplier: tabsResult.new_beer_multiplier ?? 1.0,
+    is_new_beer: tabsResult.is_new_beer === true,
   });
 });
 

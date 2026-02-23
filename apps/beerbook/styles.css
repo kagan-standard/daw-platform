@@ -1100,6 +1100,38 @@ input, select, textarea, button {
 
 .autocomplete-item:last-child { border-bottom: none; }
 
+.autocomplete-empty {
+    padding: 0.65rem 1rem;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+}
+
+.autocomplete-add-new {
+    display: block;
+    width: 100%;
+    border: none;
+    border-top: 1px solid var(--border-subtle);
+    background: rgba(245, 166, 35, 0.08);
+    color: var(--gold);
+    text-align: left;
+    padding: 0.7rem 1rem;
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+
+.autocomplete-add-new:hover,
+.autocomplete-add-new:focus-visible {
+    background: rgba(245, 166, 35, 0.16);
+    outline: none;
+}
+
+.autocomplete-add-new-sub {
+    display: block;
+    font-size: 0.78rem;
+    opacity: 0.75;
+    margin-top: 2px;
+}
+
 .autocomplete-beer-info {
     display: flex;
     flex-direction: column;
@@ -1155,6 +1187,79 @@ input, select, textarea, button {
     font-size: 0.8rem;
     padding: 4px 8px;
     margin-top: 4px;
+}
+
+.new-beer-helper-banner {
+    border: 1px solid rgba(245, 166, 35, 0.26);
+    background: linear-gradient(180deg, rgba(245, 166, 35, 0.12) 0%, rgba(160, 82, 45, 0.08) 100%);
+    color: var(--gold);
+    border-radius: var(--radius-md);
+    padding: 0.75rem 0.85rem;
+    margin-bottom: 0.8rem;
+    font-size: 0.88rem;
+    line-height: 1.4;
+}
+
+.new-beer-required-indicator {
+    color: var(--gold);
+    font-weight: 700;
+}
+
+.new-beer-required-field label {
+    color: var(--gold);
+}
+
+.new-beer-required-field input,
+.new-beer-required-field select {
+    border-color: rgba(245, 166, 35, 0.38);
+    box-shadow: 0 0 0 1px rgba(245, 166, 35, 0.2) inset;
+}
+
+.new-beer-match-check {
+    margin-top: 0.75rem;
+    border-top: 1px solid var(--border-subtle);
+    padding-top: 0.75rem;
+}
+
+.new-beer-match-title {
+    color: var(--gold);
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+    font-size: 0.88rem;
+}
+
+.new-beer-match-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+}
+
+.new-beer-match-item {
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    padding: 0.45rem 0.55rem;
+    background: rgba(255, 255, 255, 0.02);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.65rem;
+}
+
+.new-beer-match-meta {
+    min-width: 0;
+    color: var(--text-secondary);
+    font-size: 0.84rem;
+}
+
+.new-beer-match-name {
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.new-beer-match-actions {
+    margin-top: 0.6rem;
+    display: flex;
+    justify-content: flex-end;
 }
 
 .community-rating {
@@ -2860,7 +2965,7 @@ input, select, textarea, button {
     position: fixed;
     bottom: var(--space-xl);
     right: var(--space-xl);
-    z-index: 9999;
+    z-index: 12000;
     display: flex;
     flex-direction: column;
     gap: var(--space-sm);
@@ -4008,6 +4113,10 @@ input, select, textarea, button {
     background: linear-gradient(180deg, rgba(212, 160, 48, 0.22) 0%, rgba(160, 82, 45, 0.2) 100%);
     color: var(--gold);
     white-space: pre-line;
+    max-width: 520px;
+    line-height: 1.45;
+    font-size: 0.95rem;
+    padding: 0.8rem 0.95rem;
 }
 
 .tier-badge {

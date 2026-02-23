@@ -37,12 +37,12 @@ const Tabs = {
         }
     },
 
-    toast(message, type = 'info') {
+    toast(message, type = 'info', duration = 3000) {
         if (typeof App !== 'undefined' && App && typeof App.toast === 'function') {
-            App.toast(message, type);
+            Utils.toast(message, type, duration);
             return;
         }
-        Utils.toast(message, type, 3000);
+        Utils.toast(message, type, duration);
     },
 
     startNotificationPolling() {
@@ -208,15 +208,15 @@ const Tabs = {
 
     formatTabsBreakdownLineItems(breakdown = {}) {
         const entries = [
-            ['rating_base', '⭐ Rating'],
-            ['rating_photo', '📸 Photo'],
-            ['rating_location', '📍 Location'],
-            ['rating_price', '💰 Price'],
-            ['rating_review', '📝 Review'],
+            ['rating_base', { icon: '⭐', label: 'Rating' }],
+            ['rating_photo', { icon: '📸', label: 'Photo' }],
+            ['rating_location', { icon: '📍', label: 'Location' }],
+            ['rating_price', { icon: '💰', label: 'Price' }],
+            ['rating_review', { icon: '📝', label: 'Notes' }],
         ];
         return entries
             .filter(([key]) => breakdown[key] != null)
-            .map(([key, label]) => `${label}: ${Number(breakdown[key]) >= 0 ? '+' : ''}${Number(breakdown[key])}`);
+            .map(([key, meta]) => `${meta.icon} ${meta.label}: ${Number(breakdown[key]) >= 0 ? '+' : ''}${Number(breakdown[key])}`);
     },
 
     formatTabsMultiplierLine(result = {}, breakdown = {}) {
@@ -224,11 +224,15 @@ const Tabs = {
             const n = Number(v);
             return Number.isFinite(n) ? n : null;
         };
+        const newBeer = toNumberOrNull(result.new_beer_multiplier ?? breakdown.new_beer_multiplier);
         const tier = toNumberOrNull(result.tier_multiplier ?? breakdown.tier_multiplier);
         const seeder = toNumberOrNull(result.seeder_multiplier ?? breakdown.seeder_multiplier);
         const parts = [];
-        if (tier != null) parts.push(`× ${tier.toFixed(2).replace(/\.00$/, '')}x Tier`);
-        if (seeder != null) parts.push(`× ${seeder.toFixed(2).replace(/\.00$/, '')}x Seeder`);
+        if ((result.is_new_beer === true || (newBeer != null && newBeer > 1.0)) && newBeer != null && newBeer > 1.0) {
+            parts.push(`🆕 ${newBeer.toFixed(2).replace(/\.00$/, '')}x New Beer`);
+        }
+        if (tier != null && tier > 1.0) parts.push(`🏅 ${tier.toFixed(2).replace(/\.00$/, '')}x Tier`);
+        if (seeder != null && seeder > 1.0) parts.push(`⭐ ${seeder.toFixed(2).replace(/\.00$/, '')}x Seeder`);
         return parts.join(' · ');
     },
 
@@ -246,7 +250,7 @@ const Tabs = {
         const parts = [`+${earned} Tabs earned!`];
         if (lineItems.length) parts.push(lineItems.join(' · '));
         if (multiplierLine) parts.push(multiplierLine);
-        this.toast(parts.join('\n'), 'tabs');
+        this.toast(parts.join('\n'), 'tabs', 5000);
     },
 
     bindSubmissionModal() {

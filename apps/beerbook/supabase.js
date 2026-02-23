@@ -523,6 +523,7 @@ const DB = {
             style: rating.style,
             abv: rating.abv || null,
             rating: rating.rating,
+            is_new_beer: rating.is_new_beer === true,
             flavors: rating.flavors || {},
             notes: rating.notes || '',
             yg_value: rating.yg_value ?? null,
@@ -557,6 +558,7 @@ const DB = {
             style: record.style,
             abv: record.abv,
             rating: record.rating,
+            is_new_beer: record.is_new_beer,
             flavor_hoppy: record.flavor_hoppy ?? record.flavors?.hoppy ?? 0,
             flavor_malty: record.flavor_malty ?? record.flavors?.malty ?? 0,
             flavor_bitter: record.flavor_bitter ?? record.flavors?.bitter ?? 0,
@@ -718,6 +720,17 @@ const DB = {
             console.warn('searchBeers failed:', err.message);
             return [];
         }
+    },
+
+    async validateNewBeer(name, brewery) {
+        if (this.isDemo) return { matches: [] };
+        const safeName = String(name || '').trim();
+        const safeBrewery = String(brewery || '').trim();
+        if (safeName.length < 2 || safeBrewery.length < 2) return { matches: [] };
+        return await this._api(
+            'GET',
+            `/api/catalog/validate-new?name=${encodeURIComponent(safeName)}&brewery=${encodeURIComponent(safeBrewery)}`
+        );
     },
 
     async browseCatalog(opts = {}) {

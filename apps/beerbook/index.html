@@ -326,7 +326,6 @@
             <div class="view-header">
                 <h2>Rate a Beer</h2>
                 <p class="view-desc">Share your thoughts on what you're drinking</p>
-                <button type="button" class="btn btn-ghost btn-sm submit-beer-trigger" id="submit-beer-trigger">Can't find your beer? Submit it!</button>
             </div>
 
             <form id="rating-form" class="rating-form">
@@ -338,17 +337,21 @@
                         <div id="beer-autocomplete" class="autocomplete-dropdown" aria-hidden="true"></div>
                         <div id="autocomplete-hint" class="autocomplete-hint" aria-live="polite" style="display:none;">Don't see your beer? Just type the name — you can rate anything!</div>
                     </div>
-                    <div class="form-group flex-1 brewery-autocomplete-wrap">
-                        <label for="beer-brewery">Brewery</label>
-                        <input type="text" id="beer-brewery" placeholder="e.g. Russian River" autocomplete="off">
-                        <div id="brewery-autocomplete" class="autocomplete-dropdown" aria-hidden="true"></div>
-                    </div>
+                </div>
+
+                <div id="new-beer-helper-banner" class="new-beer-helper-banner" style="display:none;">
+                    🆕 Adding a new beer requires Brewery, Style, and ABV so others can find it. You'll earn 1.5x tabs for contributing! 🍺
                 </div>
 
                 <div class="form-row">
-                    <div class="form-group flex-1">
-                        <label for="beer-style">Style *</label>
-                        <select id="beer-style" required>
+                    <div id="beer-brewery-group" class="form-group flex-1 brewery-autocomplete-wrap">
+                        <label for="beer-brewery">Brewery <span class="new-beer-required-indicator" style="display:none;">*</span></label>
+                        <input type="text" id="beer-brewery" placeholder="e.g. Russian River" autocomplete="off">
+                        <div id="brewery-autocomplete" class="autocomplete-dropdown" aria-hidden="true"></div>
+                    </div>
+                    <div id="beer-style-group" class="form-group flex-1">
+                        <label for="beer-style">Style <span class="new-beer-required-indicator" style="display:none;">*</span></label>
+                        <select id="beer-style">
                             <option value="">Select style...</option>
                             <option value="IPA">IPA</option>
                             <option value="Double IPA">Double IPA</option>
@@ -380,11 +383,13 @@
                             <option value="Other">Other</option>
                         </select>
                     </div>
-                    <div class="form-group flex-1">
-                        <label for="beer-abv">ABV %</label>
+                    <div id="beer-abv-group" class="form-group flex-1">
+                        <label for="beer-abv">ABV % <span class="new-beer-required-indicator" style="display:none;">*</span></label>
                         <input type="number" id="beer-abv" placeholder="6.5" min="0" max="30" step="0.1">
                     </div>
                 </div>
+
+                <div id="new-beer-match-check" class="new-beer-match-check" style="display:none;"></div>
 
                 <div class="rating-stars-section">
                     <label>Overall Rating *</label>
@@ -526,7 +531,7 @@
                     <textarea id="beer-notes" rows="3" placeholder="What did you think? Aroma, taste, mouthfeel..."></textarea>
                 </div>
 
-                <button type="submit" class="btn btn-primary btn-full btn-lg">
+                <button type="submit" class="btn btn-primary btn-full btn-lg rate-submit-btn">
                     <span class="btn-text">🍺 Submit Rating</span>
                     <span class="btn-loader" style="display:none;">Saving...</span>
                 </button>
@@ -717,11 +722,11 @@
         <main id="view-admin" class="view admin-only" style="display:none;">
             <div class="view-header">
                 <h2>⚙️ Admin Panel</h2>
-                <p class="view-desc">Manage Tabs economy, users, and beer submissions</p>
+                <p class="view-desc">Manage Tabs economy and users</p>
             </div>
             <div class="admin-tabs" id="admin-tabs">
                 <button class="admin-tab active" data-admin-view="users" type="button">👥 Users &amp; Tabs</button>
-                <button class="admin-tab" data-admin-view="submissions" type="button">🍺 Beer Submissions</button>
+                <button class="admin-tab" data-admin-view="submissions" type="button">📌 Submissions (Future)</button>
                 <button class="admin-tab" data-admin-view="economy" type="button">📊 Economy Stats</button>
             </div>
 
@@ -788,11 +793,6 @@
             <div class="profile-chart-card">
                 <h3>My Rating History</h3>
                 <canvas id="chart-my-ratings"></canvas>
-            </div>
-
-            <div class="profile-submissions-section" id="profile-submissions-section" style="display:none;">
-                <h3>My Beer Submissions</h3>
-                <div id="profile-submissions-list" class="reviews-list"></div>
             </div>
 
             <div class="profile-reviews-section">
@@ -904,42 +904,6 @@
         <div class="modal-content modal-content-beer-detail">
             <button type="button" class="beer-detail-back" id="beer-detail-back" aria-label="Close">← Back</button>
             <div id="beer-detail-body" class="beer-detail-body"></div>
-        </div>
-    </div>
-
-    <div id="tabs-submission-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="tabs-submission-title" style="display:none;">
-        <div class="modal-content tabs-submission-content">
-            <h3 id="tabs-submission-title">Submit a New Beer</h3>
-            <form id="tabs-submission-form" class="rating-form">
-                <div class="form-group">
-                    <label for="submission-beer-name">Beer name *</label>
-                    <input id="submission-beer-name" type="text" required>
-                </div>
-                <div class="form-row">
-                    <div class="form-group flex-1">
-                        <label for="submission-brewery">Brewery</label>
-                        <input id="submission-brewery" type="text">
-                    </div>
-                    <div class="form-group flex-1">
-                        <label for="submission-style">Style</label>
-                        <select id="submission-style">
-                            <option value="">Select style...</option>
-                        </select>
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label for="submission-abv">ABV</label>
-                    <input id="submission-abv" type="number" min="0" max="30" step="0.1">
-                </div>
-                <div class="form-group">
-                    <label for="submission-notes">Notes</label>
-                    <textarea id="submission-notes" rows="3" placeholder="Tell us about this beer"></textarea>
-                </div>
-                <div class="modal-actions">
-                    <button type="button" class="btn btn-ghost" id="tabs-submission-cancel">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Submit Beer</button>
-                </div>
-            </form>
         </div>
     </div>
 

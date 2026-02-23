@@ -215,113 +215,12 @@ const Admin = {
     async renderSubmissionsPanel() {
         const panel = document.getElementById('admin-submissions');
         if (!panel) return;
-        if (!panel.querySelector('.admin-submission-filters')) {
-            panel.innerHTML = `
-                <div class="admin-submission-filters">
-                    <button class="btn btn-ghost btn-sm active" data-filter="all" type="button">All</button>
-                    <button class="btn btn-ghost btn-sm" data-filter="pending" type="button">Pending</button>
-                    <button class="btn btn-ghost btn-sm" data-filter="approved" type="button">Approved</button>
-                    <button class="btn btn-ghost btn-sm" data-filter="rejected" type="button">Rejected</button>
-                </div>
-                <div id="admin-submissions-table-wrap"><p class="empty-state">Loading submissions…</p></div>
-            `;
-            panel.querySelectorAll('[data-filter]').forEach((btn) => {
-                btn.addEventListener('click', async (e) => {
-                    panel.querySelectorAll('[data-filter]').forEach((x) => x.classList.remove('active'));
-                    e.target.classList.add('active');
-                    this.submissionsFilter = e.target.getAttribute('data-filter') || 'pending';
-                    await this.renderSubmissionsPanel();
-                });
-            });
-        }
-
-        const wrap = document.getElementById('admin-submissions-table-wrap');
-        if (!wrap) return;
-        try {
-            const [subsOut, usersOut] = await Promise.all([
-                DB.adminTabsGetSubmissions(this.submissionsFilter || 'pending'),
-                DB.adminTabsGetUsers(),
-            ]);
-            this.submissions = Array.isArray(subsOut?.data) ? subsOut.data : [];
-            const users = Array.isArray(usersOut?.data) ? usersOut.data : [];
-            const byId = new Map(users.map((u) => [u.id, u]));
-            wrap.innerHTML = `
-                <div class="admin-table-wrap">
-                    <table class="admin-table">
-                        <thead>
-                            <tr>
-                                <th>Submitted By</th>
-                                <th>Beer Name</th>
-                                <th>Brewery</th>
-                                <th>Style</th>
-                                <th>ABV</th>
-                                <th>Notes</th>
-                                <th>Date</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${this.submissions.map((s) => {
-                                const user = byId.get(s.submitted_by);
-                                const name = user?.display_name || s.submitted_by || 'Unknown';
-                                return `
-                                    <tr data-submission-id="${Utils.escapeHtml(String(s.id))}">
-                                        <td>${Utils.escapeHtml(name)}</td>
-                                        <td>${Utils.escapeHtml(s.beer_name || '')}</td>
-                                        <td>${Utils.escapeHtml(s.brewery || '—')}</td>
-                                        <td>${Utils.escapeHtml(s.style || '—')}</td>
-                                        <td>${s.abv != null ? Utils.escapeHtml(String(s.abv)) : '—'}</td>
-                                        <td>${Utils.escapeHtml(s.notes || '—')}</td>
-                                        <td>${s.created_at ? Utils.formatDate(s.created_at) : '—'}</td>
-                                        <td>
-                                            <div class="admin-actions">
-                                                <button type="button" class="btn btn-ghost btn-sm admin-approve-btn" ${s.status === 'approved' ? 'disabled' : ''}>✅ Approve</button>
-                                                <button type="button" class="btn btn-ghost btn-sm admin-reject-btn" ${s.status === 'rejected' ? 'disabled' : ''}>❌ Reject</button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                `;
-                            }).join('')}
-                        </tbody>
-                    </table>
-                </div>
-            `;
-
-            wrap.querySelectorAll('.admin-approve-btn').forEach((btn) => {
-                btn.addEventListener('click', async (e) => {
-                    const row = e.target.closest('tr');
-                    if (!row) return;
-                    const id = row.getAttribute('data-submission-id');
-                    const sub = this.submissions.find((s) => String(s.id) === String(id));
-                    const user = byId.get(sub?.submitted_by);
-                    try {
-                        await DB.adminTabsReviewSubmission(id, 'approved');
-                        this.toast(`Beer approved. +3 tabs (with multiplier) awarded to ${user?.display_name || 'user'}`, 'success');
-                        await this.renderSubmissionsPanel();
-                    } catch (err) {
-                        this.toast('Approval failed: ' + (err?.message || ''), 'error');
-                    }
-                });
-            });
-
-            wrap.querySelectorAll('.admin-reject-btn').forEach((btn) => {
-                btn.addEventListener('click', async (e) => {
-                    const row = e.target.closest('tr');
-                    if (!row) return;
-                    const id = row.getAttribute('data-submission-id');
-                    const reason = window.prompt('Optional rejection reason:', '') || null;
-                    try {
-                        await DB.adminTabsReviewSubmission(id, 'rejected', reason);
-                        this.toast('Beer submission rejected', 'warning');
-                        await this.renderSubmissionsPanel();
-                    } catch (err) {
-                        this.toast('Rejection failed: ' + (err?.message || ''), 'error');
-                    }
-                });
-            });
-        } catch (err) {
-            wrap.innerHTML = '<p class="empty-state">Failed to load submissions.</p>';
-        }
+        panel.innerHTML = `
+            <div class="admin-panel-wrap">
+                <p class="empty-state">Beer submissions now happen through the rating flow.</p>
+                <p class="empty-state">This section will be used for Happy Hour deal submissions in the future.</p>
+            </div>
+        `;
     },
 
     async renderEconomyPanel() {
