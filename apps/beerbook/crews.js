@@ -5,6 +5,31 @@
         return Utils.escapeHtml(String(v || ''));
     }
 
+    function getJoinCrewErrorMessage(err) {
+        const status = Number(err?.status || 0);
+        const code = String(err?.errorCode || '').trim();
+        if (code === 'ALREADY_MEMBER' || status === 409) return "You're already in this crew.";
+        if (code === 'CREW_FULL') return 'This crew is full (50/50).';
+        if (code === 'CREW_NOT_FOUND' || status === 404) return 'Invite code not found. Ask for the latest code.';
+        if (code === 'INVITE_REQUIRED' || status === 400) return 'Enter a valid 6-character invite code.';
+        if (code === 'AUTH_REQUIRED' || code === 'TOKEN_EXPIRED' || status === 401) return 'Session expired. Please sign in again.';
+        if (code === 'RATE_LIMITED' || status === 429) {
+            const retry = Number(err?.retryAfter || 0);
+            return retry > 0 ? `Too many attempts. Try again in ${retry}s.` : 'Too many attempts. Please try again shortly.';
+        }
+        if (status >= 500) return 'Server error while joining crew. Please try again.';
+        return err?.message || 'Failed to join crew';
+    }
+
+    function shouldClearPendingJoinCode(err) {
+        const status = Number(err?.status || 0);
+        const code = String(err?.errorCode || '').trim();
+        if (code === 'CREW_NOT_FOUND' || code === 'ALREADY_MEMBER' || code === 'CREW_FULL' || code === 'INVITE_REQUIRED') {
+            return true;
+        }
+        return status === 400 || status === 403 || status === 404 || status === 409;
+    }
+
     function ensureCrewTabInLeaderboard() {
         const tabs = document.querySelector('.leaderboard-tabs');
         if (!tabs || tabs.querySelector('[data-period="crew"]')) return;
@@ -173,8 +198,7 @@
             const code = window.prompt('Enter 6-character invite code');
             if (!code) return;
             const joined = await DB.joinCrew(code).catch((e) => {
-                const msg = e?.message || 'Invalid invite code';
-                Utils.toast(msg, 'error');
+                Utils.toast(getJoinCrewErrorMessage(e), 'error');
                 return null;
             });
             if (!joined) return;
@@ -202,15 +226,22 @@
     async function consumePendingJoinCode() {
         const code = sessionStorage.getItem('beerbook_pending_join_code');
         if (!code || !DB.currentUser) return;
-        const joined = await DB.joinCrew(code).catch(() => null);
-        sessionStorage.removeItem('beerbook_pending_join_code');
+        let joinError = null;
+        const joined = await DB.joinCrew(code).catch((err) => {
+            joinError = err;
+            return null;
+        });
         if (joined) {
+            sessionStorage.removeItem('beerbook_pending_join_code');
             Utils.toast('Crew invite accepted', 'success');
             await App.refreshSocialGraph();
             await refreshCrewsView();
             openCrewDetail(joined.id);
         } else {
-            Utils.toast('Invalid invite code', 'error');
+            if (shouldClearPendingJoinCode(joinError)) {
+                sessionStorage.removeItem('beerbook_pending_join_code');
+            }
+            Utils.toast(getJoinCrewErrorMessage(joinError), 'error');
         }
     }
 

@@ -21,6 +21,12 @@ function invalidateCache(prefix) {
     }
 }
 
+function createApiError(message, meta = {}) {
+    const err = new Error(message);
+    Object.assign(err, meta);
+    return err;
+}
+
 const CACHE_TTL = {
     stats: 60000,
     leaderboard: 60000,
@@ -171,6 +177,22 @@ const DB = {
     async _api(method, path, opts = {}) {
         const url = `${this.apiBaseUrl}${path}`;
         const headers = { 'Content-Type': 'application/json', ...opts.headers };
+        const buildError = (res, body, fallbackMessage) => {
+            const retryAfterRaw = res?.headers?.get('Retry-After');
+            const retryAfter = retryAfterRaw != null ? Number(retryAfterRaw) : null;
+            return createApiError(
+                body?.error || body?.message || fallbackMessage || `HTTP ${res?.status || 0}`,
+                {
+                    status: res?.status || 0,
+                    method,
+                    path,
+                    errorCode: body?.error_code || null,
+                    requestId: res?.headers?.get('x-request-id') || body?.request_id || null,
+                    retryAfter: Number.isFinite(retryAfter) ? retryAfter : null,
+                    details: body || null,
+                }
+            );
+        };
         // #region agent log
         fetch('http://127.0.0.1:7669/ingest/dcf85816-3d9a-4023-99e0-099b9beddd82',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7a1905'},body:JSON.stringify({sessionId:'7a1905',runId:'run1',hypothesisId:'H1',location:'supabase.js:_api:entry',message:'about to call api',data:{method,path,apiBaseUrl:this.apiBaseUrl,isDemo:this.isDemo},timestamp:Date.now()})}).catch(()=>{});
         // #endregion
@@ -199,8 +221,10 @@ const DB = {
                 Utils.storage.remove('oidc_tokens');
                 this.currentUser = null;
                 // Consume response body to avoid leaving stream open
-                await res.text().catch(() => null);
-                throw new Error('Session expired. Please sign in again.');
+                const expiredText = await res.text().catch(() => null);
+                let expiredBody = null;
+                try { expiredBody = expiredText ? JSON.parse(expiredText) : null; } catch { expiredBody = null; }
+                throw buildError(res, expiredBody, 'Session expired. Please sign in again.');
             }
         }
         
@@ -212,7 +236,7 @@ const DB = {
             fetch('http://127.0.0.1:7669/ingest/dcf85816-3d9a-4023-99e0-099b9beddd82',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7a1905'},body:JSON.stringify({sessionId:'7a1905',runId:'run1',hypothesisId:'H2',location:'supabase.js:_api:non_ok',message:'api returned non-ok',data:{method,path,status:res.status,error:body?.error||body?.message||null,bodyType:body?typeof body:'null'},timestamp:Date.now()})}).catch(()=>{});
             // #endregion
         }
-        if (!res.ok) throw new Error(body?.error || body?.message || `HTTP ${res.status}`);
+        if (!res.ok) throw buildError(res, body, `HTTP ${res.status}`);
         return body;
     },
 

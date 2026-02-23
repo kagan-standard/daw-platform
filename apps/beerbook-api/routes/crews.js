@@ -13,6 +13,15 @@ function buildInClause(ids) {
   return ids.map((id) => `"${String(id).replace(/"/g, '')}"`).join(',');
 }
 
+function sendError(res, req, status, errorCode, message, extras = {}) {
+  return res.status(status).json({
+    error_code: errorCode,
+    error: message,
+    request_id: req.requestId || null,
+    ...extras,
+  });
+}
+
 async function getMembership(rest, crewId, userId) {
   const out = await rest(
     'GET',
@@ -263,25 +272,53 @@ module.exports = function (opts) {
     try {
       const me = req.claims.sub;
       const invite = String(req.body?.invite_code || '').trim().toUpperCase();
-      if (!invite) return res.status(400).json({ error: 'Invite code is required' });
+      if (!invite) {
+        return sendError(res, req, 400, 'INVITE_REQUIRED', 'Invite code is required');
+      }
 
       const crewRes = await rest('GET', `/crews?invite_code=eq.${encodeURIComponent(invite)}&limit=1`);
-      if (crewRes.status >= 400) return res.status(crewRes.status).json(crewRes.body || { error: 'Upstream error' });
+      if (crewRes.status >= 400) {
+        return sendError(
+          res,
+          req,
+          crewRes.status >= 500 ? 502 : crewRes.status,
+          'UPSTREAM_ERROR',
+          'Failed to validate invite code'
+        );
+      }
       const crew = Array.isArray(crewRes.body) && crewRes.body[0] ? crewRes.body[0] : null;
-      if (!crew) return res.status(404).json({ error: 'Crew not found' });
+      if (!crew) {
+        return sendError(res, req, 404, 'CREW_NOT_FOUND', 'Crew not found');
+      }
 
       const existing = await getMembership(rest, crew.id, me);
-      if (existing) return res.status(409).json({ error: 'Already a member' });
+      if (existing) {
+        return sendError(res, req, 409, 'ALREADY_MEMBER', 'Already a member');
+      }
 
       const countRes = await rest('GET', `/crew_members?crew_id=eq.${encodeURIComponent(crew.id)}&select=user_id`);
       const memberCount = Array.isArray(countRes.body) ? countRes.body.length : 0;
-      if (memberCount >= 50) return res.status(403).json({ error: 'Crew is full (50/50)' });
+      if (memberCount >= 50) {
+        return sendError(res, req, 403, 'CREW_FULL', 'Crew is full (50/50)');
+      }
 
       const joinRes = await rest('POST', '/crew_members', {
         headers: { Prefer: 'return=representation' },
         body: JSON.stringify({ crew_id: crew.id, user_id: me, role: 'member' }),
       });
-      if (joinRes.status >= 400) return res.status(joinRes.status).json(joinRes.body || { error: 'Join failed' });
+      if (joinRes.status >= 400) {
+        const upstreamError = JSON.stringify(joinRes.body || {});
+        if (joinRes.status === 409 || upstreamError.includes('duplicate key')) {
+          return sendError(res, req, 409, 'ALREADY_MEMBER', 'Already a member');
+        }
+        return sendError(
+          res,
+          req,
+          joinRes.status >= 500 ? 502 : joinRes.status,
+          'JOIN_FAILED',
+          'Failed to join crew'
+        );
+      }
 
       res.status(201).json(crew);
     } catch (e) {

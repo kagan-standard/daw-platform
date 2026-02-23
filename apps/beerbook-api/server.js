@@ -4,6 +4,7 @@
  */
 const express = require('express');
 const path = require('path');
+const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
 const { createRemoteJWKSet, jwtVerify } = require('jose');
 const { awardTabsForRating } = require('./lib/tabs');
@@ -57,6 +58,13 @@ function totalFromContentRange(contentRange) {
   return m ? parseInt(m[1], 10) : null;
 }
 
+function requestIdMiddleware(req, res, next) {
+  const headerId = String(req.headers['x-request-id'] || '').trim();
+  req.requestId = headerId || crypto.randomUUID();
+  res.setHeader('x-request-id', req.requestId);
+  next();
+}
+
 // ---------- CORS: only allow CORS_ORIGIN ----------
 function corsMiddleware(req, res, next) {
   const origin = req.headers.origin;
@@ -86,6 +94,7 @@ function corsMiddleware(req, res, next) {
 }
 
 app.use(corsMiddleware);
+app.use(requestIdMiddleware);
 app.use(express.json());
 // Phase 2.1: serve uploaded images (same origin as API)
 app.use('/uploads', express.static(UPLOAD_DIR));
@@ -99,7 +108,12 @@ const limiter = rateLimit({
   handler: (req, res) => {
     const retryAfter = Math.ceil(RATE_WINDOW_MS / 1000);
     res.setHeader('Retry-After', String(retryAfter));
-    res.status(429).json({ error: 'Too Many Requests', retryAfter });
+    res.status(429).json({
+      error_code: 'RATE_LIMITED',
+      error: 'Too Many Requests',
+      retryAfter,
+      request_id: req.requestId || null,
+    });
   },
 });
 app.use('/api', limiter);
@@ -124,7 +138,11 @@ function getJwks() {
 async function authMiddleware(req, res, next) {
   const auth = req.headers.authorization;
   if (!auth || !auth.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Missing or invalid Authorization header' });
+    return res.status(401).json({
+      error_code: 'AUTH_REQUIRED',
+      error: 'Missing or invalid Authorization header',
+      request_id: req.requestId || null,
+    });
   }
   const token = auth.slice(7);
   try {
@@ -136,10 +154,18 @@ async function authMiddleware(req, res, next) {
     const azp = payload.azp;
     const audOk = aud === 'beerbook' || (Array.isArray(aud) && aud.includes('beerbook'));
     if (!audOk) {
-      return res.status(403).json({ error: 'Token audience not allowed' });
+      return res.status(403).json({
+        error_code: 'TOKEN_AUDIENCE_NOT_ALLOWED',
+        error: 'Token audience not allowed',
+        request_id: req.requestId || null,
+      });
     }
     if (azp !== 'beerbook') {
-      return res.status(403).json({ error: 'Token azp not allowed' });
+      return res.status(403).json({
+        error_code: 'TOKEN_AZP_NOT_ALLOWED',
+        error: 'Token azp not allowed',
+        request_id: req.requestId || null,
+      });
     }
     req.claims = {
       sub: payload.sub,
@@ -150,12 +176,24 @@ async function authMiddleware(req, res, next) {
     next();
   } catch (e) {
     if (e.code === 'ERR_JWT_EXPIRED') {
-      return res.status(401).json({ error: 'Token expired' });
+      return res.status(401).json({
+        error_code: 'TOKEN_EXPIRED',
+        error: 'Token expired',
+        request_id: req.requestId || null,
+      });
     }
     if (e.code === 'ERR_JWT_CLAIM_VALIDATION_FAILED') {
-      return res.status(401).json({ error: 'Invalid token claims' });
+      return res.status(401).json({
+        error_code: 'TOKEN_CLAIMS_INVALID',
+        error: 'Invalid token claims',
+        request_id: req.requestId || null,
+      });
     }
-    return res.status(401).json({ error: 'Invalid token' });
+    return res.status(401).json({
+      error_code: 'TOKEN_INVALID',
+      error: 'Invalid token',
+      request_id: req.requestId || null,
+    });
   }
 }
 
