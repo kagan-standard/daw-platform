@@ -2492,6 +2492,7 @@ const App = {
             { phrase: 'Chok dee', lang: 'Thai' },
         ];
 
+        const name = (DB.currentUser.display_name || '').trim() || 'Beer Lover';
         const maxCycles = 11;
         const intervalMs = 5500;
         const animMs = 560;
@@ -2512,7 +2513,7 @@ const App = {
         };
 
         const normalize = (phrase) => {
-            return phrase;
+            return `${phrase}, ${name}!`;
         };
 
         const hashString = (value) => {
