@@ -577,7 +577,43 @@ app.get('/api/catalog/beer/:id', async (req, res) => {
   }
 });
 
-// ---------- Phase 3.9: Brewery map (no auth — public) ----------
+// ---------- Phase 3.9: Brewery map + search (no auth — public) ----------
+// GET /api/breweries/search?q=<term>&limit=<n> — trigram + alias search, min 2 chars
+app.get('/api/breweries/search', async (req, res) => {
+  const q = (req.query.q || '').trim();
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 25);
+  if (q.length < 2) {
+    return res.status(400).json({ error: 'Query q is required and must be at least 2 characters' });
+  }
+  try {
+    const { status, body } = await rest('POST', '/rpc/search_breweries', {
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ search_term: q, max_results: limit }),
+    });
+    if (status >= 400) {
+      return res.status(status >= 500 ? 502 : status).json(body || { error: 'Brewery search failed' });
+    }
+    const rows = Array.isArray(body) ? body : [];
+    const data = rows.map((b) => ({
+      id: b.id,
+      name: b.name ?? null,
+      slug: b.slug ?? null,
+      city: b.city ?? null,
+      state: b.state ?? null,
+      brewery_type: b.brewery_type ?? null,
+      logo_url: b.logo_url ?? null,
+      latitude: b.latitude != null ? Number(b.latitude) : null,
+      longitude: b.longitude != null ? Number(b.longitude) : null,
+      verified: b.verified === true,
+      similarity_score: b.similarity_score != null ? Number(b.similarity_score) : null,
+    }));
+    res.json({ data });
+  } catch (e) {
+    console.error('Brewery search error:', e);
+    res.status(502).json({ error: 'Brewery search failed' });
+  }
+});
+
 // GET /api/breweries/map?bounds=sw_lat,sw_lng,ne_lat,ne_lng — breweries in viewport, max 500
 app.get('/api/breweries/map', async (req, res) => {
   const boundsStr = (req.query.bounds || '').trim();
@@ -980,6 +1016,7 @@ app.post('/api/ratings', authMiddleware, async (req, res) => {
       location_name: record.location_name,
       venue_id: record.venue_id,
       photo_url: record.photo_url,
+      price_cents: record.price_cents ?? null,
     };
     const updateRes = await rest('PATCH', `/ratings?id=eq.${encodeURIComponent(existing.id)}`, {
       headers: { 'Prefer': 'return=representation' },
