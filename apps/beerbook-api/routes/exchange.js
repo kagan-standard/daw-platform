@@ -5,6 +5,8 @@ const express = require('express');
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
+const RATES_DEFAULT_LIMIT = 100;
+const VALID_ORDER_COLUMNS = ['yg_rate', 'avg_stars', 'rating_count', 'beer_name'];
 
 module.exports = function (opts) {
   const { rest, totalFromContentRange } = opts;
@@ -19,7 +21,33 @@ module.exports = function (opts) {
     return { limit, offset };
   }
 
-  // GET /api/exchange — full rate table, paginated
+  // GET /api/exchange/rates — public, full rate table (array), optional order/search
+  router.get('/rates', async (req, res, next) => {
+    try {
+      const orderBy = VALID_ORDER_COLUMNS.includes(req.query.order_by) ? req.query.order_by : 'yg_rate';
+      const direction = req.query.direction === 'asc' ? 'asc' : 'desc';
+      let limit = parseInt(req.query.limit, 10);
+      if (!Number.isFinite(limit) || limit < 1) limit = RATES_DEFAULT_LIMIT;
+      if (limit > MAX_LIMIT) limit = MAX_LIMIT;
+      let offset = parseInt(req.query.offset, 10);
+      if (!Number.isFinite(offset) || offset < 0) offset = 0;
+      const q = (req.query.q || '').trim();
+
+      let path = `/yg_exchange?order=${orderBy}.${direction}&limit=${limit}&offset=${offset}`;
+      if (q) {
+        const term = encodeURIComponent(`*${q}*`);
+        path += `&or=(beer_name.ilike.${term},brewery.ilike.${term})`;
+      }
+
+      const { status, headers, body } = await rest('GET', path, { headers: { Prefer: 'count=exact' } });
+      if (status >= 400) return res.status(status).json(body || { error: 'Upstream error' });
+      res.json(Array.isArray(body) ? body : []);
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // GET /api/exchange — full rate table, paginated (legacy shape)
   router.get('/', (req, res, next) => {
     const { limit, offset } = parsePag(req);
     rest('GET', `/yg_exchange?limit=${limit}&offset=${offset}`, { headers: { Prefer: 'count=exact' } })
@@ -31,17 +59,19 @@ module.exports = function (opts) {
       .catch(next);
   });
 
-  // GET /api/exchange/portfolio/:user_id
-  router.get('/portfolio/:user_id', (req, res, next) => {
-    const uid = encodeURIComponent(req.params.user_id);
-    rest('GET', `/ratings?user_id=eq.${uid}&yg_value=not.is.null&select=id,beer_name,brewery,style,yg_value,rating,created_at`)
-      .then(({ status, body }) => {
-        if (status >= 400) return res.status(status).json(body || { error: 'Upstream error' });
-        const ratings = Array.isArray(body) ? body : [];
-        const totalPortfolioValue = ratings.reduce((sum, r) => sum + (Number(r.yg_value) || 0), 0);
-        res.json({ ratings, total_portfolio_value: Math.round(totalPortfolioValue * 100) / 100 });
-      })
-      .catch(next);
+  // GET /api/exchange/portfolio/:user_id — public, user's YG-rated beers with community rate
+  router.get('/portfolio/:user_id', async (req, res, next) => {
+    try {
+      const userId = req.params.user_id;
+      const { status, body } = await rest('POST', '/rpc/exchange_portfolio', {
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target_user_id: userId }),
+      });
+      if (status >= 400) return res.status(status).json(body || { error: 'Upstream error' });
+      res.json(Array.isArray(body) ? body : []);
+    } catch (e) {
+      next(e);
+    }
   });
 
   // GET /api/exchange/:beer_name — single beer YG rate + cross-rates vs top 10
