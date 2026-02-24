@@ -1109,6 +1109,38 @@ async function handleProfileRequest(req, res) {
 app.get('/api/profile', authMiddleware, handleProfileRequest);
 app.get('/api/profile/me', authMiddleware, handleProfileRequest);
 
+// GET /api/stats/me — auth required, enhanced user stats (flavors, style_distribution, etc.)
+app.get('/api/stats/me', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.claims.sub;
+    const { status, body } = await rest('POST', '/rpc/user_enhanced_stats', {
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target_user_id: userId }),
+    });
+    if (status >= 400) return res.status(status).json(body || { error: 'Upstream error' });
+    res.json(body != null ? body : {});
+  } catch (err) {
+    console.error('Stats error:', err);
+    res.status(500).json({ error: 'Failed to fetch stats' });
+  }
+});
+
+// GET /api/stats/:userId — public, enhanced stats for specified user
+app.get('/api/stats/:userId', async (req, res) => {
+  try {
+    const userId = req.params.userId;
+    const { status, body } = await rest('POST', '/rpc/user_enhanced_stats', {
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target_user_id: userId }),
+    });
+    if (status >= 400) return res.status(status).json(body || { error: 'Upstream error' });
+    res.json(body != null ? body : {});
+  } catch (err) {
+    console.error('Stats error:', err);
+    res.status(500).json({ error: 'Failed to fetch stats' });
+  }
+});
+
 // GET /api/stats — public, paginated (beer_averages + summary counts)
 // BUG FIX #4: Use count=exact on beer_averages to get accurate totalBeers
 app.get('/api/stats', softAuthMiddleware, async (req, res) => {
@@ -1182,6 +1214,21 @@ app.get('/api/stats', softAuthMiddleware, async (req, res) => {
       totalUsers,
     },
   });
+});
+
+// Multer error handling (for upload routes)
+const multer = require('multer');
+app.use((err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({ error: 'File too large. Maximum size is 10MB.' });
+    }
+    return res.status(400).json({ error: err.message || 'Upload failed' });
+  }
+  if (err && err.message && err.message.includes('Invalid file type')) {
+    return res.status(400).json({ error: err.message });
+  }
+  next(err);
 });
 
 // ---------- Startup ----------
