@@ -1126,9 +1126,18 @@ const App = {
         const hintEl = document.getElementById('autocomplete-hint');
         const beerIdInput = document.getElementById('rating-beer-id');
         if (!input || !dropdown) return;
-        // Prevent blur from destroying dropdown before click can fire
+        // --- Blur-safe dropdown interaction ---
+        let _dropdownActive = false;
+        // Desktop: preventDefault on mousedown keeps focus on input, blur never fires
         dropdown.addEventListener('mousedown', (e) => e.preventDefault());
-        dropdown.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
+        // Mobile: do NOT preventDefault on touchstart (that kills the click).
+        // Instead, set a flag so the blur handler knows to skip clearing.
+        dropdown.addEventListener('touchstart', () => {
+            _dropdownActive = true;
+        }, { passive: true });
+        dropdown.addEventListener('touchend', () => {
+            setTimeout(() => { _dropdownActive = false; }, 400);
+        }, { passive: true });
         let debounceTimer;
         input.addEventListener('input', () => {
             clearTimeout(debounceTimer);
@@ -1236,6 +1245,7 @@ const App = {
         });
         input.addEventListener('blur', () => {
             setTimeout(() => {
+                if (_dropdownActive) return; // user is tapping a dropdown item, don't clear
                 dropdown.innerHTML = '';
                 dropdown.setAttribute('aria-hidden', 'true');
                 if (hintEl) hintEl.style.display = 'none';
@@ -1524,9 +1534,15 @@ const App = {
         const input = document.getElementById('beer-brewery');
         const dropdown = document.getElementById('brewery-autocomplete');
         if (!input || !dropdown) return;
-        // Prevent blur from destroying dropdown before click can fire
+        // --- Blur-safe dropdown interaction ---
+        let _dropdownActive = false;
         dropdown.addEventListener('mousedown', (e) => e.preventDefault());
-        dropdown.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
+        dropdown.addEventListener('touchstart', () => {
+            _dropdownActive = true;
+        }, { passive: true });
+        dropdown.addEventListener('touchend', () => {
+            setTimeout(() => { _dropdownActive = false; }, 400);
+        }, { passive: true });
         let debounceTimer;
         input.addEventListener('input', () => {
             clearTimeout(debounceTimer);
@@ -1562,7 +1578,13 @@ const App = {
                 }
             }, 300);
         });
-        input.addEventListener('blur', () => { setTimeout(() => { dropdown.innerHTML = ''; dropdown.setAttribute('aria-hidden', 'true'); }, 150); });
+        input.addEventListener('blur', () => {
+            setTimeout(() => {
+                if (_dropdownActive) return;
+                dropdown.innerHTML = '';
+                dropdown.setAttribute('aria-hidden', 'true');
+            }, 150);
+        });
         input.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') { dropdown.innerHTML = ''; dropdown.setAttribute('aria-hidden', 'true'); }
         });
@@ -1573,9 +1595,15 @@ const App = {
         const dropdown = document.getElementById('venue-suggestions');
         const picker = document.getElementById('venue-picker');
         if (!input || !dropdown) return;
-        // Prevent blur from destroying dropdown before click can fire
+        // --- Blur-safe dropdown interaction ---
+        let _dropdownActive = false;
         dropdown.addEventListener('mousedown', (e) => e.preventDefault());
-        dropdown.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
+        dropdown.addEventListener('touchstart', () => {
+            _dropdownActive = true;
+        }, { passive: true });
+        dropdown.addEventListener('touchend', () => {
+            setTimeout(() => { _dropdownActive = false; }, 400);
+        }, { passive: true });
         let debounceTimer;
 
         input.addEventListener('input', () => {
@@ -1649,6 +1677,15 @@ const App = {
                     console.warn('Location search failed:', err);
                 }
             }, 500); // 500ms debounce to respect Nominatim rate limit
+        });
+
+        input.addEventListener('blur', () => {
+            setTimeout(() => {
+                if (_dropdownActive) return;
+                dropdown.innerHTML = '';
+                dropdown.setAttribute('aria-hidden', 'true');
+                if (picker) picker.style.display = 'none';
+            }, 150);
         });
 
         // Close dropdown when clicking outside
