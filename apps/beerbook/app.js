@@ -778,23 +778,16 @@ const App = {
             const locationName = document.getElementById('rating-location-name').value.trim() || null;
             let venueId = document.getElementById('rating-venue-id').value || null;
             const venueType = document.getElementById('rating-venue-type')?.value || null;
-            
-            // Handle pending venue creation from Overpass selection
+
+            // Don't create venue client-side — server handles venue resolution (single source of truth).
+            // For pending-venue (Overpass selection), pass venue_type so server can set it when creating.
+            let resolvedVenueType = venueType;
             const pendingVenueData = document.getElementById('rating-venue-id').getAttribute('data-pending-venue');
-            if (pendingVenueData && !venueId && lat && lng) {
+            if (!resolvedVenueType && pendingVenueData) {
                 try {
-                    const venueData = JSON.parse(pendingVenueData);
-                    const venue = await DB.createVenue({
-                        name: venueData.name,
-                        latitude: venueData.latitude,
-                        longitude: venueData.longitude,
-                        address: venueData.address || null,
-                        venue_type: venueData.venue_type || venueType || null
-                    });
-                    venueId = venue && venue.id ? venue.id : null;
-                } catch (err) {
-                    console.warn('Failed to create venue from Overpass data:', err);
-                }
+                    const parsed = JSON.parse(pendingVenueData);
+                    resolvedVenueType = parsed.venue_type || null;
+                } catch (_) {}
             }
 
             let photoUrl = null;
@@ -831,6 +824,7 @@ const App = {
                 longitude: lng,
                 location_name: locationName,
                 venue_id: venueId,
+                venue_type: resolvedVenueType || null,
                 photo_url: photoUrl
             };
 
@@ -866,17 +860,19 @@ const App = {
                         App.toast('Please enter a valid price (e.g. 6.50)', 'error');
                     } else {
                         try {
-                            if (!venueId) {
+                            // Use venue_id from form (existing DAW match) or from rating response (server resolved/created)
+                            let venueIdForPrice = venueId || (result && result.data && result.data.venue_id) || null;
+                            if (!venueIdForPrice) {
                                 const venue = await DB.createVenue({
                                     name: locationName,
                                     latitude: lat,
                                     longitude: lng,
-                                    venue_type: venueType
+                                    venue_type: resolvedVenueType || venueType
                                 });
-                                venueId = venue && venue.id ? venue.id : null;
+                                venueIdForPrice = venue && venue.id ? venue.id : null;
                             }
-                            if (venueId) {
-                                await DB.addVenuePrice(venueId, { beer_name: rating.beerName, style: rating.style, price_cents: cents, is_happy_hour: priceHappy });
+                            if (venueIdForPrice) {
+                                await DB.addVenuePrice(venueIdForPrice, { beer_name: rating.beerName, style: rating.style, price_cents: cents, is_happy_hour: priceHappy });
                                 App.toast('Price logged', 'success');
                             }
                         } catch (err) {

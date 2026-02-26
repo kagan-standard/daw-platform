@@ -562,6 +562,7 @@ const DB = {
             longitude: record.longitude,
             location_name: record.location_name,
             venue_id: record.venue_id,
+            venue_type: rating.venue_type ?? null,
             photo_url: record.photo_url,
             beer_id: record.beer_id,
         };
