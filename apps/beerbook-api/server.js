@@ -1045,6 +1045,7 @@ app.post('/api/ratings', authMiddleware, async (req, res) => {
   const tabsResult = await awardTabsForRating(rest, sub, row?.id || null, row || record, {
     displayName: preferred_username,
     email: req.claims.email,
+    isAdmin: isAdmin(sub),
   }, isNewBeer);
   res.status(201).json({
     data: row || record,

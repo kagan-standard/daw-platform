@@ -117,7 +117,8 @@ async function patchUserTabsProfile(rest, userId, patch) {
 
 async function awardTabsForRating(rest, userId, ratingId, ratingData, profileDefaults = {}, isNewBeer = false) {
   const profile = await ensureUserTabsProfile(rest, userId, profileDefaults);
-  if ((profile.ratings_this_week || 0) >= 10) {
+  const skipCap = profileDefaults.isAdmin === true;
+  if (!skipCap && (profile.ratings_this_week || 0) >= 10) {
     return {
       tabs_earned: 0,
       reason: 'weekly_cap',
