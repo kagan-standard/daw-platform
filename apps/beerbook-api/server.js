@@ -834,6 +834,7 @@ app.post('/api/ratings', authMiddleware, async (req, res) => {
   const latNum = lat != null ? Number(lat) : null;
   const lngNum = lng != null ? Number(lng) : null;
   const locationName = toMaybeTrimmedString(b.location_name ?? b.locationName);
+  const venueType = toMaybeTrimmedString(b.venue_type ?? b.venueType);
   let resolvedVenueId = b.venue_id ?? b.venueId ?? null;
   const priceCentsRaw = b.price_cents ?? b.priceCents ?? null;
   const incomingBeerName = toMaybeTrimmedString(b.beer_name || b.beerName);
@@ -908,6 +909,7 @@ app.post('/api/ratings', authMiddleware, async (req, res) => {
             latitude: latNum,
             longitude: lngNum,
             created_by: sub,
+            venue_type: venueType || null,
           }),
         });
         if (venueRes.status < 400 && Array.isArray(venueRes.body) && venueRes.body[0]?.id) {
