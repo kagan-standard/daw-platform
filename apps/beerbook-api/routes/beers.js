@@ -23,8 +23,25 @@ module.exports = function (opts) {
     return { limit, offset, sort, order };
   }
 
-  // GET /api/beers — paginated from beer_averages
+  // GET /api/beers — with q: catalog search via search_beer_catalog(); without q: paginated from beer_averages
   router.get('/', (req, res, next) => {
+    const q = (req.query.q || '').trim();
+    if (q) {
+      let limit = parseInt(req.query.limit, 10);
+      if (!Number.isFinite(limit) || limit < 1) limit = 10;
+      if (limit > 50) limit = 50;
+      rest('POST', '/rpc/search_beer_catalog', {
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ search_term: q, max_results: limit }),
+      })
+        .then(({ status, body }) => {
+          if (status >= 400) return res.status(status >= 500 ? 502 : status).json(body || { error: 'Catalog search failed' });
+          const data = Array.isArray(body) ? body : [];
+          res.json({ data, pagination: { limit, offset: 0, total: data.length } });
+        })
+        .catch(next);
+      return;
+    }
     const { limit, offset, sort, order } = parseBeerPagination(req);
     const orderDir = order === 'asc' ? 'asc' : 'desc';
     rest('GET', `/beer_averages?limit=${limit}&offset=${offset}&order=${sort}.${orderDir}`, {
@@ -38,52 +55,25 @@ module.exports = function (opts) {
       .catch(next);
   });
 
-  // GET /api/beers/search?q=X — autocomplete from catalog (ref_beers/beers), top 10 unique beers
-  router.get('/search', (req, res) => {
-    const q = (req.query.q || '').trim().replace(/[%*]/g, '');
-    if (!q || q.length < 2) return res.json({ data: [] });
+  // GET /api/beers/search?q=X — autocomplete from catalog via search_beer_catalog() (trigram + prefix)
+  router.get('/search', (req, res, next) => {
+    const q = (req.query.q || '').trim();
+    if (!q) return res.json({ data: [], pagination: { limit: 10, offset: 0, total: 0 } });
 
-    const like = encodeURIComponent(`*${q}*`);
-    const url = `/beers?or=(name.ilike.${like},brewery_name.ilike.${like})&select=id,name,brewery_name,style,abv,review_overall,review_count&order=review_count.desc.nullslast,name.asc&limit=50`;
+    let limit = parseInt(req.query.limit, 10);
+    if (!Number.isFinite(limit) || limit < 1) limit = 10;
+    if (limit > 50) limit = 50;
 
-    rest('GET', url, {})
+    rest('POST', '/rpc/search_beer_catalog', {
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ search_term: q, max_results: limit }),
+    })
       .then(({ status, body }) => {
-        if (status >= 400) return res.json({ data: [] });
-
-        let rows = [];
-        if (Array.isArray(body)) {
-          rows = body;
-        } else if (body && Array.isArray(body.data)) {
-          rows = body.data;
-        }
-
-        const seen = new Set();
-        const deduped = [];
-        for (const row of rows) {
-          const name = (row.name || row.beer_name || '').trim();
-          if (!name) continue;
-          const key = name.toLowerCase();
-          if (seen.has(key)) continue;
-          seen.add(key);
-          deduped.push({
-            id: row.id || null,
-            beer_name: name,
-            brewery: (row.brewery_name || row.brewery || '').trim(),
-            style: (row.style || '').trim(),
-            abv: row.abv != null ? Number(row.abv) : null,
-            review_overall: row.review_overall != null ? Number(row.review_overall) : null,
-            review_count: row.review_count != null ? Number(row.review_count) : 0,
-            source: 'catalog',
-          });
-          if (deduped.length >= 10) break;
-        }
-
-        return res.json({ data: deduped });
+        if (status >= 400) return res.status(status >= 500 ? 502 : status).json(body || { error: 'Catalog search failed' });
+        const data = Array.isArray(body) ? body : [];
+        res.json({ data, pagination: { limit, offset: 0, total: data.length } });
       })
-      .catch((err) => {
-        console.error('Beer search error:', err.message);
-        return res.json({ data: [] });
-      });
+      .catch(next);
   });
 
   // GET /api/beers/:name — single beer: aggregated + all ratings + price history
