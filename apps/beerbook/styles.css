@@ -2572,6 +2572,45 @@ input, select, textarea, button {
     display: flex;
     gap: 8px;
 }
+/* ============ SERVE TYPE PILLS (Rating Form) ============ */
+.serve-type-group .label-hint {
+    font-weight: 400;
+    color: var(--text-muted);
+}
+.serve-type-picker {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-xs);
+}
+.serve-type-opt {
+    background: none;
+    border: 2px solid transparent;
+    border-radius: 9999px;
+    padding: 2px;
+    cursor: pointer;
+    transition: border-color 0.2s var(--ease-out);
+}
+.serve-type-opt:hover {
+    border-color: var(--border-default);
+}
+.serve-type-opt.selected .serve-type-pill {
+    background: var(--gold-subtle);
+    color: var(--gold);
+    border-color: rgba(244, 178, 35, 0.4);
+}
+.serve-type-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 10px;
+    border-radius: 9999px;
+    font-size: 12px;
+    font-weight: 500;
+    border: 1px solid var(--border-subtle);
+    background: var(--bg-elevated);
+    color: var(--text-secondary);
+    transition: background 0.2s var(--ease-out), color 0.2s var(--ease-out), border-color 0.2s var(--ease-out);
+}
+
 .venue-type-opt {
     background: none;
     border: 2px solid transparent;

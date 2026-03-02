@@ -525,6 +525,7 @@ const DB = {
             venue_id: rating.venue_id ?? null,
             photo_url: rating.photo_url ?? null,
             beer_id: rating.beer_id ?? null,
+            serve_type: rating.serve_type ?? null,
         };
         if (this.isDemo) {
             const rev = {
@@ -537,7 +538,7 @@ const DB = {
                 notes: record.notes || '', created_at: new Date().toISOString(),
                 yg_value: record.yg_value, latitude: record.latitude, longitude: record.longitude,
                 location_name: record.location_name, venue_id: record.venue_id, photo_url: record.photo_url,
-                beer_id: record.beer_id || null
+                beer_id: record.beer_id || null, serve_type: record.serve_type ?? null
             };
             const reviews = Utils.storage.get('reviews', []);
             reviews.unshift(rev);
@@ -565,6 +566,7 @@ const DB = {
             venue_type: rating.venue_type ?? null,
             photo_url: record.photo_url,
             beer_id: record.beer_id,
+            serve_type: record.serve_type ?? null,
         };
         const response = await this._api('POST', '/api/ratings', { body: JSON.stringify(body) });
         invalidateCache('');

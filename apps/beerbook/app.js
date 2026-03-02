@@ -825,7 +825,8 @@ const App = {
                 location_name: locationName,
                 venue_id: venueId,
                 venue_type: resolvedVenueType || null,
-                photo_url: photoUrl
+                photo_url: photoUrl,
+                serve_type: document.getElementById('rating-serve-type')?.value?.trim() || null
             };
 
             try {
@@ -944,6 +945,15 @@ const App = {
                 document.querySelectorAll('.venue-type-opt').forEach((b) => b.classList.remove('selected'));
                 btn.classList.add('selected');
                 document.getElementById('rating-venue-type').value = btn.dataset.type;
+            });
+        });
+        document.querySelectorAll('.serve-type-opt').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const value = btn.getAttribute('data-serve-type') || '';
+                const hidden = document.getElementById('rating-serve-type');
+                if (hidden) hidden.value = value;
+                document.querySelectorAll('.serve-type-opt').forEach((b) => b.classList.remove('selected'));
+                if (value) btn.classList.add('selected');
             });
         });
 
@@ -1498,6 +1508,12 @@ const App = {
             const yg = (existing.yg_value != null && Number(existing.yg_value) > 0) ? Number(existing.yg_value) : 0;
             App._ygSetValue(yg);
         }
+        const serveType = (existing.serve_type || '').toString().toLowerCase();
+        const serveTypeHidden = document.getElementById('rating-serve-type');
+        if (serveTypeHidden) serveTypeHidden.value = serveType;
+        document.querySelectorAll('.serve-type-opt').forEach((b) => {
+            b.classList.toggle('selected', (b.getAttribute('data-serve-type') || '') === serveType);
+        });
     },
 
     _handleSelectedBeerExistingRatings(beerId, beerName) {
@@ -3821,6 +3837,9 @@ const App = {
         document.getElementById('price-log-toggle').setAttribute('aria-expanded', 'false');
         document.getElementById('rating-venue-type').value = '';
         document.querySelectorAll('.venue-type-opt').forEach((b) => b.classList.remove('selected'));
+        const serveTypeEl = document.getElementById('rating-serve-type');
+        if (serveTypeEl) serveTypeEl.value = '';
+        document.querySelectorAll('.serve-type-opt').forEach((b) => b.classList.remove('selected'));
         const picker = document.getElementById('venue-type-picker');
         if (picker) picker.style.display = 'none';
         if (this._pendingPhotoPreviewUrl) {

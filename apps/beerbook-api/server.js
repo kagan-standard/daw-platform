@@ -837,6 +837,11 @@ app.post('/api/ratings', authMiddleware, async (req, res) => {
   const venueType = toMaybeTrimmedString(b.venue_type ?? b.venueType);
   let resolvedVenueId = b.venue_id ?? b.venueId ?? null;
   const priceCentsRaw = b.price_cents ?? b.priceCents ?? null;
+  const serveTypeRaw = toMaybeTrimmedString(b.serve_type ?? b.serveType);
+  const VALID_SERVE_TYPES = ['draft', 'can', 'bottle', 'crowler', 'growler', 'nitro'];
+  if (serveTypeRaw && !VALID_SERVE_TYPES.includes(serveTypeRaw)) {
+    return res.status(400).json({ error: 'Invalid serve_type. Must be one of: draft, can, bottle, crowler, growler, nitro' });
+  }
   const incomingBeerName = toMaybeTrimmedString(b.beer_name || b.beerName);
   const incomingBrewery = toMaybeTrimmedString(b.brewery);
   const incomingStyle = toMaybeTrimmedString(b.style);
@@ -942,6 +947,7 @@ app.post('/api/ratings', authMiddleware, async (req, res) => {
     photo_url: b.photo_url ?? b.photoUrl ?? null,
     beer_id: incomingBeerId,
     price_cents: priceCentsRaw != null ? Number(priceCentsRaw) : null,
+    serve_type: serveTypeRaw || null,
   };
   if (!record.beer_name || record.rating == null) {
     return res.status(400).json({ error: 'beer_name and rating required' });
@@ -1019,6 +1025,7 @@ app.post('/api/ratings', authMiddleware, async (req, res) => {
       venue_id: record.venue_id,
       photo_url: record.photo_url,
       price_cents: record.price_cents ?? null,
+      serve_type: record.serve_type ?? null,
     };
     const updateRes = await rest('PATCH', `/ratings?id=eq.${encodeURIComponent(existing.id)}`, {
       headers: { 'Prefer': 'return=representation' },
