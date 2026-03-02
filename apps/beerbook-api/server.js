@@ -1084,6 +1084,91 @@ app.delete('/api/ratings/:id', authMiddleware, async (req, res) => {
   res.status(204).end();
 });
 
+// GET /api/ratings/:id/comments — public, paginated, newest first
+app.get('/api/ratings/:id/comments', async (req, res) => {
+  const id = encodeURIComponent(req.params.id);
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 100);
+  const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
+
+  const path = `/rating_comments?rating_id=eq.${id}&order=created_at.desc&limit=${limit}&offset=${offset}`;
+  const { status, body } = await rest('GET', path);
+  if (status >= 400) {
+    return res.status(status >= 500 ? 502 : status).json(body || { error: 'Failed to fetch comments' });
+  }
+  res.json({ data: Array.isArray(body) ? body : [] });
+});
+
+// POST /api/ratings/:id/comments — auth required, creates comment and increments comment_count
+app.post('/api/ratings/:id/comments', authMiddleware, async (req, res) => {
+  const id = encodeURIComponent(req.params.id);
+  const { body: bodyText } = req.body || {};
+  const userId = req.claims.sub;
+  const userName = req.claims.preferred_username || 'Unknown';
+
+  if (!bodyText || String(bodyText).trim().length === 0) {
+    return res.status(400).json({ error: 'Comment body is required' });
+  }
+  const trimmed = String(bodyText).trim();
+  if (trimmed.length > 500) {
+    return res.status(400).json({ error: 'Comment must be 500 characters or less' });
+  }
+
+  const { status: ratingStatus, body: ratingRow } = await rest('GET', `/ratings?id=eq.${id}&select=id&limit=1`);
+  if (ratingStatus >= 400 || !Array.isArray(ratingRow) || ratingRow.length === 0) {
+    return res.status(404).json({ error: 'Rating not found' });
+  }
+
+  const insertPayload = {
+    rating_id: id,
+    user_id: userId,
+    user_name: userName,
+    body: trimmed,
+  };
+  const { status: insertStatus, body: comment } = await rest('POST', '/rating_comments', {
+    headers: { Prefer: 'return=representation' },
+    body: JSON.stringify(insertPayload),
+  });
+  if (insertStatus >= 400) {
+    return res.status(insertStatus >= 500 ? 502 : insertStatus).json(comment || { error: 'Failed to create comment' });
+  }
+
+  await rest('POST', '/rpc/increment_comment_count', {
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ rating_id_input: id }),
+  });
+
+  const row = Array.isArray(comment) ? comment[0] : comment;
+  res.status(201).json({ data: row || insertPayload });
+});
+
+// DELETE /api/ratings/:id/comments/:commentId — auth required, author only, decrements comment_count
+app.delete('/api/ratings/:id/comments/:commentId', authMiddleware, async (req, res) => {
+  const id = encodeURIComponent(req.params.id);
+  const commentId = encodeURIComponent(req.params.commentId);
+  const userId = req.claims.sub;
+
+  const { status: fetchStatus, body: commentRows } = await rest('GET', `/rating_comments?id=eq.${commentId}&rating_id=eq.${id}&limit=1`);
+  if (fetchStatus >= 400 || !Array.isArray(commentRows) || commentRows.length === 0) {
+    return res.status(404).json({ error: 'Comment not found' });
+  }
+  const comment = commentRows[0];
+  if (comment.user_id !== userId) {
+    return res.status(403).json({ error: 'You can only delete your own comments' });
+  }
+
+  const { status: deleteStatus } = await rest('DELETE', `/rating_comments?id=eq.${commentId}`);
+  if (deleteStatus >= 400) {
+    return res.status(502).json({ error: 'Failed to delete comment' });
+  }
+
+  await rest('POST', '/rpc/decrement_comment_count', {
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ rating_id_input: id }),
+  });
+
+  res.status(200).json({ success: true });
+});
+
 // GET /api/profile and /api/profile/me — auth required, get or create
 // BUG FIX #5: Added Prefer: return=representation on profile creation
 async function handleProfileRequest(req, res) {
