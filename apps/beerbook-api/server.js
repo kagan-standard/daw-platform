@@ -107,6 +107,54 @@ async function attachCheersDataToRatings(ratings, requester = null) {
   });
 }
 
+async function attachRatingAchievementDataToRatings(ratings) {
+  if (!Array.isArray(ratings) || !ratings.length) return ratings;
+  const ratingIds = [...new Set(ratings.map((r) => String(r?.id || '').trim()).filter(Boolean))];
+  const userIds = [...new Set(ratings.map((r) => String(r?.user_id || '').trim()).filter(Boolean))];
+  if (!ratingIds.length || !userIds.length) return ratings;
+
+  const usersList = userIds.map((id) => encodeURIComponent(id)).join(',');
+  if (!usersList) return ratings;
+
+  const uaRes = await rest(
+    'GET',
+    `/user_achievements?user_id=in.(${usersList})&select=user_id,achievement_id,context,unlocked_at&order=unlocked_at.desc&limit=20000`
+  );
+  if (uaRes.status >= 400) return ratings;
+
+  const rows = Array.isArray(uaRes.body) ? uaRes.body : [];
+  const ratingIdSet = new Set(ratingIds);
+  const byRatingId = Object.create(null);
+  rows.forEach((row) => {
+    const context = row?.context && typeof row.context === 'object' ? row.context : {};
+    const ratingId = String(context.rating_id || '').trim();
+    const userId = String(row?.user_id || '').trim();
+    const achievementId = row?.achievement_id;
+    if (!ratingId || !userId || !achievementId) return;
+    if (!ratingIdSet.has(ratingId)) return;
+    if (!byRatingId[ratingId]) byRatingId[ratingId] = [];
+    byRatingId[ratingId].push({ user_id: userId, achievement_id: achievementId });
+  });
+
+  return ratings.map((rating) => {
+    const ratingId = String(rating?.id || '').trim();
+    const ratingUserId = String(rating?.user_id || '').trim();
+    const existingIds = Array.isArray(rating?.earned_achievement_ids)
+      ? rating.earned_achievement_ids.filter(Boolean)
+      : [];
+    const derivedIds = (byRatingId[ratingId] || [])
+      .filter((row) => row.user_id === ratingUserId)
+      .map((row) => row.achievement_id)
+      .filter(Boolean);
+    const mergedIds = [...new Set([...existingIds, ...derivedIds])];
+    return {
+      ...rating,
+      earned_achievement_ids: mergedIds,
+      achievement_id: rating?.achievement_id || mergedIds[0] || null,
+    };
+  });
+}
+
 function requestIdMiddleware(req, res, next) {
   const headerId = String(req.headers['x-request-id'] || '').trim();
   req.requestId = headerId || crypto.randomUUID();
@@ -793,7 +841,8 @@ app.get('/api/ratings', softAuthMiddleware, validateSort, async (req, res) => {
     }
     const total = filtered.length;
     const page = filtered.slice(offset, offset + limit);
-    const data = await attachCheersDataToRatings(page, requester);
+    const withCheers = await attachCheersDataToRatings(page, requester);
+    const data = await attachRatingAchievementDataToRatings(withCheers);
     return res.json({
       data,
       pagination: { limit, offset, total },
@@ -807,7 +856,8 @@ app.get('/api/ratings', softAuthMiddleware, validateSort, async (req, res) => {
   if (status >= 400) {
     return res.status(status).json(body || { error: 'Upstream error' });
   }
-  const enriched = await attachCheersDataToRatings(Array.isArray(body) ? body : [], requester);
+  const withCheers = await attachCheersDataToRatings(Array.isArray(body) ? body : [], requester);
+  const enriched = await attachRatingAchievementDataToRatings(withCheers);
   res.json({
     data: enriched,
     pagination: { limit, offset, total },
@@ -826,8 +876,9 @@ app.get('/api/ratings/user/:id', validateSort, async (req, res) => {
   if (status >= 400) {
     return res.status(status).json(body || { error: 'Upstream error' });
   }
+  const enriched = await attachRatingAchievementDataToRatings(Array.isArray(body) ? body : []);
   res.json({
-    data: Array.isArray(body) ? body : [],
+    data: enriched,
     pagination: { limit, offset, total },
   });
 });

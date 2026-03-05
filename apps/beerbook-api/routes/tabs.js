@@ -10,6 +10,10 @@ function toBool(value) {
   return value === true || value === 'true' || value === 1 || value === '1';
 }
 
+function normalizeStyle(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
 module.exports = function tabsRoutes(opts) {
   const router = express.Router();
   const { rest, authMiddleware, adminMiddleware, totalFromContentRange } = opts;
@@ -50,21 +54,139 @@ module.exports = function tabsRoutes(opts) {
   router.get('/achievements', authMiddleware, async (req, res, next) => {
     try {
       const userId = encodeURIComponent(req.claims.sub);
-      const uaRes = await rest('GET', `/user_achievements?user_id=eq.${userId}&select=achievement_id`);
+      const uaRes = await rest(
+        'GET',
+        `/user_achievements?user_id=eq.${userId}&select=achievement_id,unlocked_at&order=unlocked_at.desc`
+      );
       if (uaRes.status >= 400) return res.status(uaRes.status).json(uaRes.body || { error: 'Upstream error' });
       const rows = Array.isArray(uaRes.body) ? uaRes.body : [];
       if (rows.length === 0) return res.json({ data: [] });
       const ids = rows.map((r) => r.achievement_id).filter(Boolean);
       const idList = ids.map((id) => encodeURIComponent(id)).join(',');
-      const aRes = await rest('GET', `/achievements?id=in.(${idList})&select=id,key,name,reward_tabs`);
+      const aRes = await rest(
+        'GET',
+        `/achievements?id=in.(${idList})&select=id,key,name,description,reward_tabs,category_key`
+      );
       if (aRes.status >= 400) return res.status(aRes.status).json(aRes.body || { error: 'Upstream error' });
       const achievements = Array.isArray(aRes.body) ? aRes.body : [];
       const byId = Object.fromEntries(achievements.map((a) => [a.id, a]));
-      const data = ids.map((id) => {
-        const a = byId[id];
-        return a ? { key: a.key, name: a.name, reward_tabs: Number(a.reward_tabs) || 0 } : null;
+      const categoryKeys = [...new Set(achievements.map((a) => a.category_key).filter(Boolean))];
+      let iconByCategory = Object.create(null);
+      if (categoryKeys.length) {
+        const keyList = categoryKeys.map((key) => encodeURIComponent(key)).join(',');
+        const categoryRes = await rest('GET', `/achievement_categories?key=in.(${keyList})&select=key,icon`);
+        if (categoryRes.status < 400) {
+          const categories = Array.isArray(categoryRes.body) ? categoryRes.body : [];
+          iconByCategory = Object.fromEntries(
+            categories.map((row) => [row.key, row.icon || null])
+          );
+        }
+      }
+      const data = rows.map((row) => {
+        const a = byId[row.achievement_id];
+        if (!a) return null;
+        return {
+          id: a.id,
+          achievement_id: a.id,
+          key: a.key,
+          name: a.name,
+          description: a.description || '',
+          reward_tabs: Number(a.reward_tabs) || 0,
+          earned_at: row.unlocked_at || null,
+          icon_url: iconByCategory[a.category_key] || null,
+        };
       }).filter(Boolean);
       res.json({ data });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // GET /api/achievements/next — optional next-achievement nudge data for current user
+  router.get('/achievements/next', authMiddleware, async (req, res, next) => {
+    try {
+      const userIdRaw = String(req.claims.sub || '').trim();
+      if (!userIdRaw) return res.status(400).json({ error: 'Missing user id' });
+      const userId = encodeURIComponent(userIdRaw);
+      const [unlockedRes, allRes, ratingsRes] = await Promise.all([
+        rest('GET', `/user_achievements?user_id=eq.${userId}&select=achievement_id`),
+        rest(
+          'GET',
+          '/achievements?active=eq.true&trigger_type=eq.rating_submitted&select=id,key,name,description,subtype,rules,category_key'
+        ),
+        rest('GET', `/ratings?user_id=eq.${userId}&select=style&limit=5000`),
+      ]);
+      if (unlockedRes.status >= 400) return res.status(unlockedRes.status).json(unlockedRes.body || { error: 'Upstream error' });
+      if (allRes.status >= 400) return res.status(allRes.status).json(allRes.body || { error: 'Upstream error' });
+      if (ratingsRes.status >= 400) return res.status(ratingsRes.status).json(ratingsRes.body || { error: 'Upstream error' });
+
+      const unlockedIds = new Set(
+        (Array.isArray(unlockedRes.body) ? unlockedRes.body : [])
+          .map((row) => row?.achievement_id)
+          .filter(Boolean)
+      );
+      const ratings = Array.isArray(ratingsRes.body) ? ratingsRes.body : [];
+      const totalRatings = ratings.length;
+      const styleCounts = ratings.reduce((acc, row) => {
+        const key = normalizeStyle(row?.style);
+        if (!key) return acc;
+        acc[key] = (acc[key] || 0) + 1;
+        return acc;
+      }, {});
+
+      const candidates = (Array.isArray(allRes.body) ? allRes.body : [])
+        .filter((a) => a && a.id && !unlockedIds.has(a.id))
+        .map((a) => {
+          const rules = a.rules && typeof a.rules === 'object' ? a.rules : {};
+          const progressTarget = Number(rules.min_count);
+          if (!Number.isFinite(progressTarget) || progressTarget <= 0) return null;
+          const styleEq = normalizeStyle(rules.style_eq);
+          const progressCurrent = styleEq ? Number(styleCounts[styleEq] || 0) : totalRatings;
+          const remaining = Math.max(progressTarget - progressCurrent, 0);
+          return {
+            id: a.id,
+            key: a.key,
+            name: a.name,
+            description: a.description || '',
+            category_key: a.category_key || null,
+            progress_current: progressCurrent,
+            progress_target: progressTarget,
+            remaining,
+          };
+        })
+        .filter(Boolean)
+        .sort((left, right) => {
+          if (left.remaining !== right.remaining) return left.remaining - right.remaining;
+          if (left.progress_target !== right.progress_target) return left.progress_target - right.progress_target;
+          return String(left.name || '').localeCompare(String(right.name || ''));
+        });
+
+      if (!candidates.length) return res.json({ data: null });
+
+      const top = candidates[0];
+      let icon = null;
+      if (top.category_key) {
+        const catRes = await rest(
+          'GET',
+          `/achievement_categories?key=eq.${encodeURIComponent(top.category_key)}&select=icon&limit=1`
+        );
+        if (catRes.status < 400 && Array.isArray(catRes.body) && catRes.body[0]) {
+          icon = catRes.body[0].icon || null;
+        }
+      }
+
+      res.json({
+        data: {
+          id: top.id,
+          key: top.key,
+          name: top.name,
+          description: top.description,
+          progress_current: top.progress_current,
+          progress_target: top.progress_target,
+          remaining: top.remaining,
+          icon_url: icon,
+        },
+      });
     } catch (e) {
       next(e);
     }

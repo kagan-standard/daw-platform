@@ -40,6 +40,25 @@ module.exports = function (opts) {
         if (r.venue_id) venueCount[r.venue_id] = (venueCount[r.venue_id] || 0) + 1;
       });
       const topReviewers = Object.entries(userCount).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([user_id, count]) => ({ user_id, count }));
+      let topReviewersEnriched = topReviewers;
+      if (topReviewers.length) {
+        const reviewerIds = topReviewers.map((row) => row.user_id).filter(Boolean);
+        const idList = reviewerIds.map((id) => encodeURIComponent(id)).join(',');
+        if (idList) {
+          const profileRes = await rest('GET', `/profiles?id=in.(${idList})&select=id,display_name,avatar_url`);
+          if (profileRes.status < 400) {
+            const profiles = Array.isArray(profileRes.body) ? profileRes.body : [];
+            const profilesById = Object.fromEntries(
+              profiles.map((p) => [p.id, { display_name: p.display_name || null, avatar_url: p.avatar_url || null }])
+            );
+            topReviewersEnriched = topReviewers.map((row) => ({
+              ...row,
+              display_name: profilesById[row.user_id]?.display_name || null,
+              avatar_url: profilesById[row.user_id]?.avatar_url || null,
+            }));
+          }
+        }
+      }
       const topBeers = Object.entries(beerCount).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([key, count]) => {
         const [beer_name, brewery] = key.split('|');
         return { beer_name, brewery, count };
@@ -52,7 +71,7 @@ module.exports = function (opts) {
       res.json({
         period,
         crew_id: crewId || null,
-        top_reviewers: topReviewers,
+        top_reviewers: topReviewersEnriched,
         top_beers: topBeers,
         top_yg_values: topYg,
         most_venues: topVenues,
