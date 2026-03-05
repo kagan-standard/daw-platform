@@ -155,6 +155,41 @@ async function attachRatingAchievementDataToRatings(ratings) {
   });
 }
 
+async function attachEquippedCosmeticsToProfile(profile) {
+  if (!profile || typeof profile !== 'object') return profile;
+  const borderId = profile.equipped_border_id;
+  const titleId = profile.equipped_title_id;
+  const ids = [borderId, titleId].filter(Boolean);
+  if (!ids.length) {
+    return {
+      ...profile,
+      equipped_border_asset_url: null,
+      equipped_title_text: null,
+    };
+  }
+
+  const idList = [...new Set(ids)].map((id) => encodeURIComponent(id)).join(',');
+  if (!idList) {
+    return {
+      ...profile,
+      equipped_border_asset_url: null,
+      equipped_title_text: null,
+    };
+  }
+
+  const out = await rest('GET', `/cosmetics?id=in.(${idList})&select=id,asset_url,title_text,name&limit=10`);
+  const cosmetics = out.status < 400 && Array.isArray(out.body) ? out.body : [];
+  const byId = Object.fromEntries(cosmetics.map((row) => [row.id, row]));
+  const border = borderId ? byId[borderId] : null;
+  const title = titleId ? byId[titleId] : null;
+
+  return {
+    ...profile,
+    equipped_border_asset_url: border?.asset_url ?? null,
+    equipped_title_text: title?.title_text || title?.name || null,
+  };
+}
+
 function requestIdMiddleware(req, res, next) {
   const headerId = String(req.headers['x-request-id'] || '').trim();
   req.requestId = headerId || crypto.randomUUID();
@@ -1316,8 +1351,9 @@ async function handleProfileRequest(req, res) {
     return res.status(502).json({ error: 'Upstream error' });
   }
   if (Array.isArray(rows) && rows.length > 0) {
+    const enriched = await attachEquippedCosmeticsToProfile(rows[0]);
     return res.json({
-      ...rows[0],
+      ...enriched,
       is_admin: isAdmin(sub),
     });
   }
@@ -1334,8 +1370,9 @@ async function handleProfileRequest(req, res) {
     return res.status(502).json(created || { error: 'Create profile failed' });
   }
   const profile = Array.isArray(created) ? created[0] : created;
+  const enriched = await attachEquippedCosmeticsToProfile(profile || newProfile);
   res.status(201).json({
-    ...(profile || newProfile),
+    ...(enriched || newProfile),
     is_admin: isAdmin(sub),
   });
 }

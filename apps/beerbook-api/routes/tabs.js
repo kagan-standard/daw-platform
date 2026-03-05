@@ -37,6 +37,13 @@ function countIf(ratings, predicate) {
   return ratings.reduce((acc, row) => (predicate(row) ? acc + 1 : acc), 0);
 }
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function mapPurchaseErrorStatus(errorCode) {
+  if (errorCode === 'already_owned' || errorCode === 'insufficient_balance') return 409;
+  return 400;
+}
+
 function computeFallbackProgress(achievement, ratings, stats) {
   const rules = achievement?.rules && typeof achievement.rules === 'object' ? achievement.rules : null;
   if (!rules) return null;
@@ -131,7 +138,13 @@ function computeFallbackProgress(achievement, ratings, stats) {
 
 module.exports = function tabsRoutes(opts) {
   const router = express.Router();
-  const { rest, authMiddleware, adminMiddleware, totalFromContentRange } = opts;
+  const {
+    rest,
+    authMiddleware,
+    softAuthMiddleware = (_req, _res, next) => next(),
+    adminMiddleware,
+    totalFromContentRange,
+  } = opts;
 
   async function formatTabProfile(userId, profileDefaults = {}) {
     const profile = await ensureUserTabsProfile(rest, userId, profileDefaults);
@@ -411,6 +424,219 @@ module.exports = function tabsRoutes(opts) {
         icon_url: icon,
         is_fallback: true,
         reason: 'fallback_random',
+      });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // GET /api/cosmetics — active cosmetics shop listing
+  router.get('/cosmetics', softAuthMiddleware, async (req, res, next) => {
+    try {
+      const out = await rest(
+        'GET',
+        '/cosmetics?active=eq.true&select=id,key,type,name,description,rarity,asset_url,preview_asset_url,title_text,unlock_type,achievement_key,tab_price,active,sort_order,created_at&order=sort_order.asc,created_at.asc'
+      );
+      if (out.status >= 400) return res.status(out.status).json(out.body || { error: 'Upstream error' });
+      res.json({ data: Array.isArray(out.body) ? out.body : [] });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // GET /api/users/:id/cosmetics — user inventory
+  router.get('/users/:id/cosmetics', async (req, res, next) => {
+    try {
+      const userIdRaw = String(req.params.id || '').trim();
+      if (!userIdRaw) return res.status(400).json({ error: 'Missing user id' });
+      const userId = encodeURIComponent(userIdRaw);
+
+      const [ownedOut, profileOut] = await Promise.all([
+        rest('GET', `/user_cosmetics?user_id=eq.${userId}&select=id,cosmetic_id,acquired_via,acquired_at&order=acquired_at.desc&limit=5000`),
+        rest('GET', `/profiles?id=eq.${userId}&select=equipped_border_id,equipped_title_id&limit=1`),
+      ]);
+      if (ownedOut.status >= 400) return res.status(ownedOut.status).json(ownedOut.body || { error: 'Upstream error' });
+      if (profileOut.status >= 400) return res.status(profileOut.status).json(profileOut.body || { error: 'Upstream error' });
+
+      const ownedRows = Array.isArray(ownedOut.body) ? ownedOut.body : [];
+      if (!ownedRows.length) return res.json({ data: [] });
+      const profile = Array.isArray(profileOut.body) && profileOut.body[0] ? profileOut.body[0] : null;
+      const equippedBorderId = profile?.equipped_border_id || null;
+      const equippedTitleId = profile?.equipped_title_id || null;
+
+      const cosmeticIds = [...new Set(ownedRows.map((row) => row.cosmetic_id).filter(Boolean))];
+      const idList = cosmeticIds.map((id) => encodeURIComponent(id)).join(',');
+      if (!idList) return res.json({ data: [] });
+
+      const cosmeticsOut = await rest(
+        'GET',
+        `/cosmetics?id=in.(${idList})&select=id,key,type,name,description,rarity,asset_url,preview_asset_url,title_text,unlock_type,achievement_key,tab_price,active,sort_order,created_at`
+      );
+      if (cosmeticsOut.status >= 400) return res.status(cosmeticsOut.status).json(cosmeticsOut.body || { error: 'Upstream error' });
+      const cosmetics = Array.isArray(cosmeticsOut.body) ? cosmeticsOut.body : [];
+      const byId = Object.fromEntries(cosmetics.map((item) => [item.id, item]));
+
+      const data = ownedRows
+        .map((row) => {
+          const cosmetic = byId[row.cosmetic_id];
+          if (!cosmetic) return null;
+          return {
+            id: cosmetic.id,
+            key: cosmetic.key,
+            type: cosmetic.type,
+            name: cosmetic.name,
+            description: cosmetic.description,
+            rarity: cosmetic.rarity,
+            asset_url: cosmetic.asset_url ?? null,
+            preview_asset_url: cosmetic.preview_asset_url ?? null,
+            title_text: cosmetic.title_text ?? null,
+            acquired_via: row.acquired_via,
+            acquired_at: row.acquired_at,
+            is_equipped: cosmetic.id === equippedBorderId || cosmetic.id === equippedTitleId,
+          };
+        })
+        .filter(Boolean);
+
+      res.json({ data });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // POST /api/cosmetics/purchase — purchase by cosmetic_key (or cosmetic_id for compatibility)
+  router.post('/cosmetics/purchase', authMiddleware, async (req, res, next) => {
+    try {
+      const body = req.body || {};
+      const userId = String(req.claims.sub || '').trim();
+      if (!userId) return res.status(401).json({ error: 'Authentication required' });
+
+      let cosmeticKey = body?.cosmetic_key != null ? String(body.cosmetic_key).trim() : '';
+      const cosmeticId = body?.cosmetic_id != null ? String(body.cosmetic_id).trim() : '';
+      if (!cosmeticKey && !cosmeticId) {
+        return res.status(400).json({ error: 'cosmetic_key is required (or cosmetic_id for backward compatibility)' });
+      }
+
+      if (!cosmeticKey && cosmeticId) {
+        const lookupOut = await rest('GET', `/cosmetics?id=eq.${encodeURIComponent(cosmeticId)}&select=key&limit=1`);
+        if (lookupOut.status >= 400) return res.status(lookupOut.status).json(lookupOut.body || { error: 'Upstream error' });
+        const row = Array.isArray(lookupOut.body) ? lookupOut.body[0] : null;
+        if (!row?.key) return res.status(400).json({ error: 'Invalid cosmetic_id' });
+        cosmeticKey = String(row.key).trim();
+      }
+
+      const rpcOut = await rest('POST', '/rpc/purchase_cosmetic', {
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          p_user_id: userId,
+          p_cosmetic_key: cosmeticKey,
+        }),
+      });
+      if (rpcOut.status >= 400) return res.status(502).json(rpcOut.body || { error: 'Purchase failed' });
+
+      const payload = rpcOut.body && typeof rpcOut.body === 'object' ? rpcOut.body : {};
+      if (payload.ok !== true) {
+        const code = String(payload.error_code || 'purchase_failed');
+        const status = mapPurchaseErrorStatus(code);
+        return res.status(status).json({
+          error: payload.message || 'Purchase failed',
+          error_code: code,
+          tabs_balance: payload.tabs_balance ?? null,
+          tab_price: payload.tab_price ?? null,
+        });
+      }
+
+      return res.status(200).json({
+        data: {
+          cosmetic_id: payload.cosmetic_id,
+          cosmetic_key: payload.cosmetic_key,
+          acquired_via: payload.acquired_via || 'purchase',
+          tabs_spent: payload.tabs_spent ?? null,
+          tabs_balance: payload.tabs_balance ?? null,
+        },
+      });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // POST /api/cosmetics/equip
+  // Contract:
+  // - Equip: { cosmetic_id: string } (slot inferred from cosmetics.type; optional slot must match)
+  // - Unequip per-slot: { slot: 'border'|'title', cosmetic_id: null }
+  router.post('/cosmetics/equip', authMiddleware, async (req, res, next) => {
+    try {
+      const userId = String(req.claims.sub || '').trim();
+      const slotRaw = req.body?.slot;
+      const slot = slotRaw == null ? '' : String(slotRaw).trim();
+      const cosmeticIdRaw = req.body?.cosmetic_id;
+
+      if (cosmeticIdRaw == null) {
+        if (!['border', 'title'].includes(slot)) {
+          return res.status(400).json({ error: "slot must be 'border' or 'title' when cosmetic_id is null" });
+        }
+        const field = slot === 'border' ? 'equipped_border_id' : 'equipped_title_id';
+        const patchOut = await rest('PATCH', `/profiles?id=eq.${encodeURIComponent(userId)}`, {
+          headers: { Prefer: 'return=representation' },
+          body: JSON.stringify({ [field]: null }),
+        });
+        if (patchOut.status >= 400) return res.status(patchOut.status).json(patchOut.body || { error: 'Failed to update profile' });
+        const row = Array.isArray(patchOut.body) ? patchOut.body[0] : null;
+        if (!row) return res.status(404).json({ error: 'Profile not found' });
+        return res.json({
+          data: {
+            slot,
+            cosmetic_id: null,
+            equipped_border_id: row.equipped_border_id ?? null,
+            equipped_title_id: row.equipped_title_id ?? null,
+          },
+        });
+      }
+
+      const cosmeticId = String(cosmeticIdRaw).trim();
+      if (!UUID_REGEX.test(cosmeticId)) {
+        return res.status(400).json({ error: 'cosmetic_id must be a UUID or null' });
+      }
+
+      const [cosmeticOut, ownedOut] = await Promise.all([
+        rest('GET', `/cosmetics?id=eq.${encodeURIComponent(cosmeticId)}&select=id,type,active&limit=1`),
+        rest(
+          'GET',
+          `/user_cosmetics?user_id=eq.${encodeURIComponent(userId)}&cosmetic_id=eq.${encodeURIComponent(cosmeticId)}&select=id&limit=1`
+        ),
+      ]);
+      if (cosmeticOut.status >= 400) return res.status(cosmeticOut.status).json(cosmeticOut.body || { error: 'Upstream error' });
+      if (ownedOut.status >= 400) return res.status(ownedOut.status).json(ownedOut.body || { error: 'Upstream error' });
+
+      const cosmetic = Array.isArray(cosmeticOut.body) && cosmeticOut.body[0] ? cosmeticOut.body[0] : null;
+      if (!cosmetic) return res.status(400).json({ error: 'Invalid cosmetic_id' });
+      if (cosmetic.active !== true) return res.status(400).json({ error: 'Cosmetic is inactive' });
+      const inferredSlot = String(cosmetic.type || '').trim();
+      if (!['border', 'title'].includes(inferredSlot)) {
+        return res.status(400).json({ error: 'Cosmetic has unsupported type' });
+      }
+      if (slot && slot !== inferredSlot) {
+        return res.status(400).json({ error: `Cosmetic type must match slot '${slot}'` });
+      }
+
+      const owned = Array.isArray(ownedOut.body) && ownedOut.body.length > 0;
+      if (!owned) return res.status(400).json({ error: 'Cosmetic is not owned by user' });
+
+      const field = inferredSlot === 'border' ? 'equipped_border_id' : 'equipped_title_id';
+      const patchOut = await rest('PATCH', `/profiles?id=eq.${encodeURIComponent(userId)}`, {
+        headers: { Prefer: 'return=representation' },
+        body: JSON.stringify({ [field]: cosmeticId }),
+      });
+      if (patchOut.status >= 400) return res.status(patchOut.status).json(patchOut.body || { error: 'Failed to update profile' });
+      const row = Array.isArray(patchOut.body) ? patchOut.body[0] : null;
+      if (!row) return res.status(404).json({ error: 'Profile not found' });
+
+      return res.json({
+        data: {
+          slot: inferredSlot,
+          cosmetic_id: cosmeticId,
+          equipped_border_id: row.equipped_border_id ?? null,
+          equipped_title_id: row.equipped_title_id ?? null,
+        },
       });
     } catch (e) {
       next(e);

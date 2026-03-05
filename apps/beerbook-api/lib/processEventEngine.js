@@ -110,6 +110,30 @@ async function loadAchievementsForTrigger(rest, triggerType) {
   }));
 }
 
+async function grantAchievementCosmetics(rest, userId, achievementKey) {
+  const key = String(achievementKey || '').trim();
+  if (!key) return;
+  const enc = encodeURIComponent;
+  const cosmeticsRes = await rest(
+    'GET',
+    `/cosmetics?achievement_key=eq.${enc(key)}&active=eq.true&unlock_type=in.(achievement,both)&select=id`
+  );
+  if (cosmeticsRes.status >= 400) return;
+  const rows = Array.isArray(cosmeticsRes.body) ? cosmeticsRes.body : [];
+  for (const row of rows) {
+    const cosmeticId = row && row.id ? String(row.id) : '';
+    if (!cosmeticId) continue;
+    const insertRes = await rest('POST', '/user_cosmetics', {
+      body: JSON.stringify({
+        user_id: userId,
+        cosmetic_id: cosmeticId,
+        acquired_via: 'achievement',
+      }),
+    });
+    if (isConflict(insertRes)) continue;
+  }
+}
+
 async function getCheckinCount(rest, totalFromContentRange, userId) {
   const enc = encodeURIComponent(userId);
   const res = await rest('GET', `/ratings?user_id=eq.${enc}&select=id`, { headers: { Prefer: 'count=exact' } });
@@ -173,6 +197,7 @@ async function processRatingSubmitted(rest, totalFromContentRange, userId, paylo
     if (insertRes.status >= 400) throw new Error(`user_achievements insert: ${(insertRes.body && insertRes.body.message) || insertRes.status}`);
 
     unlocked.push({ key: ach.key, name: ach.name, reward_tabs: ach.reward_tabs });
+    await grantAchievementCosmetics(rest, userId, ach.key);
     if (ach.reward_tabs > 0) {
       const eventId = require('crypto').randomUUID();
       const ledgerRes = await rest('POST', '/tabs_ledger', {

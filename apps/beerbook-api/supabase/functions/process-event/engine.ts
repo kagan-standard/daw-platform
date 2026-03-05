@@ -159,6 +159,33 @@ async function loadAchievementsForTrigger(
   }));
 }
 
+async function grantAchievementCosmetics(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  achievementKey: string
+): Promise<void> {
+  if (!achievementKey) return;
+  const { data, error } = await admin
+    .from("cosmetics")
+    .select("id")
+    .eq("achievement_key", achievementKey)
+    .eq("active", true)
+    .in("unlock_type", ["achievement", "both"]);
+  if (error) return;
+  const rows = Array.isArray(data) ? data : [];
+  for (const row of rows) {
+    if (!row?.id) continue;
+    const { error: insertError } = await admin
+      .from("user_cosmetics")
+      .insert({
+        user_id: userId,
+        cosmetic_id: row.id,
+        acquired_via: "achievement",
+      });
+    if (insertError?.code === "23505") continue;
+  }
+}
+
 async function getCheckinCount(admin: ReturnType<typeof createClient>, userId: string): Promise<number> {
   const { count, error } = await admin
     .from("ratings")
@@ -258,6 +285,7 @@ async function processRatingSubmitted(
     // No error = row was inserted; mint tabs for this achievement only.
     {
       unlocked.push({ key: ach.key, name: ach.name, reward_tabs: ach.reward_tabs });
+      await grantAchievementCosmetics(admin, userId, ach.key);
       if (ach.reward_tabs > 0) {
         const eventId = crypto.randomUUID();
         const { error: ledgerError } = await admin.from("tabs_ledger").insert({

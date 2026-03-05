@@ -100,6 +100,41 @@ module.exports = function (opts) {
     });
   }
 
+  async function attachEquippedCosmetics(profile) {
+    if (!profile || typeof profile !== 'object') return profile;
+    const borderId = profile.equipped_border_id;
+    const titleId = profile.equipped_title_id;
+    const ids = [borderId, titleId].filter(Boolean);
+    if (!ids.length) {
+      return {
+        ...profile,
+        equipped_border_asset_url: null,
+        equipped_title_text: null,
+      };
+    }
+    const idList = [...new Set(ids)].map((id) => encodeURIComponent(id)).join(',');
+    if (!idList) {
+      return {
+        ...profile,
+        equipped_border_asset_url: null,
+        equipped_title_text: null,
+      };
+    }
+    const cosmeticsOut = await rest(
+      'GET',
+      `/cosmetics?id=in.(${idList})&select=id,asset_url,title_text,name&limit=10`
+    );
+    const cosmetics = cosmeticsOut.status < 400 && Array.isArray(cosmeticsOut.body) ? cosmeticsOut.body : [];
+    const byId = Object.fromEntries(cosmetics.map((item) => [item.id, item]));
+    const border = borderId ? byId[borderId] : null;
+    const title = titleId ? byId[titleId] : null;
+    return {
+      ...profile,
+      equipped_border_asset_url: border?.asset_url ?? null,
+      equipped_title_text: title?.title_text || title?.name || null,
+    };
+  }
+
   // GET /api/activity — recent ratings + new venues, limit 50
   router.get('/activity', opts.softAuthMiddleware, (req, res, next) => {
     const feed = String(req.query.feed || '').trim();
@@ -302,11 +337,12 @@ module.exports = function (opts) {
   router.get('/users/:id', (req, res, next) => {
     const id = encodeURIComponent(req.params.id);
     rest('GET', `/profiles?id=eq.${id}&limit=1`)
-      .then(({ status, body }) => {
+      .then(async ({ status, body }) => {
         if (status >= 400) return res.status(status).json(body || { error: 'Upstream error' });
         const profile = Array.isArray(body) && body[0] ? body[0] : null;
         if (!profile) return res.status(404).json({ error: 'User not found' });
-        res.json(profile);
+        const enriched = await attachEquippedCosmetics(profile);
+        res.json(enriched);
       })
       .catch(next);
   });
