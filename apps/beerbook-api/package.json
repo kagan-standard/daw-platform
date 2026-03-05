@@ -5,6 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
+    "test": "node --test",
     "tabs:weekly-eval": "node scripts/weekly-tabs-eval.js",
     "tabs:streak-risk": "node scripts/streak-risk-check.js"
   },

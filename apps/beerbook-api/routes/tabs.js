@@ -14,6 +14,121 @@ function normalizeStyle(value) {
   return String(value || '').trim().toLowerCase();
 }
 
+function getUtcDayKey() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function stableIndexForSeed(seed, size) {
+  if (!Number.isInteger(size) || size <= 0) return 0;
+  const text = String(seed || '');
+  let hash = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    hash = ((hash * 31) + text.charCodeAt(i)) >>> 0;
+  }
+  return hash % size;
+}
+
+function includesAnyNeedle(value, needles) {
+  const source = String(value || '').toLowerCase();
+  return needles.some((needle) => source.includes(String(needle || '').toLowerCase()));
+}
+
+function countIf(ratings, predicate) {
+  return ratings.reduce((acc, row) => (predicate(row) ? acc + 1 : acc), 0);
+}
+
+function computeFallbackProgress(achievement, ratings, stats) {
+  const rules = achievement?.rules && typeof achievement.rules === 'object' ? achievement.rules : null;
+  if (!rules) return null;
+  const type = String(rules.type || '').trim().toLowerCase();
+  if (!type) return null;
+
+  const gte = Number(rules.gte);
+  const hasTarget = Number.isFinite(gte) && gte > 0;
+
+  if (type === 'count' && String(rules.entity || '').toLowerCase() === 'ratings' && hasTarget) {
+    return {
+      progress_current: stats.totalRatings,
+      progress_target: gte,
+    };
+  }
+
+  if (type === 'distinct_count' && String(rules.entity || '').toLowerCase() === 'ratings' && hasTarget) {
+    const field = String(rules.field || '').toLowerCase();
+    if (field === 'style') return { progress_current: stats.distinctStyles, progress_target: gte };
+    if (field === 'venue_id') return { progress_current: stats.distinctVenues, progress_target: gte };
+    if (field === 'city') return { progress_current: stats.distinctCities, progress_target: gte };
+    if (field === 'month') return { progress_current: stats.distinctMonths, progress_target: gte };
+    return null;
+  }
+
+  if (type === 'style_contains' && hasTarget) {
+    const needle = String(rules.needle || '').trim();
+    if (!needle) return null;
+    return {
+      progress_current: countIf(ratings, (row) => String(row?.style || '').toLowerCase().includes(needle.toLowerCase())),
+      progress_target: gte,
+    };
+  }
+
+  if (type === 'style_contains_any' && hasTarget) {
+    const needles = Array.isArray(rules.needles) ? rules.needles.map((n) => String(n || '').trim()).filter(Boolean) : [];
+    if (!needles.length) return null;
+    return {
+      progress_current: countIf(ratings, (row) => includesAnyNeedle(row?.style, needles)),
+      progress_target: gte,
+    };
+  }
+
+  if (type === 'count_where' && String(rules.entity || '').toLowerCase() === 'ratings' && hasTarget) {
+    const where = rules.where && typeof rules.where === 'object' ? rules.where : null;
+    if (!where) return null;
+    const progressCurrent = countIf(ratings, (row) => {
+      if (typeof where.photo === 'boolean' && (!!row?.photo) !== where.photo) return false;
+      if (typeof where.price === 'boolean' && (!!row?.price) !== where.price) return false;
+      if (typeof where.venue_id === 'boolean' && (!!row?.venue_id) !== where.venue_id) return false;
+      if (typeof where.is_new_beer === 'boolean' && (!!row?.is_new_beer) !== where.is_new_beer) return false;
+      if (Number.isFinite(Number(where.review_min_len)) && String(row?.review || '').trim().length < Number(where.review_min_len)) return false;
+      if (Number.isFinite(Number(where.stars_gte)) && Number(row?.stars) < Number(where.stars_gte)) return false;
+      if (Number.isFinite(Number(where.stars_lte)) && Number(row?.stars) > Number(where.stars_lte)) return false;
+      return true;
+    });
+    return { progress_current: progressCurrent, progress_target: gte };
+  }
+
+  if (type === 'has_field') {
+    const field = String(rules.field || '').trim();
+    if (!field) return null;
+    const expected = rules.value;
+    const progressCurrent = countIf(ratings, (row) => {
+      const value = row?.[field];
+      if (typeof expected === 'boolean') return (!!value) === expected;
+      return value != null;
+    });
+    return { progress_current: progressCurrent, progress_target: 1 };
+  }
+
+  if (type === 'comparison') {
+    const field = String(rules.field || '').trim();
+    const op = String(rules.op || '').trim();
+    const targetValue = Number(rules.value);
+    if (!field || !Number.isFinite(targetValue)) return null;
+    const progressCurrent = countIf(ratings, (row) => {
+      const numeric = Number(row?.[field]);
+      if (!Number.isFinite(numeric)) return false;
+      if (op === '>=') return numeric >= targetValue;
+      if (op === '<=') return numeric <= targetValue;
+      if (op === '>') return numeric > targetValue;
+      if (op === '<') return numeric < targetValue;
+      if (op === '=') return numeric === targetValue;
+      return false;
+    });
+    return { progress_current: progressCurrent, progress_target: 1 };
+  }
+
+  return null;
+}
+
 module.exports = function tabsRoutes(opts) {
   const router = express.Router();
   const { rest, authMiddleware, adminMiddleware, totalFromContentRange } = opts;
@@ -186,6 +301,116 @@ module.exports = function tabsRoutes(opts) {
           remaining: top.remaining,
           icon_url: icon,
         },
+      });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // GET /api/achievements/fallback — deterministic "suggested" achievement for current user
+  router.get('/achievements/fallback', authMiddleware, async (req, res, next) => {
+    try {
+      const userIdRaw = String(req.claims.sub || '').trim();
+      if (!userIdRaw) return res.status(400).json({ error: 'Missing user id' });
+      const userId = encodeURIComponent(userIdRaw);
+
+      const [unlockedRes, allRes, ratingsRes] = await Promise.all([
+        rest('GET', `/user_achievements?user_id=eq.${userId}&select=achievement_id`),
+        rest(
+          'GET',
+          '/achievements?active=eq.true&trigger_type=eq.rating_submitted&select=id,key,name,description,rules,category_key,is_hidden'
+        ),
+        rest(
+          'GET',
+          `/ratings?user_id=eq.${userId}&select=style,photo,review,price,venue_id,stars,is_new_beer,city,created_at&limit=5000`
+        ),
+      ]);
+
+      if (unlockedRes.status >= 400) return res.status(unlockedRes.status).json(unlockedRes.body || { error: 'Upstream error' });
+      if (allRes.status >= 400) return res.status(allRes.status).json(allRes.body || { error: 'Upstream error' });
+      if (ratingsRes.status >= 400) return res.status(ratingsRes.status).json(ratingsRes.body || { error: 'Upstream error' });
+
+      const unlockedIds = new Set(
+        (Array.isArray(unlockedRes.body) ? unlockedRes.body : [])
+          .map((row) => row?.achievement_id)
+          .filter(Boolean)
+      );
+      const ratings = Array.isArray(ratingsRes.body) ? ratingsRes.body : [];
+
+      const distinctStyles = new Set();
+      const distinctVenues = new Set();
+      const distinctCities = new Set();
+      const distinctMonths = new Set();
+      for (const row of ratings) {
+        const style = normalizeStyle(row?.style);
+        if (style) distinctStyles.add(style);
+        if (row?.venue_id) distinctVenues.add(String(row.venue_id));
+        const city = String(row?.city || '').trim().toLowerCase();
+        if (city) distinctCities.add(city);
+        const createdAt = new Date(row?.created_at);
+        if (!Number.isNaN(createdAt.getTime())) distinctMonths.add(createdAt.getUTCMonth() + 1);
+      }
+
+      const stats = {
+        totalRatings: ratings.length,
+        distinctStyles: distinctStyles.size,
+        distinctVenues: distinctVenues.size,
+        distinctCities: distinctCities.size,
+        distinctMonths: distinctMonths.size,
+      };
+
+      const candidates = (Array.isArray(allRes.body) ? allRes.body : [])
+        .filter((a) => a && a.id && !a.is_hidden && !unlockedIds.has(a.id))
+        .map((a) => {
+          const progress = computeFallbackProgress(a, ratings, stats);
+          if (!progress) return null;
+          const progressCurrent = Math.max(Number(progress.progress_current) || 0, 0);
+          const progressTarget = Math.max(Number(progress.progress_target) || 0, 0);
+          if (!progressTarget) return null;
+          return {
+            id: a.id,
+            key: a.key,
+            name: a.name,
+            description: a.description || '',
+            category_key: a.category_key || null,
+            progress_current: progressCurrent,
+            progress_target: progressTarget,
+            remaining: Math.max(progressTarget - progressCurrent, 0),
+          };
+        })
+        .filter(Boolean)
+        .sort((left, right) => String(left.key || '').localeCompare(String(right.key || '')));
+
+      if (!candidates.length) return res.status(204).send();
+
+      const nonCompleted = candidates.filter((c) => c.remaining > 0);
+      const inProgress = nonCompleted.filter((c) => c.progress_current > 0);
+      const pool = inProgress.length ? inProgress : (nonCompleted.length ? nonCompleted : candidates);
+      const seed = `${userIdRaw}:${getUtcDayKey()}:fallback`;
+      const picked = pool[stableIndexForSeed(seed, pool.length)];
+
+      let icon = null;
+      if (picked.category_key) {
+        const catRes = await rest(
+          'GET',
+          `/achievement_categories?key=eq.${encodeURIComponent(picked.category_key)}&select=icon&limit=1`
+        );
+        if (catRes.status < 400 && Array.isArray(catRes.body) && catRes.body[0]) {
+          icon = catRes.body[0].icon || null;
+        }
+      }
+
+      return res.status(200).json({
+        id: picked.id,
+        key: picked.key,
+        name: picked.name,
+        description: picked.description,
+        progress_current: picked.progress_current,
+        progress_target: picked.progress_target,
+        remaining: picked.remaining,
+        icon_url: icon,
+        is_fallback: true,
+        reason: 'fallback_random',
       });
     } catch (e) {
       next(e);
