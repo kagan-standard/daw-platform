@@ -7,7 +7,14 @@ const path = require('path');
 const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
 const { createRemoteJWKSet, jwtVerify } = require('jose');
-const { awardTabsForRating } = require('./lib/tabs');
+const {
+  awardTabsForRating,
+  ensureProfileExists,
+  ensureUserTabsProfile,
+  getTierMultiplier,
+  calculateRatingComponents,
+} = require('./lib/tabs');
+const { invokeProcessEvent } = require('./lib/processEvent');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -1051,21 +1058,73 @@ app.post('/api/ratings', authMiddleware, async (req, res) => {
     return res.status(insertRes.status).json(insertRes.body || { error: 'Insert failed' });
   }
   const row = Array.isArray(insertRes.body) ? insertRes.body[0] : insertRes.body;
-  const tabsResult = await awardTabsForRating(rest, sub, row?.id || null, row || record, {
+  const ratingId = row?.id || null;
+  const ratingRow = row || record;
+
+  // Ensure profile exists before process-event (trigger is update-only)
+  await ensureProfileExists(rest, sub, preferred_username, req.claims.email);
+  const profile = await ensureUserTabsProfile(rest, sub, {
     displayName: preferred_username,
     email: req.claims.email,
     isAdmin: isAdmin(sub),
-  }, isNewBeer);
+  });
+  const tierInfo = await getTierMultiplier(rest, profile.current_tier);
+  const tierMultiplier = Number(tierInfo.multiplier) || 1.0;
+  const seederMultiplier = profile.is_seeder ? 1.5 : 1.0;
+  const newBeerMultiplier = isNewBeer ? 1.5 : 1.0;
+  const components = calculateRatingComponents(ratingRow);
+  let tabsEarned = 0;
+  let breakdown = {};
+  let achievementsUnlocked = [];
+
+  try {
+    const eventId = crypto.randomUUID();
+    const perComponent = components.map((c) => ({
+      source: c.source,
+      base: c.base,
+      amount: Math.round(c.base * newBeerMultiplier * tierMultiplier * seederMultiplier),
+    }));
+    const total = perComponent.reduce((s, p) => s + p.amount, 0);
+    breakdown = Object.fromEntries(perComponent.map((p) => [p.source, p.amount]));
+    const ratingAwardRes = await invokeProcessEvent(req.headers.authorization, 'rating_award', eventId, {
+      amount: total,
+      breakdown,
+      context: {
+        rating_id: ratingId,
+        beer_id: ratingRow.beer_id ?? null,
+        venue_id: ratingRow.venue_id ?? null,
+        tier_multiplier: tierMultiplier,
+        seeder_multiplier: seederMultiplier,
+        is_new_beer: isNewBeer,
+      },
+    });
+    tabsEarned = ratingAwardRes.tabs_delta;
+
+    const achRes = await invokeProcessEvent(req.headers.authorization, 'rating_submitted', null, {
+      rating_id: ratingId,
+      beer_id: ratingRow.beer_id ?? null,
+      venue_id: ratingRow.venue_id ?? null,
+      ...ratingRow,
+    });
+    achievementsUnlocked = achRes.unlocked || [];
+  } catch (err) {
+    if (err.status >= 400) {
+      return res.status(err.status >= 500 ? 502 : err.status).json(err.body || { error: err.message });
+    }
+    throw err;
+  }
+
   res.status(201).json({
     data: row || record,
     updated: false,
-    tabs_earned: tabsResult.tabs_earned,
-    tabs_breakdown: tabsResult.breakdown,
-    tabs_reason: tabsResult.reason,
-    tier_multiplier: tabsResult.tier_multiplier ?? 1.0,
-    seeder_multiplier: tabsResult.seeder_multiplier ?? 1.0,
-    new_beer_multiplier: tabsResult.new_beer_multiplier ?? 1.0,
-    is_new_beer: tabsResult.is_new_beer === true,
+    tabs_earned: tabsEarned,
+    tabs_breakdown: breakdown,
+    tabs_reason: tabsEarned > 0 ? 'awarded' : 'weekly_cap',
+    tier_multiplier: tierMultiplier,
+    seeder_multiplier: seederMultiplier,
+    new_beer_multiplier: newBeerMultiplier,
+    is_new_beer: isNewBeer === true,
+    achievements_unlocked: achievementsUnlocked,
   });
 });
 

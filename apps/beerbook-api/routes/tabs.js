@@ -21,6 +21,12 @@ module.exports = function tabsRoutes(opts) {
     const seederMultiplier = profile.is_seeder ? 1.5 : 1.0;
     const combinedMultiplier = Number((tierMultiplier * seederMultiplier).toFixed(2));
     const ratingsThisWeek = Number(profile.ratings_this_week) || 0;
+    // Prefer profiles.tabs_balance (new ledger) when present
+    let tabBalance = Number(profile.tab_balance) || 0;
+    const profRes = await rest('GET', `/profiles?id=eq.${encodeURIComponent(userId)}&select=tabs_balance&limit=1`);
+    if (profRes.status < 400 && Array.isArray(profRes.body) && profRes.body[0] != null && typeof profRes.body[0].tabs_balance === 'number') {
+      tabBalance = profRes.body[0].tabs_balance;
+    }
     return {
       user_id: profile.user_id,
       current_tier: profile.current_tier,
@@ -29,7 +35,7 @@ module.exports = function tabsRoutes(opts) {
       seeder_multiplier: seederMultiplier,
       combined_multiplier: combinedMultiplier,
       is_seeder: !!profile.is_seeder,
-      tab_balance: Number(profile.tab_balance) || 0,
+      tab_balance: tabBalance,
       lifetime_tabs_earned: Number(profile.lifetime_tabs_earned) || 0,
       ratings_this_week: ratingsThisWeek,
       current_streak_weeks: Number(profile.current_streak_weeks) || 0,
@@ -39,6 +45,30 @@ module.exports = function tabsRoutes(opts) {
       updated_at: profile.updated_at,
     };
   }
+
+  // GET /api/achievements — unlocked achievements for current user (Keycloak sub)
+  router.get('/achievements', authMiddleware, async (req, res, next) => {
+    try {
+      const userId = encodeURIComponent(req.claims.sub);
+      const uaRes = await rest('GET', `/user_achievements?user_id=eq.${userId}&select=achievement_id`);
+      if (uaRes.status >= 400) return res.status(uaRes.status).json(uaRes.body || { error: 'Upstream error' });
+      const rows = Array.isArray(uaRes.body) ? uaRes.body : [];
+      if (rows.length === 0) return res.json({ data: [] });
+      const ids = rows.map((r) => r.achievement_id).filter(Boolean);
+      const idList = ids.map((id) => encodeURIComponent(id)).join(',');
+      const aRes = await rest('GET', `/achievements?id=in.(${idList})&select=id,key,name,reward_tabs`);
+      if (aRes.status >= 400) return res.status(aRes.status).json(aRes.body || { error: 'Upstream error' });
+      const achievements = Array.isArray(aRes.body) ? aRes.body : [];
+      const byId = Object.fromEntries(achievements.map((a) => [a.id, a]));
+      const data = ids.map((id) => {
+        const a = byId[id];
+        return a ? { key: a.key, name: a.name, reward_tabs: Number(a.reward_tabs) || 0 } : null;
+      }).filter(Boolean);
+      res.json({ data });
+    } catch (e) {
+      next(e);
+    }
+  });
 
   // GET /api/tabs/profile
   router.get('/tabs/profile', authMiddleware, async (req, res, next) => {
