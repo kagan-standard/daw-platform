@@ -193,6 +193,10 @@ async function awardSingleSourceTabs(rest, userId, source, baseAmount, reference
   return amount;
 }
 
+/**
+ * @deprecated Cheers tab awards now use process-event (tabs_ledger + profiles.tabs_balance).
+ * Do not use for new code; BFF POST /api/ratings/:id/cheers uses invokeProcessEvent instead.
+ */
 async function awardTabsForCheers(rest, giverId, receiverId, ratingId, defaults = {}) {
   const given = await awardSingleSourceTabs(
     rest,

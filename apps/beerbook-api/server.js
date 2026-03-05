@@ -19,7 +19,8 @@ const { invokeProcessEvent } = require('./lib/processEvent');
 const app = express();
 app.set('trust proxy', 1);
 const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, 'data', 'uploads');
-const PORT = Number(process.env.PORT) || 3001;
+const PORT = Number(process.env.PORT) || 3000;
+// PostgREST only; no SUPABASE_URL required. Self-hosted: set SUPABASE_REST_URL if different (e.g. http://supabase-rest:3000).
 const REST_URL = (process.env.SUPABASE_REST_URL || 'http://supabase-rest:3000').replace(/\/$/, '');
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const CORS_ORIGIN = process.env.CORS_ORIGIN || 'https://beerbook.drinksafterwork.net';
@@ -272,6 +273,26 @@ async function softAuthMiddleware(req, res, next) {
   }
 }
 
+/** Verify Keycloak JWT and return sub (for internal process-event); same contract as Edge Function. */
+async function getKeycloakUserId(token) {
+  try {
+    const { payload } = await jwtVerify(token, getJwks(), {
+      issuer: KEYCLOAK_ISSUER,
+      clockTolerance: CLOCK_SKEW,
+    });
+    const aud = payload.aud;
+    const azp = payload.azp;
+    const audOk = aud === 'beerbook' || aud === 'beerbook-mobile' || (Array.isArray(aud) && (aud.includes('beerbook') || aud.includes('beerbook-mobile')));
+    if (!audOk) return null;
+    const azpOk = azp === 'beerbook' || azp === 'beerbook-mobile';
+    if (!azpOk) return null;
+    const sub = payload.sub;
+    return typeof sub === 'string' ? sub : null;
+  } catch {
+    return null;
+  }
+}
+
 function adminMiddleware(req, res, next) {
   if (!req.claims) {
     return res.status(401).json({ error: 'Authentication required' });
@@ -323,6 +344,12 @@ const trackingRoutes = require('./routes/tracking')({ ...routeHelpers });
 const tabsRoutes = require('./routes/tabs')({ ...routeHelpers });
 const followsRoutes = require('./routes/follows')({ ...routeHelpers });
 const crewsRoutes = require('./routes/crews')({ ...routeHelpers });
+const internalRoutesModule = require('./routes/internal');
+const internalOpts = { rest, totalFromContentRange, getKeycloakUserId };
+const internalRoutes = internalRoutesModule(internalOpts);
+require('./lib/processEvent').setInProcessHandler((authHeader, body) =>
+  internalRoutesModule.handleProcessEventRequest(internalOpts, authHeader, body)
+);
 
 app.use('/api', activityRoutes);
 app.use('/api/beers', beersRoutes);
@@ -338,6 +365,7 @@ app.use('/api', trackingRoutes);
 app.use('/api', tabsRoutes);
 app.use('/api', followsRoutes);
 app.use('/api', crewsRoutes);
+app.use('/internal', internalRoutes);
 
 // ---------- Phase 3.2: Catalog (no auth — public catalog) ----------
 function toNumberOrNull(v) {

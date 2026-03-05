@@ -107,21 +107,23 @@ async function processRatingAward(
 
 /**
  * Cheers or single-row award: insert one ledger row. Idempotent by event_id.
+ * For cheers_received, ledgerUserId is the receiver (payload.target_user_id); context holds from_user_id/to_user_id.
  */
 async function processSingleAward(
   admin: ReturnType<typeof createClient>,
-  userId: string,
+  ledgerUserId: string,
   eventId: string,
   eventType: "cheers_given" | "cheers_received" | "admin_grant",
-  payload: Record<string, unknown>
+  payload: Record<string, unknown>,
+  contextOverride?: Record<string, unknown>
 ): Promise<number> {
   const amount = Number(payload.amount ?? 0);
   if (!Number.isInteger(amount)) return 0;
   const breakdown = (payload.breakdown as Record<string, unknown>) ?? {};
-  const context = (payload.context as Record<string, unknown>) ?? {};
+  const context = contextOverride ?? (payload.context as Record<string, unknown>) ?? {};
   const { error } = await admin.from("tabs_ledger").insert({
     event_id: eventId,
-    user_id: userId,
+    user_id: ledgerUserId,
     event_type: eventType,
     amount,
     breakdown: breakdown,
@@ -280,6 +282,8 @@ async function getTabsBalance(admin: ReturnType<typeof createClient>, userId: st
 
 /**
  * Main entry: route by event_type; enforce event_id for ledger events; on event_id conflict return zero delta.
+ * For cheers_received ONLY: require payload.target_user_id (receiver); ledger row is for receiver; return receiver's balance.
+ * Other event types: ignore target_user_id; ledger user = JWT sub.
  */
 export async function processEvent(input: ProcessEventInput): Promise<ProcessEventResult> {
   const { eventType, eventId, payload, userId, supabaseUrl, serviceRoleKey } = input;
@@ -287,14 +291,35 @@ export async function processEvent(input: ProcessEventInput): Promise<ProcessEve
 
   let tabsDelta = 0;
   let unlocked: UnlockedAchievement[] = [];
+  /** User whose balance we return (ledger row owner for award events). */
+  let balanceUserId = userId;
 
   if (eventType === "rating_award") {
     if (!eventId) throw new Error("event_id required for rating_award");
     const result = await processRatingAward(admin, userId, eventId, payload);
     tabsDelta = result.amount;
-  } else if (eventType === "cheers_given" || eventType === "cheers_received" || eventType === "admin_grant") {
+  } else if (eventType === "cheers_received") {
+    if (!eventId) throw new Error("event_id required for cheers_received");
+    const target = payload.target_user_id;
+    if (typeof target !== "string" || !target.trim()) {
+      throw new Error("payload.target_user_id (Keycloak sub of receiver) is required for cheers_received");
+    }
+    const ledgerUserId = target.trim();
+    balanceUserId = ledgerUserId;
+    const context: Record<string, unknown> = {
+      from_user_id: userId,
+      to_user_id: ledgerUserId,
+      ...((payload.context as Record<string, unknown>) ?? {}),
+    };
+    tabsDelta = await processSingleAward(admin, ledgerUserId, eventId, eventType, payload, context);
+  } else if (eventType === "cheers_given" || eventType === "admin_grant") {
     if (!eventId) throw new Error(`event_id required for ${eventType}`);
-    tabsDelta = await processSingleAward(admin, userId, eventId, eventType, payload);
+    // Ignore target_user_id for non-cheers_received; ledger user = JWT sub
+    const context =
+      eventType === "cheers_given"
+        ? { from_user_id: userId, to_user_id: payload.to_user_id ?? null, ...((payload.context as Record<string, unknown>) ?? {}) }
+        : undefined;
+    tabsDelta = await processSingleAward(admin, userId, eventId, eventType, payload, context);
   } else if (eventType === "rating_submitted") {
     const result = await processRatingSubmitted(admin, userId, payload);
     unlocked = result.unlocked;
@@ -303,7 +328,7 @@ export async function processEvent(input: ProcessEventInput): Promise<ProcessEve
     // Stub or handle as needed
   }
 
-  const tabs_balance = await getTabsBalance(admin, userId);
+  const tabs_balance = await getTabsBalance(admin, balanceUserId);
   return { unlocked, tabs_delta: tabsDelta, tabs_balance };
 }
 

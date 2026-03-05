@@ -1,11 +1,26 @@
 /**
- * Invoke process-event Edge Function (BFF → server-to-server).
+ * Invoke process-event (BFF → server-to-server).
+ * When PROCESS_EVENT_URL and SUPABASE_URL are unset (self-hosted), calls the in-process handler
+ * directly (zero network, no fetch to self). Otherwise uses HTTP to PROCESS_EVENT_URL or Supabase.
  * Pass Keycloak JWT in Authorization; event_id required for rating_award, cheers, admin_grant.
  */
 
 const PROCESS_EVENT_URL =
   process.env.PROCESS_EVENT_URL ||
   (process.env.SUPABASE_URL ? `${process.env.SUPABASE_URL.replace(/\/$/, '')}/functions/v1/process-event` : null);
+
+const INTERNAL_SECRET = process.env.INTERNAL_PROCESS_EVENT_SECRET || null;
+
+/** In-process handler when PROCESS_EVENT_URL/SUPABASE_URL unset. Set by server.js at startup. */
+let inProcessHandler = null;
+
+/**
+ * Register the in-process process-event handler (same logic as POST /internal/process-event).
+ * Called by server.js so invokeProcessEvent() can run without any HTTP when self-hosted.
+ */
+function setInProcessHandler(handler) {
+  inProcessHandler = handler;
+}
 
 /**
  * @param {string} authHeader - Authorization: Bearer <Keycloak JWT>
@@ -15,11 +30,16 @@ const PROCESS_EVENT_URL =
  * @returns {Promise<{ unlocked: Array<{ key: string, name: string, reward_tabs: number }>, tabs_delta: number, tabs_balance: number }>}
  */
 async function invokeProcessEvent(authHeader, eventType, eventId, payload) {
-  if (!PROCESS_EVENT_URL) {
-    throw new Error('PROCESS_EVENT_URL or SUPABASE_URL is required to call process-event');
-  }
   const body = { event_type: eventType, payload: payload ?? {} };
   if (eventId != null) body.event_id = eventId;
+
+  if (!PROCESS_EVENT_URL) {
+    if (!inProcessHandler) {
+      throw new Error('Process-event in-process handler not registered; ensure server calls setInProcessHandler at startup.');
+    }
+    if (INTERNAL_SECRET) body._internalSecret = INTERNAL_SECRET;
+    return inProcessHandler(authHeader, body);
+  }
 
   const res = await fetch(PROCESS_EVENT_URL, {
     method: 'POST',
@@ -49,4 +69,4 @@ async function invokeProcessEvent(authHeader, eventType, eventId, payload) {
   };
 }
 
-module.exports = { invokeProcessEvent, PROCESS_EVENT_URL };
+module.exports = { invokeProcessEvent, setInProcessHandler, PROCESS_EVENT_URL };

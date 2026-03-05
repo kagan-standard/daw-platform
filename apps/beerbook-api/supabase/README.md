@@ -31,12 +31,15 @@ This directory contains migrations and Edge Functions for the BeerBook backend (
 
 ### How to call `process-event` (BFF only)
 
-- **URL:** `POST https://<project-ref>.supabase.co/functions/v1/process-event` (or set `PROCESS_EVENT_URL` / `SUPABASE_URL` in BFF).
+- **URL (Supabase hosted):** `POST https://<project-ref>.supabase.co/functions/v1/process-event` (set `PROCESS_EVENT_URL` or `SUPABASE_URL` in BFF).
+- **URL (self-hosted, no Edge Runtime):** BFF uses in-app route by default: `POST http://127.0.0.1:<PORT>/internal/process-event` when `PROCESS_EVENT_URL` and `SUPABASE_URL` are unset.
 - **Headers:** `Authorization: Bearer <Keycloak access token>`, `Content-Type: application/json`
 - **Auth:** Keycloak JWT only; `user_id` = `payload.sub`. Caller is BFF (server-to-server); app does not call process-event directly.
 - **Body (JSON):** `event_type`, optional `event_id` (required for `rating_award`, `cheers_given`, `cheers_received`, `admin_grant`), `payload`.
 
 **Valid `event_type` values:** `rating_award`, `cheers_given`, `cheers_received`, `rating_submitted`, `achievement_unlock`, `admin_grant`, `spend`.
+
+**Cheers:** Tab awards for cheering a rating use `tabs_ledger` only (no legacy `tab_transactions`). BFF calls process-event twice per cheer: `cheers_given` (ledger user = JWT sub) and `cheers_received` (ledger user = `payload.target_user_id` = rating owner). Both require a UUID `event_id` for idempotency; duplicate event_id returns `tabs_delta: 0`.
 
 **Example (rating_award — BFF generates event_id):**
 
@@ -92,3 +95,13 @@ Defaults match the BFF (`server.js`) if not set.
 - [ ] BFF calls `process-event` after creating a rating (rating_award + rating_submitted). App does not call process-event; use **GET /api/achievements** and **GET /api/tabs/profile** for unlocks and balance.
 - [ ] Read achievements via **GET /api/achievements** (BFF); read balance via **GET /api/tabs/profile** (BFF returns `profiles.tabs_balance` when present).
 - [ ] Do **not** insert or update `user_achievements` or `tabs_ledger` from the client; only `process-event` (service role) should write those tables.
+
+### Cheers migration (tabs_ledger only)
+
+- Cheers tab awards are handled entirely by `process-event` (BFF POST `/api/ratings/:id/cheers`). No writes to `tab_transactions` or `user_tabs_profile` for cheers.
+- **Deploy:** After code changes, rebuild/restart the beerbook-api container so it picks up BFF and Edge Function changes. Redeploy the `process-event` Edge Function if `engine.ts` changed.
+- **Manual test plan:**
+  1. Cheer the same rating twice using the same event_ids (e.g. retry with same IDs) → second call should return `tabs_delta: 0` (idempotent).
+  2. Giver balance increases by +1 (or configured amount); receiver balance increases by +1.
+  3. No new rows in `tab_transactions` for cheers (only `tabs_ledger`).
+  4. **GET /api/tabs/profile** returns `profiles.tabs_balance` as source of truth.

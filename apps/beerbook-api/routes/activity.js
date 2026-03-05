@@ -1,8 +1,11 @@
 /**
  * Activity feed, cheers, user profile & stats
+ * Cheers tab awards use process-event (tabs_ledger + profiles.tabs_balance); no legacy tab_transactions.
  */
 const express = require('express');
-const { awardTabsForCheers } = require('../lib/tabs');
+const crypto = require('crypto');
+const { ensureProfileExists } = require('../lib/tabs');
+const { invokeProcessEvent } = require('../lib/processEvent');
 
 module.exports = function (opts) {
   const { rest } = opts;
@@ -116,12 +119,38 @@ module.exports = function (opts) {
         const { status: postStatus, body } = await rest('POST', '/reactions', { headers: { Prefer: 'return=representation' }, body: JSON.stringify(record) });
         if (postStatus >= 400) return res.status(postStatus).json(body || { error: 'Insert failed' });
         const ratingOut = await rest('GET', `/ratings?id=eq.${ratingId}&select=id,user_id&limit=1`);
-        if (ratingOut.status < 400) {
-          const rating = Array.isArray(ratingOut.body) && ratingOut.body[0] ? ratingOut.body[0] : null;
-          if (rating && rating.user_id) {
-            await awardTabsForCheers(rest, sub, rating.user_id, req.params.id);
+        const rating = ratingOut.status < 400 && Array.isArray(ratingOut.body) && ratingOut.body[0] ? ratingOut.body[0] : null;
+        const receiverUserId = rating && rating.user_id ? rating.user_id : null;
+
+        if (receiverUserId) {
+          await ensureProfileExists(rest, sub, req.claims.preferred_username, req.claims.email);
+          await ensureProfileExists(rest, receiverUserId);
+          const eventIdGiven = crypto.randomUUID();
+          const eventIdReceived = crypto.randomUUID();
+          const authHeader = req.headers.authorization;
+          const ratingIdParam = req.params.id;
+          try {
+            await invokeProcessEvent(authHeader, 'cheers_given', eventIdGiven, {
+              rating_id: ratingIdParam,
+              from_user_id: sub,
+              to_user_id: receiverUserId,
+              amount: 1,
+            });
+            await invokeProcessEvent(authHeader, 'cheers_received', eventIdReceived, {
+              rating_id: ratingIdParam,
+              from_user_id: sub,
+              to_user_id: receiverUserId,
+              target_user_id: receiverUserId,
+              amount: 1,
+            });
+          } catch (err) {
+            if (err.status >= 400) {
+              return res.status(err.status >= 500 ? 502 : err.status).json(err.body || { error: err.message });
+            }
+            throw err;
           }
         }
+
         const countRes = await rest('GET', `/reactions?rating_id=eq.${ratingId}&select=id`, { headers: { Prefer: 'count=exact' } });
         const count = opts.totalFromContentRange(countRes.headers['content-range']) ?? 1;
         res.json({ action: 'added', count });
