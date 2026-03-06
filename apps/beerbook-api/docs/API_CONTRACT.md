@@ -183,7 +183,7 @@ Most list endpoints use:
 | `GET /api/ratings/:id/comments` | `{ data: [...] }` | Accepts limit/offset but no pagination object in response |
 | `GET /api/leaderboard` | `{ period, crew_id, top_reviewers, top_beers, top_yg_values, most_venues }` | Custom shape |
 | `GET /api/highlights/beer-of-the-week` | `{ beer: ... }` | Single object wrapper |
-| `GET /api/activity` | `{ data: [...] }` | No pagination; hardcoded to 50 items |
+| `GET /api/activity` | `{ data: [...], pagination: { limit, offset, total } }` | Merged multi-type activity feed |
 | `GET /api/map` | `{ data: [...] }` | No pagination |
 | `GET /api/map/venues` | `{ data: [...] }` | No pagination |
 | `GET /api/map/user/:id` | `{ data: [...] }` | No pagination |
@@ -924,6 +924,8 @@ Note: Returns 200 with `{ success: true }`, NOT 204.
 |-------|------|---------|------------|
 | `feed` | string | `""` | Optional; `"crew"` or `"following"` (requires auth) |
 | `crew_id` | string | `""` | Required when `feed=crew` |
+| `limit` | number | 50 | Max 100 |
+| `offset` | number | 0 | Min 0 |
 
 **Success Response (200):**
 
@@ -944,7 +946,45 @@ Note: Returns 200 with `{ success: true }`, NOT 204.
       "you_cheered": true,
       "earned_achievement_ids": ["uuid"],
       "achievement_id": "uuid | null",
+      "feed_source": "crew | following | global",
       "...other rating fields..."
+    },
+    {
+      "type": "cheers",
+      "id": "uuid",
+      "user_id": "string",
+      "user_name": "string",
+      "avatar_url": "string | null",
+      "data": {
+        "rating_id": "uuid",
+        "beer_id": "uuid | null",
+        "beer_name": "string | null"
+      },
+      "created_at": "ISO8601"
+    },
+    {
+      "type": "follow",
+      "id": "uuid",
+      "user_id": "string",
+      "user_name": "string",
+      "avatar_url": "string | null",
+      "data": {
+        "followed_user_id": "string",
+        "followed_user_name": "string"
+      },
+      "created_at": "ISO8601"
+    },
+    {
+      "type": "crew_join",
+      "id": "uuid",
+      "user_id": "string",
+      "user_name": "string",
+      "avatar_url": "string | null",
+      "data": {
+        "crew_name": "string | null",
+        "crew_id": "uuid"
+      },
+      "created_at": "ISO8601"
     },
     {
       "type": "venue",
@@ -953,16 +993,20 @@ Note: Returns 200 with `{ success: true }`, NOT 204.
       "address": "string",
       "latitude": 40.123,
       "longitude": -74.456,
-      "created_at": "ISO8601"
+      "created_at": "ISO8601",
+      "feed_source": "global"
     }
-  ]
+  ],
+  "pagination": { "limit": 50, "offset": 0, "total": 230 }
 }
 ```
 
-Items are a merged list of ratings + venues, sorted by `created_at` desc, capped at 50.
+Items are a merged list of ratings + venues + cheers + follow + crew_join, sorted by `created_at` desc.
 - Rating items get `type: "rating"` + cheers/achievement enrichment.
-- Venue items get `type: "venue"`.
+- Additional event types: `type: "cheers"`, `type: "follow"`, `type: "crew_join"`.
+- Venue items still use `type: "venue"` for backward compatibility.
 - `you_cheered` is `false` when unauthenticated.
+- `follow` items require `follows.created_at`; if unavailable, follow events are omitted.
 
 **Error Responses:**
 - 401: `{ "error": "Authentication required for feed filters" }`
@@ -2160,6 +2204,7 @@ Both routes are identical.
 |-------|------|---------|-----|
 | `limit` | number | 50 | 200 |
 | `offset` | number | 0 | — |
+| `period` | string | `alltime` | `weekly \| monthly \| alltime` |
 
 **Success Response (200):**
 
@@ -2176,12 +2221,23 @@ Both routes are identical.
       "lifetime_tabs_earned": 0,
       "current_streak_weeks": 0,
       "tier_display_name": "string",
-      "tier_multiplier": 1.0
+      "tier_multiplier": 1.0,
+      "rating_count": 42,
+      "avg_rating": 4.2,
+      "total_cheers": 15,
+      "rank": 1
     }
   ],
   "pagination": { "limit": 50, "offset": 0, "total": 100 }
 }
 ```
+
+`period` only affects `rating_count`, `avg_rating`, and `total_cheers`:
+- `weekly`: current week starting Monday 00:00 UTC
+- `monthly`: current calendar month
+- `alltime`: no time filter
+
+Ranking and sort order remain based on `lifetime_tabs_earned desc`.
 
 ---
 
@@ -3544,7 +3600,6 @@ All admin routes require `authMiddleware` + `adminMiddleware`.
 
 ### 4. Missing Pagination
 - `GET /api/ratings/:id/comments` accepts `limit`/`offset` but does NOT return a `pagination` object
-- `GET /api/activity` hardcoded to 50 items, no pagination params
 
 ### 5. POST /api/ratings Dual Behavior
 - If the user already rated this beer (same beer_id or beer_name + optional venue_id), it UPDATES and returns 200 with `{ updated: true, previous_rating }`

@@ -18,6 +18,28 @@ function getUtcDayKey() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function getPeriodStartUtc(period) {
+  const now = new Date();
+  if (period === 'weekly') {
+    const day = now.getUTCDay();
+    const mondayOffset = day === 0 ? -6 : (1 - day);
+    const monday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    monday.setUTCDate(monday.getUTCDate() + mondayOffset);
+    monday.setUTCHours(0, 0, 0, 0);
+    return monday.toISOString();
+  }
+  if (period === 'monthly') {
+    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0, 0)).toISOString();
+  }
+  return null;
+}
+
+function chunkArray(items, size) {
+  const out = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
+
 function stableIndexForSeed(seed, size) {
   if (!Number.isInteger(size) || size <= 0) return 0;
   const text = String(seed || '');
@@ -677,14 +699,87 @@ module.exports = function tabsRoutes(opts) {
     try {
       const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 200);
       const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
+      const periodRaw = String(req.query.period || 'alltime').trim().toLowerCase();
+      const period = ['weekly', 'monthly', 'alltime'].includes(periodRaw) ? periodRaw : 'alltime';
+      const periodStart = getPeriodStartUtc(period);
       const out = await rest(
         'GET',
         `/tabs_leaderboard?order=lifetime_tabs_earned.desc&limit=${limit}&offset=${offset}`,
         { headers: { Prefer: 'count=exact' } }
       );
       if (out.status >= 400) return res.status(out.status).json(out.body || { error: 'Upstream error' });
+      const rows = Array.isArray(out.body) ? out.body : [];
+      const userIds = [...new Set(rows.map((row) => String(row?.user_id || '').trim()).filter(Boolean))];
+      const statsByUser = Object.create(null);
+      userIds.forEach((id) => {
+        statsByUser[id] = {
+          rating_count: 0,
+          avg_rating_sum: 0,
+          total_cheers: 0,
+        };
+      });
+
+      if (userIds.length) {
+        const userInClause = userIds.map((id) => encodeURIComponent(id)).join(',');
+        let ratingsPath = `/ratings?user_id=in.(${userInClause})&select=id,user_id,rating,created_at&limit=50000`;
+        if (periodStart) ratingsPath += `&created_at=gte.${encodeURIComponent(periodStart)}`;
+        const [ratingsRes, ratingsOwnerRes] = await Promise.all([
+          rest('GET', ratingsPath),
+          periodStart
+            ? rest('GET', `/ratings?user_id=in.(${userInClause})&select=id,user_id&limit=50000`)
+            : Promise.resolve(null),
+        ]);
+        if (ratingsRes.status < 400) {
+          const ratingsForPeriod = Array.isArray(ratingsRes.body) ? ratingsRes.body : [];
+          ratingsForPeriod.forEach((rating) => {
+            const userId = String(rating?.user_id || '').trim();
+            if (!userId || !statsByUser[userId]) return;
+            const value = Number(rating?.rating);
+            statsByUser[userId].rating_count += 1;
+            if (Number.isFinite(value)) statsByUser[userId].avg_rating_sum += value;
+          });
+
+          const ownerSource = periodStart
+            ? (ratingsOwnerRes && ratingsOwnerRes.status < 400 && Array.isArray(ratingsOwnerRes.body) ? ratingsOwnerRes.body : [])
+            : ratingsForPeriod;
+          const ratingOwnerById = Object.create(null);
+          ownerSource.forEach((rating) => {
+            if (rating?.id && rating?.user_id) ratingOwnerById[String(rating.id)] = String(rating.user_id);
+          });
+
+          const allRatingIds = Object.keys(ratingOwnerById);
+          if (allRatingIds.length) {
+            for (const chunk of chunkArray(allRatingIds, 250)) {
+              const encodedIds = chunk.map((id) => encodeURIComponent(id)).join(',');
+              let cheersPath = `/reactions?reaction_type=eq.cheers&rating_id=in.(${encodedIds})&select=rating_id&limit=50000`;
+              if (periodStart) cheersPath += `&created_at=gte.${encodeURIComponent(periodStart)}`;
+              const cheersRes = await rest('GET', cheersPath);
+              if (cheersRes.status >= 400) continue;
+              const reactions = Array.isArray(cheersRes.body) ? cheersRes.body : [];
+              reactions.forEach((reaction) => {
+                const ownerId = reaction?.rating_id ? ratingOwnerById[String(reaction.rating_id)] : null;
+                if (!ownerId || !statsByUser[ownerId]) return;
+                statsByUser[ownerId].total_cheers += 1;
+              });
+            }
+          }
+        }
+      }
+
+      const data = rows.map((row, index) => {
+        const userId = String(row?.user_id || '').trim();
+        const stats = statsByUser[userId] || { rating_count: 0, avg_rating_sum: 0, total_cheers: 0 };
+        const avg = stats.rating_count > 0 ? (stats.avg_rating_sum / stats.rating_count) : 0;
+        return {
+          ...row,
+          rating_count: stats.rating_count,
+          avg_rating: Number(avg.toFixed(2)),
+          total_cheers: stats.total_cheers,
+          rank: offset + index + 1,
+        };
+      });
       res.json({
-        data: Array.isArray(out.body) ? out.body : [],
+        data,
         pagination: {
           limit,
           offset,

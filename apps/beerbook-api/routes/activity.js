@@ -135,51 +135,232 @@ module.exports = function (opts) {
     };
   }
 
-  // GET /api/activity — recent ratings + new venues, limit 50
+  function buildInClause(ids) {
+    return ids.map((id) => encodeURIComponent(id)).join(',');
+  }
+
+  function parseLimitOffset(req) {
+    let limit = parseInt(req.query.limit, 10);
+    if (!Number.isFinite(limit) || limit < 1) limit = 50;
+    if (limit > 100) limit = 100;
+    let offset = parseInt(req.query.offset, 10);
+    if (!Number.isFinite(offset) || offset < 0) offset = 0;
+    return { limit, offset };
+  }
+
+  // GET /api/activity — merged activity feed with pagination
   router.get('/activity', opts.softAuthMiddleware, (req, res, next) => {
     const feed = String(req.query.feed || '').trim();
     const crewId = String(req.query.crew_id || '').trim();
     const requester = req.claims?.sub || null;
-    Promise.all([
-      rest('GET', '/ratings?order=created_at.desc&limit=4000'),
-      rest('GET', '/venues?order=created_at.desc&limit=10'),
-    ])
-      .then(async ([ratingsRes, venuesRes]) => {
-        if (ratingsRes.status >= 400) return res.status(ratingsRes.status).json(ratingsRes.body || { error: 'Upstream error' });
-        let ratings = Array.isArray(ratingsRes.body) ? ratingsRes.body : [];
+    const { limit, offset } = parseLimitOffset(req);
+    Promise.resolve()
+      .then(async () => {
+        let feedUserIds = null;
         if (feed) {
           if (!requester) return res.status(401).json({ error: 'Authentication required for feed filters' });
           if (feed === 'crew') {
             if (!crewId) return res.status(400).json({ error: 'crew_id is required for feed=crew' });
             const crewMembersRes = await rest('GET', `/crew_members?crew_id=eq.${encodeURIComponent(crewId)}&select=user_id`);
-            if (crewMembersRes.status >= 400) return res.status(crewMembersRes.status).json(crewMembersRes.body || { error: 'Upstream error' });
-            const ids = new Set((Array.isArray(crewMembersRes.body) ? crewMembersRes.body : []).map((m) => m.user_id));
-            ratings = ratings.filter((r) => ids.has(r.user_id));
+            if (crewMembersRes.status >= 400) {
+              return res.status(crewMembersRes.status).json(crewMembersRes.body || { error: 'Upstream error' });
+            }
+            feedUserIds = new Set((Array.isArray(crewMembersRes.body) ? crewMembersRes.body : []).map((m) => m.user_id).filter(Boolean));
           } else if (feed === 'following') {
             const followsRes = await rest('GET', `/follows?follower_id=eq.${encodeURIComponent(requester)}&select=followed_id`);
-            if (followsRes.status >= 400) return res.status(followsRes.status).json(followsRes.body || { error: 'Upstream error' });
-            const ids = new Set((Array.isArray(followsRes.body) ? followsRes.body : []).map((f) => f.followed_id));
-            ratings = ratings.filter((r) => ids.has(r.user_id));
+            if (followsRes.status >= 400) {
+              return res.status(followsRes.status).json(followsRes.body || { error: 'Upstream error' });
+            }
+            feedUserIds = new Set((Array.isArray(followsRes.body) ? followsRes.body : []).map((f) => f.followed_id).filter(Boolean));
           }
         }
+
+        const [ratingsRes, venuesRes, cheersRes, followsRes, crewJoinsRes] = await Promise.all([
+          rest('GET', '/ratings?order=created_at.desc&limit=4000'),
+          rest('GET', '/venues?order=created_at.desc&limit=10'),
+          rest('GET', '/reactions?reaction_type=eq.cheers&select=id,user_id,rating_id,created_at&order=created_at.desc&limit=4000'),
+          rest('GET', '/follows?select=id,follower_id,followed_id,created_at&order=created_at.desc&limit=4000'),
+          rest(
+            'GET',
+            feed === 'crew' && crewId
+              ? `/crew_members?crew_id=eq.${encodeURIComponent(crewId)}&select=id,user_id,crew_id,joined_at&order=joined_at.desc&limit=4000`
+              : '/crew_members?select=id,user_id,crew_id,joined_at&order=joined_at.desc&limit=4000'
+          ),
+        ]);
+
+        if (ratingsRes.status >= 400) return res.status(ratingsRes.status).json(ratingsRes.body || { error: 'Upstream error' });
+        if (venuesRes.status >= 400) return res.status(venuesRes.status).json(venuesRes.body || { error: 'Upstream error' });
+        if (cheersRes.status >= 400) return res.status(cheersRes.status).json(cheersRes.body || { error: 'Upstream error' });
+        if (crewJoinsRes.status >= 400) return res.status(crewJoinsRes.status).json(crewJoinsRes.body || { error: 'Upstream error' });
+
+        let ratings = Array.isArray(ratingsRes.body) ? ratingsRes.body : [];
+        if (feedUserIds) {
+          ratings = ratings.filter((r) => feedUserIds.has(r.user_id));
+        }
+
+        let cheersRows = Array.isArray(cheersRes.body) ? cheersRes.body : [];
+        if (feedUserIds) {
+          cheersRows = cheersRows.filter((row) => feedUserIds.has(row.user_id));
+        }
+
+        const ratingIdsForCheers = [...new Set(cheersRows.map((row) => String(row?.rating_id || '').trim()).filter(Boolean))];
+        const ratingInfoById = Object.create(null);
+        if (ratingIdsForCheers.length) {
+          const inClause = buildInClause(ratingIdsForCheers);
+          const cheersRatingsRes = await rest('GET', `/ratings?id=in.(${inClause})&select=id,beer_id,beer_name&limit=5000`);
+          if (cheersRatingsRes.status < 400) {
+            const mapped = Array.isArray(cheersRatingsRes.body) ? cheersRatingsRes.body : [];
+            mapped.forEach((row) => { ratingInfoById[String(row.id)] = row; });
+          }
+        }
+
+        let followRows = [];
+        if (followsRes.status < 400) {
+          followRows = Array.isArray(followsRes.body) ? followsRes.body : [];
+          if (feedUserIds) {
+            followRows = followRows.filter((row) => feedUserIds.has(row.follower_id));
+          }
+        } else {
+          const followsErr = typeof followsRes.body === 'object' && followsRes.body
+            ? JSON.stringify(followsRes.body).toLowerCase()
+            : '';
+          const missingCreatedAt = followsErr.includes('created_at');
+          if (!missingCreatedAt) {
+            return res.status(followsRes.status).json(followsRes.body || { error: 'Upstream error' });
+          }
+        }
+
+        let crewJoins = Array.isArray(crewJoinsRes.body) ? crewJoinsRes.body : [];
+        if (feedUserIds) {
+          crewJoins = crewJoins.filter((row) => feedUserIds.has(row.user_id));
+        }
+
+        const crewIds = [...new Set(crewJoins.map((row) => String(row?.crew_id || '').trim()).filter(Boolean))];
+        const crewNameById = Object.create(null);
+        if (crewIds.length) {
+          const inClause = buildInClause(crewIds);
+          const crewsRes = await rest('GET', `/crews?id=in.(${inClause})&select=id,name&limit=1000`);
+          if (crewsRes.status < 400) {
+            const crews = Array.isArray(crewsRes.body) ? crewsRes.body : [];
+            crews.forEach((crew) => {
+              crewNameById[String(crew.id)] = crew.name || null;
+            });
+          }
+        }
+
+        const actorIds = new Set();
+        ratings.forEach((row) => { if (row?.user_id) actorIds.add(String(row.user_id)); });
+        cheersRows.forEach((row) => { if (row?.user_id) actorIds.add(String(row.user_id)); });
+        followRows.forEach((row) => {
+          if (row?.follower_id) actorIds.add(String(row.follower_id));
+          if (row?.followed_id) actorIds.add(String(row.followed_id));
+        });
+        crewJoins.forEach((row) => { if (row?.user_id) actorIds.add(String(row.user_id)); });
+
+        const profileById = Object.create(null);
+        const actorList = [...actorIds].filter(Boolean);
+        if (actorList.length) {
+          const inClause = buildInClause(actorList);
+          const profilesRes = await rest('GET', `/profiles?id=in.(${inClause})&select=id,display_name,avatar_url&limit=5000`);
+          if (profilesRes.status < 400) {
+            const profiles = Array.isArray(profilesRes.body) ? profilesRes.body : [];
+            profiles.forEach((profile) => { profileById[String(profile.id)] = profile; });
+          }
+        }
+
+        const feedSource = feed === 'crew' ? 'crew' : (feed === 'following' ? 'following' : 'global');
         const venues = Array.isArray(venuesRes.body) ? venuesRes.body : [];
+        const ratingItems = ratings.map((r) => ({
+          type: 'rating',
+          ...r,
+          feed_source: feedSource,
+        }));
+        const venueItems = venues.map((v) => ({
+          type: 'venue',
+          ...v,
+          feed_source: 'global',
+        }));
+        const cheersItems = cheersRows.map((row) => {
+          const actor = profileById[String(row.user_id)] || {};
+          const rating = ratingInfoById[String(row.rating_id)] || {};
+          return {
+            type: 'cheers',
+            id: row.id || `cheers:${row.user_id}:${row.rating_id}:${row.created_at}`,
+            user_id: row.user_id,
+            user_name: actor.display_name || 'Beer Lover',
+            avatar_url: actor.avatar_url ?? null,
+            data: {
+              rating_id: row.rating_id || null,
+              beer_id: rating.beer_id || null,
+              beer_name: rating.beer_name || null,
+            },
+            created_at: row.created_at || null,
+            feed_source: feedSource,
+          };
+        });
+        const followItems = followRows
+          .filter((row) => !!row.created_at)
+          .map((row) => {
+            const actor = profileById[String(row.follower_id)] || {};
+            const followed = profileById[String(row.followed_id)] || {};
+            return {
+              type: 'follow',
+              id: row.id || `follow:${row.follower_id}:${row.followed_id}:${row.created_at}`,
+              user_id: row.follower_id,
+              user_name: actor.display_name || 'Beer Lover',
+              avatar_url: actor.avatar_url ?? null,
+              data: {
+                followed_user_id: row.followed_id || null,
+                followed_user_name: followed.display_name || 'Beer Lover',
+              },
+              created_at: row.created_at,
+              feed_source: feedSource,
+            };
+          });
+        const crewJoinItems = crewJoins
+          .filter((row) => !!row.joined_at)
+          .map((row) => {
+            const actor = profileById[String(row.user_id)] || {};
+            return {
+              type: 'crew_join',
+              id: row.id || `crew_join:${row.user_id}:${row.crew_id}:${row.joined_at}`,
+              user_id: row.user_id,
+              user_name: actor.display_name || 'Beer Lover',
+              avatar_url: actor.avatar_url ?? null,
+              data: {
+                crew_name: crewNameById[String(row.crew_id)] || null,
+                crew_id: row.crew_id || null,
+              },
+              created_at: row.joined_at,
+              feed_source: feedSource,
+            };
+          });
+
         const items = [
-          ...ratings.map((r) => ({ type: 'rating', ...r })),
-          ...venues.map((v) => ({ type: 'venue', ...v })),
+          ...ratingItems,
+          ...venueItems,
+          ...cheersItems,
+          ...followItems,
+          ...crewJoinItems,
         ].sort((a, b) => {
           const ta = new Date(a.created_at || 0).getTime();
           const tb = new Date(b.created_at || 0).getTime();
           return tb - ta;
-        }).slice(0, 50);
-        const ratingItems = items.filter((item) => item.type === 'rating');
-        const ratingsWithCheers = await attachCheersData(ratingItems, requester);
+        });
+        const total = items.length;
+        const page = items.slice(offset, offset + limit);
+        const pagedRatingItems = page.filter((item) => item.type === 'rating');
+        const ratingsWithCheers = await attachCheersData(pagedRatingItems, requester);
         const ratingsWithAchievements = await attachRatingAchievementData(ratingsWithCheers);
         const ratingsById = new Map(ratingsWithAchievements.map((r) => [String(r.id), r]));
-        const enrichedItems = items.map((item) => {
+        const enrichedItems = page.map((item) => {
           if (item.type !== 'rating') return item;
           return ratingsById.get(String(item.id)) || item;
         });
-        res.json({ data: enrichedItems });
+        res.json({
+          data: enrichedItems,
+          pagination: { limit, offset, total },
+        });
       })
       .catch(next);
   });
