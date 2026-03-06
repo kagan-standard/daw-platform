@@ -269,7 +269,9 @@ async function processEvent(opts, eventType, eventId, payload, userId) {
     if (!eventId) throw new Error('event_id required for cheers_received');
     const target = payload.target_user_id;
     if (typeof target !== 'string' || !target.trim()) {
-      throw new Error('payload.target_user_id (Keycloak sub of receiver) is required for cheers_received');
+      const err = new Error('payload.target_user_id (Keycloak sub of receiver) is required for cheers_received');
+      err.status = 400;
+      throw err;
     }
     const ledgerUserId = target.trim();
     balanceUserId = ledgerUserId;

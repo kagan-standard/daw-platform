@@ -9,7 +9,13 @@ module.exports = function (opts) {
 
   router.get('/', async (req, res, next) => {
     try {
+      const VALID_PERIODS = ['weekly', 'monthly', 'alltime'];
       const period = req.query.period || 'alltime';
+      if (!VALID_PERIODS.includes(period)) {
+        return res.status(400).json({
+          error: `Invalid period. Must be one of: ${VALID_PERIODS.join(', ')}`,
+        });
+      }
       const crewId = String(req.query.crew_id || '').trim();
       let since;
       if (period === 'weekly') since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
