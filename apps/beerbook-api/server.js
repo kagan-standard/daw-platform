@@ -35,9 +35,15 @@ const CLOCK_SKEW = Number(process.env.TOKEN_CLOCK_SKEW_SECONDS) || 30;
 const RATE_WINDOW_MS = Number(process.env.RATE_LIMIT_WINDOW_MS) || 60000;
 // Raised default (200) for mobile/bootstrap burst; set RATE_LIMIT_MAX=100 to keep previous behavior
 const RATE_MAX = Number(process.env.RATE_LIMIT_MAX) || 200;
-const ADMIN_USER_IDS = new Set([
-  process.env.ADMIN_USER_ID || '',
-].filter(Boolean));
+const ADMIN_USER_IDS = new Set(
+  [
+    process.env.ADMIN_USER_ID || '',
+    process.env.ADMIN_USER_IDS || '',
+  ]
+    .flatMap((value) => String(value).split(','))
+    .map((value) => value.trim())
+    .filter(Boolean)
+);
 
 const SORT_WHITELIST = ['created_at', 'rating', 'beer_name'];
 const DEFAULT_LIMIT = 50;
@@ -45,7 +51,7 @@ const MAX_LIMIT = 100;
 const CATALOG_SORT_WHITELIST = ['name', 'abv', 'review_overall', 'review_count'];
 
 function isAdmin(sub) {
-  return ADMIN_USER_IDS.has(sub);
+  return ADMIN_USER_IDS.has(String(sub || '').trim());
 }
 
 // ---------- Helpers: call PostgREST ----------
