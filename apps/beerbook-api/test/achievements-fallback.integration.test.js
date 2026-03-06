@@ -61,7 +61,7 @@ test('GET /api/achievements/fallback returns a deterministic fallback object', a
         },
       ],
     },
-    '/ratings?user_id=eq.user-123&select=style,photo,review,price,venue_id,stars,is_new_beer,city,created_at&limit=5000': {
+    '/ratings?user_id=eq.user-123&select=style,photo_url,review,price,venue_id,stars,is_new_beer,city,created_at&limit=5000': {
       status: 200,
       body: [
         { style: 'IPA', stars: 4, created_at: '2026-03-01T00:00:00.000Z' },
@@ -124,7 +124,7 @@ test('GET /api/achievements/fallback returns 204 when no safe fallback exists', 
         },
       ],
     },
-    '/ratings?user_id=eq.user-123&select=style,photo,review,price,venue_id,stars,is_new_beer,city,created_at&limit=5000': {
+    '/ratings?user_id=eq.user-123&select=style,photo_url,review,price,venue_id,stars,is_new_beer,city,created_at&limit=5000': {
       status: 200,
       body: [],
     },

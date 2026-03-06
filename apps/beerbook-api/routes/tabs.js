@@ -91,7 +91,7 @@ function computeFallbackProgress(achievement, ratings, stats) {
     const where = rules.where && typeof rules.where === 'object' ? rules.where : null;
     if (!where) return null;
     const progressCurrent = countIf(ratings, (row) => {
-      if (typeof where.photo === 'boolean' && (!!row?.photo) !== where.photo) return false;
+      if (typeof where.photo === 'boolean' && (!!(row?.photo_url ?? row?.photo)) !== where.photo) return false;
       if (typeof where.price === 'boolean' && (!!row?.price) !== where.price) return false;
       if (typeof where.venue_id === 'boolean' && (!!row?.venue_id) !== where.venue_id) return false;
       if (typeof where.is_new_beer === 'boolean' && (!!row?.is_new_beer) !== where.is_new_beer) return false;
@@ -108,7 +108,7 @@ function computeFallbackProgress(achievement, ratings, stats) {
     if (!field) return null;
     const expected = rules.value;
     const progressCurrent = countIf(ratings, (row) => {
-      const value = row?.[field];
+      const value = field === 'photo' ? (row?.photo_url ?? row?.[field]) : row?.[field];
       if (typeof expected === 'boolean') return (!!value) === expected;
       return value != null;
     });
@@ -336,7 +336,7 @@ module.exports = function tabsRoutes(opts) {
         ),
         rest(
           'GET',
-          `/ratings?user_id=eq.${userId}&select=style,photo,review,price,venue_id,stars,is_new_beer,city,created_at&limit=5000`
+          `/ratings?user_id=eq.${userId}&select=style,photo_url,review,price,venue_id,stars,is_new_beer,city,created_at&limit=5000`
         ),
       ]);
 
