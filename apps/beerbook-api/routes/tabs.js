@@ -114,12 +114,12 @@ function computeFallbackProgress(achievement, ratings, stats) {
     if (!where) return null;
     const progressCurrent = countIf(ratings, (row) => {
       if (typeof where.photo === 'boolean' && (!!(row?.photo_url ?? row?.photo)) !== where.photo) return false;
-      if (typeof where.price === 'boolean' && (!!row?.price) !== where.price) return false;
+      if (typeof where.price === 'boolean' && (!!(row?.price_cents ?? row?.price)) !== where.price) return false;
       if (typeof where.venue_id === 'boolean' && (!!row?.venue_id) !== where.venue_id) return false;
       if (typeof where.is_new_beer === 'boolean' && (!!row?.is_new_beer) !== where.is_new_beer) return false;
-      if (Number.isFinite(Number(where.review_min_len)) && String(row?.review || '').trim().length < Number(where.review_min_len)) return false;
-      if (Number.isFinite(Number(where.stars_gte)) && Number(row?.stars) < Number(where.stars_gte)) return false;
-      if (Number.isFinite(Number(where.stars_lte)) && Number(row?.stars) > Number(where.stars_lte)) return false;
+      if (Number.isFinite(Number(where.review_min_len)) && String(row?.notes || '').trim().length < Number(where.review_min_len)) return false;
+      if (Number.isFinite(Number(where.stars_gte)) && Number(row?.rating ?? row?.stars) < Number(where.stars_gte)) return false;
+      if (Number.isFinite(Number(where.stars_lte)) && Number(row?.rating ?? row?.stars) > Number(where.stars_lte)) return false;
       return true;
     });
     return { progress_current: progressCurrent, progress_target: gte };
@@ -130,7 +130,9 @@ function computeFallbackProgress(achievement, ratings, stats) {
     if (!field) return null;
     const expected = rules.value;
     const progressCurrent = countIf(ratings, (row) => {
-      const value = field === 'photo' ? (row?.photo_url ?? row?.[field]) : row?.[field];
+      const value = field === 'photo'
+        ? (row?.photo_url ?? row?.[field])
+        : (field === 'price' ? (row?.price_cents ?? row?.price) : row?.[field]);
       if (typeof expected === 'boolean') return (!!value) === expected;
       return value != null;
     });
@@ -143,7 +145,7 @@ function computeFallbackProgress(achievement, ratings, stats) {
     const targetValue = Number(rules.value);
     if (!field || !Number.isFinite(targetValue)) return null;
     const progressCurrent = countIf(ratings, (row) => {
-      const numeric = Number(row?.[field]);
+      const numeric = Number(field === 'stars' ? (row?.rating ?? row?.stars) : row?.[field]);
       if (!Number.isFinite(numeric)) return false;
       if (op === '>=') return numeric >= targetValue;
       if (op === '<=') return numeric <= targetValue;
@@ -358,7 +360,7 @@ module.exports = function tabsRoutes(opts) {
         ),
         rest(
           'GET',
-          `/ratings?user_id=eq.${userId}&select=style,photo_url,review,price,venue_id,stars,is_new_beer,city,created_at&limit=5000`
+          `/ratings?user_id=eq.${userId}&select=style,photo_url,notes,price_cents,venue_id,rating,is_new_beer,city,created_at&limit=5000`
         ),
       ]);
 
