@@ -71,7 +71,7 @@ Source: `daw-platform/apps/beerbook-api`
 |------------|----------|
 | `authMiddleware` | Required. Rejects with 401/403 if missing, expired, or invalid. |
 | `softAuthMiddleware` | Optional. If token present and valid, sets `req.claims`. If missing or invalid, continues without `req.claims` (no error). |
-| `adminMiddleware` | Runs after `authMiddleware`. Checks `req.claims.sub` against `ADMIN_USER_IDS` env var. |
+| `adminMiddleware` | Runs after `authMiddleware`. Checks trimmed `req.claims.sub` against env-admin IDs parsed from `ADMIN_USER_IDS` (comma-separated) plus optional `ADMIN_USER_ID` fallback. |
 
 ### `req.claims` Shape
 
@@ -743,15 +743,15 @@ Note: Accepts both `snake_case` and `camelCase` for most fields.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `tabs_earned` | number | Total tabs delta from process-event. 0 if weekly cap hit. |
+| `tabs_earned` | number | Total tabs delta from process-event. For admin users in env-admin IDs, weekly cap is bypassed and this reflects the full calculated amount even after 10+ ratings/week. |
 | `tabs_breakdown` | `Record<string, number>` | Object mapping source to post-multiplier amount. Keys: `rating_base` (always 1 base), `rating_location` (1 base, if location provided), `rating_photo` (2 base, if photo_url provided), `rating_price` (1 base, if price_cents provided), `rating_review` (2 base, if notes >= 10 chars). Values are `Math.round(base * new_beer_multiplier * tier_multiplier * seeder_multiplier)`. |
-| `tabs_reason` | `"awarded"` or `"weekly_cap"` | `"awarded"` when `tabs_earned > 0`; `"weekly_cap"` when `tabs_earned === 0` |
+| `tabs_reason` | `"awarded"` or `"weekly_cap"` | `"awarded"` when `tabs_earned > 0`; `"weekly_cap"` when `tabs_earned === 0`. Admin users that bypass cap stay `"awarded"` for qualifying ratings. |
 | `tier_multiplier` | number | From tier config (e.g. 1.0, 1.25, 1.5) |
 | `seeder_multiplier` | number | 1.5 if user is seeder, 1.0 otherwise |
 | `new_beer_multiplier` | number | 1.5 if `is_new_beer === true`, 1.0 otherwise |
 | `is_new_beer` | boolean | Whether this was a new beer submission |
 | `weekly_count` | number | Current count of this user's `rating_award` events in the current week (Mon 00:00 UTC reset), after this submission |
-| `weekly_cap` | number | Weekly cap value (currently `10`) |
+| `weekly_cap` | number | Weekly cap value (currently `10`) for non-admin enforcement; admin users listed in env-admin IDs bypass this cap in `rating_award`. |
 | `achievements_unlocked` | `Array<{ key: string, name: string, reward_tabs: number }>` | Achievements earned by this rating. Empty array if none. |
 
 **Success Response — UPDATE EXISTING RATING (200):**
@@ -2214,7 +2214,7 @@ Both routes are identical.
     {
       "user_id": "string",
       "display_name": "string",
-      "avatar_url": "string",
+      "avatar_url": "string | null",
       "current_tier": "string",
       "is_seeder": false,
       "tab_balance": 0,
@@ -2515,6 +2515,9 @@ Returns `{ "data": null }` when no next achievement.
 ```
 
 Note: Response is NOT wrapped in `{ data: ... }` — returned flat.
+
+Rating-based fallback progress evaluates ratings table columns `notes`, `rating`, and `price_cents`.
+Legacy achievement rule keys such as `review_min_len`, `stars_gte`/`stars_lte`, and `price` are still supported and mapped to those ratings columns.
 
 **Success Response (204):** No body (no candidates available).
 
@@ -3512,7 +3515,7 @@ All admin routes require `authMiddleware` + `adminMiddleware`.
 
 | Event Type | Payload |
 |------------|---------|
-| `rating_award` | `{ amount, breakdown?, context? }` |
+| `rating_award` | `{ amount, breakdown?, context? }` (weekly cap: first 10/week for non-admin users; env-admin IDs bypass cap) |
 | `cheers_given` | `{ amount, to_user_id?, context? }` |
 | `cheers_received` | `{ amount, target_user_id (required), context? }` |
 | `rating_submitted` | `{ context }` (triggers achievement evaluation) |
@@ -3613,10 +3616,10 @@ All admin routes require `authMiddleware` + `adminMiddleware`.
 - Many body fields accept both `snake_case` and `camelCase` (e.g., `beer_name`/`beerName`, `price_cents`/`priceCents`)
 - Responses always use `snake_case`
 
-### 8. `weekly_count` / `weekly_cap` Not in POST /api/ratings Response
-- `POST /api/ratings` create response now includes:
+### 8. `weekly_count` / `weekly_cap` in POST /api/ratings Response
+- `POST /api/ratings` create response includes:
   - `weekly_count` = current `rating_award` count this week (post-submit)
-  - `weekly_cap` = `10`
+  - `weekly_cap` = `10` (cap enforced for non-admin users; env-admin IDs bypass cap)
 - Update responses (`updated: true`) still do not include these fields.
 
 ### 9. Crew Join Error Uses Structured Errors
