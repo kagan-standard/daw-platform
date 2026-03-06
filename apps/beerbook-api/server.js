@@ -1103,10 +1103,6 @@ app.post('/api/ratings', authMiddleware, async (req, res) => {
     price_cents: priceCentsRaw != null ? Number(priceCentsRaw) : null,
     serve_type: serveTypeRaw || null,
   };
-  if (!record.beer_name || record.rating == null) {
-    return res.status(400).json({ error: 'beer_name and rating required' });
-  }
-
   if (isNewBeer) {
     const createBeerRes = await rest('POST', '/beers', {
       headers: { Prefer: 'return=representation' },
@@ -1139,6 +1135,9 @@ app.post('/api/ratings', authMiddleware, async (req, res) => {
       if (record.abv == null && existingBeer.abv != null) record.abv = Number(existingBeer.abv);
       if (!record.beer_name && existingBeer.name) record.beer_name = existingBeer.name;
     }
+  }
+  if (!record.beer_name) {
+    return res.status(400).json({ error: 'beer_name required when beer_id is missing or unresolved' });
   }
   if (!record.style) {
     return res.status(400).json({ error: 'style required when beer style is unknown' });
@@ -1352,10 +1351,25 @@ app.post('/api/ratings/:id/comments', authMiddleware, async (req, res) => {
     return res.status(insertStatus >= 500 ? 502 : insertStatus).json(comment || { error: 'Failed to create comment' });
   }
 
-  await rest('POST', '/rpc/increment_comment_count', {
+  // Non-blocking counter update. If this RPC fails, comment rows remain source-of-truth.
+  // Reconcile periodically (manual or scheduled):
+  // UPDATE ratings SET comment_count = (
+  //   SELECT count(*) FROM rating_comments WHERE rating_id = ratings.id
+  // ) WHERE id IN (
+  //   SELECT r.id FROM ratings r
+  //   LEFT JOIN (SELECT rating_id, count(*) AS actual FROM rating_comments GROUP BY rating_id) c
+  //   ON r.id = c.rating_id
+  //   WHERE r.comment_count != COALESCE(c.actual, 0)
+  // );
+  const { status: incrementStatus, body: incrementBody } = await rest('POST', '/rpc/increment_comment_count', {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ rating_id_input: id }),
   });
+  if (incrementStatus >= 400) {
+    const rpcMessage = (incrementBody && (incrementBody.message || incrementBody.error || incrementBody.hint))
+      || `status ${incrementStatus}`;
+    console.error(`[WARN] comment_count RPC failed for rating ${id}:`, rpcMessage);
+  }
 
   const row = Array.isArray(comment) ? comment[0] : comment;
   res.status(201).json({ data: row || insertPayload });
@@ -1381,10 +1395,16 @@ app.delete('/api/ratings/:id/comments/:commentId', authMiddleware, async (req, r
     return res.status(502).json({ error: 'Failed to delete comment' });
   }
 
-  await rest('POST', '/rpc/decrement_comment_count', {
+  // Non-blocking counter update. See reconciliation query note above.
+  const { status: decrementStatus, body: decrementBody } = await rest('POST', '/rpc/decrement_comment_count', {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ rating_id_input: id }),
   });
+  if (decrementStatus >= 400) {
+    const rpcMessage = (decrementBody && (decrementBody.message || decrementBody.error || decrementBody.hint))
+      || `status ${decrementStatus}`;
+    console.error(`[WARN] comment_count RPC failed for rating ${id}:`, rpcMessage);
+  }
 
   res.status(200).json({ success: true });
 });
