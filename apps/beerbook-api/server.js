@@ -241,6 +241,8 @@ function corsMiddleware(req, res, next) {
 app.use(corsMiddleware);
 app.use(requestIdMiddleware);
 app.use(express.json());
+// Serve static assets from /public at the root path (e.g., /images/...)
+app.use(express.static(path.join(__dirname, 'public')));
 // Phase 2.1: serve uploaded images (same origin as API)
 app.use('/uploads', express.static(UPLOAD_DIR));
 
