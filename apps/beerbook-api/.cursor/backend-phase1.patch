@@ -1,0 +1,70 @@
+--- a/server.js
++++ b/server.js
+@@ -24,6 +24,11 @@ const REST_URL = (process.env.SUPABASE_REST_URL || 'http://supabase-rest:3000').replace(/\/$/, '');
+ const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+ const CORS_ORIGIN = process.env.CORS_ORIGIN || 'https://beerbook.drinksafterwork.net';
++// Allowlist for CORS: web origin + optional comma-separated CORS_ORIGINS (e.g. mobile app origins)
++const CORS_ORIGINS_RAW = process.env.CORS_ORIGINS || '';
++const CORS_ALLOWED_ORIGINS = new Set(
++  [CORS_ORIGIN, ...CORS_ORIGINS_RAW.split(',').map((o) => o.trim()).filter(Boolean)]
++);
+ const KEYCLOAK_ISSUER = process.env.KEYCLOAK_ISSUER || 'https://auth.drinksafterwork.net/realms/daw';
+ const KEYCLOAK_JWKS_URI = process.env.KEYCLOAK_JWKS_URI || 'https://auth.drinksafterwork.net/realms/daw/protocol/openid-connect/certs';
+ const CLOCK_SKEW = Number(process.env.TOKEN_CLOCK_SKEW_SECONDS) || 30;
+ const RATE_WINDOW_MS = Number(process.env.RATE_LIMIT_WINDOW_MS) || 60000;
+-const RATE_MAX = Number(process.env.RATE_LIMIT_MAX) || 100;
++// Raised default (200) for mobile/bootstrap burst; set RATE_LIMIT_MAX=100 to keep previous behavior
++const RATE_MAX = Number(process.env.RATE_LIMIT_MAX) || 200;
+ const ADMIN_USER_IDS = new Set([
+@@ -198,22 +203,27 @@ function requestIdMiddleware(req, res, next) {
+   next();
+ }
+ 
+-// ---------- CORS: only allow CORS_ORIGIN ----------
++// ---------- CORS: allowlist; native/mobile (no Origin) allowed for preflight ----------
+ function corsMiddleware(req, res, next) {
+   const origin = req.headers.origin;
+-  const allowed = (origin === CORS_ORIGIN);
++  const hasOrigin = typeof origin === 'string' && origin.length > 0;
++  const allowed = !hasOrigin || CORS_ALLOWED_ORIGINS.has(origin);
+   const allowMethods = 'GET, POST, PUT, PATCH, DELETE, OPTIONS';
+   const allowHeaders = 'Content-Type, Authorization';
+   if (req.method === 'OPTIONS') {
+     if (allowed) {
+       res.setHeader('Vary', 'Origin');
+-      res.setHeader('Access-Control-Allow-Origin', CORS_ORIGIN);
++      res.setHeader('Access-Control-Allow-Origin', hasOrigin ? origin : CORS_ORIGIN);
+       res.setHeader('Access-Control-Allow-Credentials', 'true');
+       res.setHeader('Access-Control-Allow-Methods', allowMethods);
+       res.setHeader('Access-Control-Allow-Headers', allowHeaders);
+       res.setHeader('Access-Control-Max-Age', '86400');
+       return res.status(204).end();
+     }
+     return res.status(403).end();
+   }
+-  if (allowed) {
++  if (allowed && hasOrigin && CORS_ALLOWED_ORIGINS.has(origin)) {
+     res.setHeader('Vary', 'Origin');
+-    res.setHeader('Access-Control-Allow-Origin', CORS_ORIGIN);
++    res.setHeader('Access-Control-Allow-Origin', origin);
+     res.setHeader('Access-Control-Allow-Credentials', 'true');
+     res.setHeader('Access-Control-Allow-Methods', allowMethods);
+     res.setHeader('Access-Control-Allow-Headers', allowHeaders);
+@@ -238,6 +248,7 @@ app.use('/api', limiter);
+   standardHeaders: true,
+   legacyHeaders: false,
++  // Keep 429 shape stable for clients: error_code, error, retryAfter, request_id
+   handler: (req, res) => {
+     const retryAfter = Math.ceil(RATE_WINDOW_MS / 1000);
+     res.setHeader('Retry-After', String(retryAfter));
+
+--- a/routes/tabs.js
++++ b/routes/tabs.js
+@@ -305,6 +305,7 @@ module.exports = function tabsRoutes(opts) {
+           progress_target: top.progress_target,
+           remaining: top.remaining,
+           icon_url: icon,
++          is_fallback: false,
+         },
+       });
+     } catch (e) {

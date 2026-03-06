@@ -313,6 +313,7 @@ module.exports = function tabsRoutes(opts) {
           progress_target: top.progress_target,
           remaining: top.remaining,
           icon_url: icon,
+          is_fallback: false,
         },
       });
     } catch (e) {
