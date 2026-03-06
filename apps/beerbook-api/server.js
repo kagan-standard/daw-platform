@@ -54,11 +54,46 @@ function isAdmin(sub) {
   return ADMIN_USER_IDS.has(String(sub || '').trim());
 }
 
+function sanitizeRatingsReadPath(method, requestPath) {
+  const upperMethod = String(method || '').toUpperCase();
+  if (upperMethod !== 'GET') return requestPath;
+  const pathText = String(requestPath || '');
+  if (!pathText.startsWith('/ratings') || !pathText.includes('is_new_beer')) return requestPath;
+
+  const [pathname, rawQuery = ''] = pathText.split('?');
+  if (!rawQuery) return pathname;
+  const params = new URLSearchParams(rawQuery);
+
+  // Strip filter-only/business flags that are not real ratings columns.
+  params.delete('is_new_beer');
+
+  const selectRaw = params.get('select');
+  if (selectRaw) {
+    const safeColumns = selectRaw
+      .split(',')
+      .map((col) => col.trim())
+      .filter(Boolean)
+      .filter((col) => col !== 'is_new_beer');
+    if (safeColumns.length) params.set('select', safeColumns.join(','));
+    else params.delete('select');
+  }
+
+  const orderRaw = params.get('order');
+  if (orderRaw) {
+    const [field] = orderRaw.split('.');
+    if (field === 'is_new_beer') params.set('order', 'created_at.desc');
+  }
+
+  const query = params.toString();
+  return query ? `${pathname}?${query}` : pathname;
+}
+
 // ---------- Helpers: call PostgREST ----------
 // BUG FIX #2: Don't spread opts into fetch — it overrides the constructed headers.
 // Instead, only pass method, headers, and body explicitly.
 async function rest(method, path, opts = {}) {
-  const url = `${REST_URL}${path}`;
+  const safePath = sanitizeRatingsReadPath(method, path);
+  const url = `${REST_URL}${safePath}`;
   const headers = {
     'Content-Type': 'application/json',
     'Authorization': `Bearer ${SERVICE_ROLE_KEY}`,
