@@ -953,12 +953,60 @@ app.get('/api/ratings/user/:id', softAuthMiddleware, validateSort, async (req, r
   });
 });
 
+const RATING_DB_COLUMNS = new Set([
+  'user_id',
+  'user_name',
+  'beer_name',
+  'brewery',
+  'style',
+  'abv',
+  'rating',
+  'flavor_hoppy',
+  'flavor_malty',
+  'flavor_bitter',
+  'flavor_sweet',
+  'flavor_fruity',
+  'notes',
+  'yg_value',
+  'latitude',
+  'longitude',
+  'location_name',
+  'venue_id',
+  'photo_url',
+  'beer_id',
+  'price_cents',
+  'serve_type',
+]);
+
+function sanitizeRatingDbFields(input) {
+  const out = {};
+  if (!input || typeof input !== 'object') return out;
+  Object.keys(input).forEach((key) => {
+    if (RATING_DB_COLUMNS.has(key) && input[key] !== undefined) {
+      out[key] = input[key];
+    }
+  });
+  return out;
+}
+
 // POST /api/ratings — auth required
 // Phase 2.1: optional yg_value, lat/lng, location_name, venue_id, photo_url
 app.post('/api/ratings', authMiddleware, async (req, res) => {
   const { sub, preferred_username } = req.claims;
-  const b = req.body || {};
-  const isNewBeer = b.is_new_beer === true;
+  const {
+    is_new_beer: isNewBeerRaw,
+    new_beer_multiplier: _reqNewBeerMultiplier,
+    tabs_earned: _reqTabsEarned,
+    tabs_breakdown: _reqTabsBreakdown,
+    tabs_reason: _reqTabsReason,
+    tier_multiplier: _reqTierMultiplier,
+    seeder_multiplier: _reqSeederMultiplier,
+    achievements_unlocked: _reqAchievementsUnlocked,
+    weekly_count: _reqWeeklyCount,
+    weekly_cap: _reqWeeklyCap,
+    ...b
+  } = req.body || {};
+  const isNewBeer = isNewBeerRaw === true;
   const toMaybeTrimmedString = (value) => {
     if (value == null) return null;
     const s = String(value).trim();
@@ -1144,6 +1192,12 @@ app.post('/api/ratings', authMiddleware, async (req, res) => {
   if (!record.style) {
     return res.status(400).json({ error: 'style required when beer style is unknown' });
   }
+  const ratingData = {
+    ...record,
+    is_new_beer: isNewBeer,
+  };
+  const { is_new_beer: _isNewBeer, ...ratingCandidateFields } = ratingData;
+  const ratingFields = sanitizeRatingDbFields(ratingCandidateFields);
 
   let existing = null;
   const existingRes = await rest('POST', '/rpc/find_existing_user_rating', {
@@ -1160,27 +1214,13 @@ app.post('/api/ratings', authMiddleware, async (req, res) => {
   }
 
   if (existing && existing.id) {
+    const {
+      user_id: _ignoreUserId,
+      user_name: _ignoreUserName,
+      ...mutableRatingFields
+    } = ratingFields;
     const updatePayload = {
-      rating: record.rating,
-      beer_name: record.beer_name,
-      brewery: record.brewery,
-      style: record.style,
-      abv: record.abv,
-      beer_id: record.beer_id,
-      flavor_hoppy: record.flavor_hoppy,
-      flavor_malty: record.flavor_malty,
-      flavor_bitter: record.flavor_bitter,
-      flavor_sweet: record.flavor_sweet,
-      flavor_fruity: record.flavor_fruity,
-      notes: record.notes,
-      yg_value: record.yg_value,
-      latitude: record.latitude,
-      longitude: record.longitude,
-      location_name: record.location_name,
-      venue_id: record.venue_id,
-      photo_url: record.photo_url,
-      price_cents: record.price_cents ?? null,
-      serve_type: record.serve_type ?? null,
+      ...mutableRatingFields,
     };
     const updateRes = await rest('PATCH', `/ratings?id=eq.${encodeURIComponent(existing.id)}`, {
       headers: { 'Prefer': 'return=representation' },
@@ -1200,14 +1240,14 @@ app.post('/api/ratings', authMiddleware, async (req, res) => {
 
   const insertRes = await rest('POST', '/ratings', {
     headers: { 'Prefer': 'return=representation' },
-    body: JSON.stringify(record),
+    body: JSON.stringify(ratingFields),
   });
   if (insertRes.status >= 400) {
     return res.status(insertRes.status).json(insertRes.body || { error: 'Insert failed' });
   }
   const row = Array.isArray(insertRes.body) ? insertRes.body[0] : insertRes.body;
   const ratingId = row?.id || null;
-  const ratingRow = row || record;
+  const ratingRow = row || ratingFields;
 
   // Ensure profile exists before process-event (trigger is update-only)
   await ensureProfileExists(rest, sub, preferred_username, req.claims.email);
