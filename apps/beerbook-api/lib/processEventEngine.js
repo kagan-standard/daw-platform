@@ -15,6 +15,24 @@ const VALID_EVENT_TYPES = [
   'spend',
 ];
 
+function getAdminUserIds() {
+  const rawValues = [
+    process.env.ADMIN_USER_ID || '',
+    process.env.ADMIN_USER_IDS || '',
+  ];
+  return new Set(
+    rawValues
+      .flatMap((value) => String(value).split(','))
+      .map((value) => value.trim())
+      .filter(Boolean)
+  );
+}
+
+function isAdminUser(userId) {
+  if (typeof userId !== 'string' || !userId.trim()) return false;
+  return getAdminUserIds().has(userId.trim());
+}
+
 /** Monday 00:00 UTC for the current week (ISO string). */
 function getCurrentWeekStartUtc() {
   const d = new Date();
@@ -54,8 +72,11 @@ async function processRatingAward(rest, totalFromContentRange, userId, eventId, 
   const amount = Number(payload.amount ?? 0);
   if (!Number.isInteger(amount) || amount < 0) return { amount: 0 };
 
-  const count = await countRatingAwardsThisWeek(rest, totalFromContentRange, userId);
-  if (count >= 10) return { amount: 0 };
+  const skipWeeklyCap = isAdminUser(userId);
+  if (!skipWeeklyCap) {
+    const count = await countRatingAwardsThisWeek(rest, totalFromContentRange, userId);
+    if (count >= 10) return { amount: 0 };
+  }
 
   const res = await rest('POST', '/tabs_ledger', {
     body: JSON.stringify({

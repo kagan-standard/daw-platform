@@ -46,6 +46,24 @@ const VALID_EVENT_TYPES: EventType[] = [
   "spend",
 ];
 
+function getAdminUserIds(): Set<string> {
+  const raw = [
+    Deno.env.get("ADMIN_USER_ID") ?? "",
+    Deno.env.get("ADMIN_USER_IDS") ?? "",
+  ];
+  return new Set(
+    raw
+      .flatMap((value) => String(value).split(","))
+      .map((value) => value.trim())
+      .filter(Boolean)
+  );
+}
+
+function isAdminUser(userId: string): boolean {
+  if (!userId || !userId.trim()) return false;
+  return getAdminUserIds().has(userId.trim());
+}
+
 /** Monday 00:00 UTC for the current week (ISO string for created_at filter). */
 function getCurrentWeekStartUtc(): string {
   const d = new Date();
@@ -88,9 +106,12 @@ async function processRatingAward(
   const amount = Number(payload.amount ?? 0);
   if (!Number.isInteger(amount) || amount < 0) return { amount: 0 };
 
-  // Weekly cap: only first 10 rating_award events per week earn tabs (Monday 00:00 UTC)
-  const count = await countRatingAwardsThisWeek(admin, userId);
-  if (count >= 10) return { amount: 0 };
+  // Weekly cap: only first 10 rating_award events per week earn tabs (Monday 00:00 UTC).
+  // Admin users bypass this cap entirely.
+  if (!isAdminUser(userId)) {
+    const count = await countRatingAwardsThisWeek(admin, userId);
+    if (count >= 10) return { amount: 0 };
+  }
 
   const { error } = await admin.from("tabs_ledger").insert({
     event_id: eventId,
