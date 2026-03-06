@@ -1448,6 +1448,68 @@ async function handleProfileRequest(req, res) {
 app.get('/api/profile', authMiddleware, handleProfileRequest);
 app.get('/api/profile/me', authMiddleware, handleProfileRequest);
 
+// PATCH /api/profile — auth required, partial profile update
+app.patch('/api/profile', authMiddleware, async (req, res) => {
+  const { sub, preferred_username, email } = req.claims;
+  const body = req.body && typeof req.body === 'object' ? req.body : {};
+  const updates = {};
+  let providedFields = 0;
+
+  if (Object.prototype.hasOwnProperty.call(body, 'display_name')) {
+    providedFields += 1;
+    if (typeof body.display_name !== 'string') {
+      return res.status(400).json({ error: 'display_name must be a string between 1 and 30 characters' });
+    }
+    const trimmed = body.display_name.trim();
+    if (!trimmed || trimmed.length < 1 || trimmed.length > 30) {
+      return res.status(400).json({ error: 'display_name must be a string between 1 and 30 characters' });
+    }
+    updates.display_name = trimmed;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(body, 'avatar_url')) {
+    providedFields += 1;
+    if (typeof body.avatar_url !== 'string') {
+      return res.status(400).json({ error: 'avatar_url must be a valid URL' });
+    }
+    const trimmed = body.avatar_url.trim();
+    if (!trimmed) {
+      return res.status(400).json({ error: 'avatar_url must be a valid URL' });
+    }
+    try {
+      // URL constructor validates absolute URLs and normalization.
+      new URL(trimmed);
+    } catch {
+      return res.status(400).json({ error: 'avatar_url must be a valid URL' });
+    }
+    updates.avatar_url = trimmed;
+  }
+
+  if (providedFields === 0) {
+    return res.status(400).json({ error: 'At least one of display_name or avatar_url is required' });
+  }
+
+  await ensureProfileExists(rest, sub, preferred_username, email);
+
+  const { status: patchStatus, body: patchedRows } = await rest('PATCH', `/profiles?id=eq.${encodeURIComponent(sub)}`, {
+    headers: { Prefer: 'return=representation' },
+    body: JSON.stringify(updates),
+  });
+  if (patchStatus >= 400) {
+    return res.status(502).json(patchedRows || { error: 'Update profile failed' });
+  }
+
+  const updated = Array.isArray(patchedRows) ? patchedRows[0] : patchedRows;
+  if (!updated) {
+    return res.status(502).json({ error: 'Update profile failed' });
+  }
+  const enriched = await attachEquippedCosmeticsToProfile(updated);
+  return res.json({
+    ...enriched,
+    is_admin: isAdmin(sub),
+  });
+});
+
 // GET /api/stats/me — auth required, enhanced user stats (flavors, style_distribution, etc.)
 app.get('/api/stats/me', authMiddleware, async (req, res) => {
   try {

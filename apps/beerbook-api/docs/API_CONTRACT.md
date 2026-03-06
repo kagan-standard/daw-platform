@@ -1182,6 +1182,50 @@ Returns 201 if profile was newly created, 200 if existing.
 
 ---
 
+#### PATCH /api/profile
+
+- **Auth:** `authMiddleware` (required)
+- **File:** `server.js`
+
+Updates the authenticated user's profile. Returns the full profile object in the same shape as `GET /api/profile`.
+
+**Request Body:**
+
+| Field | Type | Required | Validation |
+|-------|------|----------|------------|
+| `display_name` | string | no | Trimmed; 1–30 chars after trim; empty string rejected |
+| `avatar_url` | string | no | Trimmed; must be a valid absolute URL; empty string rejected |
+
+At least one of `display_name` or `avatar_url` must be provided.
+
+**Success Response (200):**
+
+```json
+{
+  "id": "string",
+  "display_name": "string",
+  "email": "string | null",
+  "avatar_url": "string | null",
+  "created_at": "ISO8601",
+  "updated_at": "ISO8601",
+  "equipped_border_id": "uuid | null",
+  "equipped_title_id": "uuid | null",
+  "equipped_border_asset_url": "string | null",
+  "equipped_title_text": "string | null",
+  "is_admin": false
+}
+```
+
+**Error Responses:**
+- 400: `{ "error": "At least one of display_name or avatar_url is required" }`
+- 400: `{ "error": "display_name must be a string between 1 and 30 characters" }`
+- 400: `{ "error": "avatar_url must be a valid URL" }`
+- 502: `{ "error": "Update profile failed" }` or upstream body
+
+**Side Effects:** May auto-create a profile row before patching if one does not exist.
+
+---
+
 #### GET /api/stats/me
 
 - **Auth:** `authMiddleware` (required)
