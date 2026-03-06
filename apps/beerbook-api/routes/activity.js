@@ -178,13 +178,13 @@ module.exports = function (opts) {
         const [ratingsRes, venuesRes, cheersRes, followsRes, crewJoinsRes] = await Promise.all([
           rest('GET', '/ratings?order=created_at.desc&limit=4000'),
           rest('GET', '/venues?order=created_at.desc&limit=10'),
-          rest('GET', '/reactions?reaction_type=eq.cheers&select=id,user_id,rating_id,created_at&order=created_at.desc&limit=4000'),
-          rest('GET', '/follows?select=id,follower_id,followed_id,created_at&order=created_at.desc&limit=4000'),
+          rest('GET', '/reactions?reaction_type=eq.cheers&select=user_id,rating_id,created_at&order=created_at.desc&limit=4000'),
+          rest('GET', '/follows?select=follower_id,followed_id,created_at&order=created_at.desc&limit=4000'),
           rest(
             'GET',
             feed === 'crew' && crewId
-              ? `/crew_members?crew_id=eq.${encodeURIComponent(crewId)}&select=id,user_id,crew_id,joined_at&order=joined_at.desc&limit=4000`
-              : '/crew_members?select=id,user_id,crew_id,joined_at&order=joined_at.desc&limit=4000'
+              ? `/crew_members?crew_id=eq.${encodeURIComponent(crewId)}&select=user_id,crew_id,joined_at&order=joined_at.desc&limit=4000`
+              : '/crew_members?select=user_id,crew_id,joined_at&order=joined_at.desc&limit=4000'
           ),
         ]);
 
