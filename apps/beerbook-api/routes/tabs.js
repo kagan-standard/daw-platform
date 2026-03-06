@@ -360,7 +360,7 @@ module.exports = function tabsRoutes(opts) {
         ),
         rest(
           'GET',
-          `/ratings?user_id=eq.${userId}&select=style,photo_url,notes,price_cents,venue_id,rating,is_new_beer,city,created_at&limit=5000`
+          `/ratings?user_id=eq.${userId}&select=style,photo_url,notes,price_cents,venue_id,rating,city,created_at&limit=5000`
         ),
       ]);
 
