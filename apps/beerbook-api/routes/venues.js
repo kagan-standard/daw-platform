@@ -88,11 +88,15 @@ module.exports = function (opts) {
         if (vRes.status >= 400) return res.status(vRes.status).json(vRes.body || { error: 'Upstream error' });
         const venue = Array.isArray(vRes.body) && vRes.body[0] ? vRes.body[0] : null;
         if (!venue) return res.status(404).json({ error: 'Venue not found' });
+        const prices = Array.isArray(menusRes.body) ? menusRes.body : [];
+        const happyHours = Array.isArray(hhRes.body) ? hhRes.body : [];
+        const ratings = Array.isArray(ratingsRes.body) ? ratingsRes.body : [];
         res.json({
           ...venue,
-          prices: Array.isArray(menusRes.body) ? menusRes.body : [],
-          happy_hours: Array.isArray(hhRes.body) ? hhRes.body : [],
-          ratings: Array.isArray(ratingsRes.body) ? ratingsRes.body : [],
+          venue,
+          prices,
+          happy_hours: happyHours,
+          ratings,
         });
       })
       .catch(next);
@@ -201,8 +205,8 @@ module.exports = function (opts) {
       .catch(next);
   });
 
-  // POST /api/venues/:id/happy-hours/:hhId/confirm
-  router.post('/:id/happy-hours/:hhId/confirm', opts.authMiddleware, (req, res, next) => {
+  // POST/PATCH /api/venues/:id/happy-hours/:hhId/confirm
+  const confirmHappyHourHandler = (req, res, next) => {
     const hhId = encodeURIComponent(req.params.hhId);
     rest('GET', `/happy_hours?id=eq.${hhId}&limit=1`)
       .then(({ status, body }) => {
@@ -221,7 +225,9 @@ module.exports = function (opts) {
         res.json({ ok: true });
       })
       .catch(next);
-  });
+  };
+  router.post('/:id/happy-hours/:hhId/confirm', opts.authMiddleware, confirmHappyHourHandler);
+  router.patch('/:id/happy-hours/:hhId/confirm', opts.authMiddleware, confirmHappyHourHandler);
 
   return router;
 };

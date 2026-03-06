@@ -238,7 +238,7 @@ Most handlers return:
 - Crew join errors add `error_code` and `request_id`
 - Cosmetic purchase errors add `error_code`, `tabs_balance`, `tab_price`
 - `DELETE /api/ratings/:id/comments/:commentId` returns `{ success: true }` on success (200), not 204
-- `POST /api/venues/:id/prices/:priceId/confirm` and `POST /api/venues/:id/happy-hours/:hhId/confirm` return `{ ok: true }`
+- `POST /api/venues/:id/prices/:priceId/confirm`, `POST /api/venues/:id/happy-hours/:hhId/confirm`, and `PATCH /api/venues/:id/happy-hours/:hhId/confirm` return `{ ok: true }`
 - `PATCH /api/tabs/notifications/read-all` returns `{ ok: true }`
 
 ---
@@ -337,6 +337,10 @@ Most handlers return:
       "reviews": {
         "aroma": 0, "appearance": 0, "palate": 0, "taste": 0, "overall": 0, "count": 0
       },
+      "review_aroma": 0,
+      "review_appearance": 0,
+      "review_palate": 0,
+      "review_taste": 0,
       "review_overall": 4.2,
       "review_count": 12
     }
@@ -465,6 +469,8 @@ On upstream error: returns `{ "data": [] }` (does NOT propagate errors).
 
 #### GET /api/breweries/map
 
+#### GET /api/map/breweries
+
 - **Auth:** none
 - **File:** `server.js`
 
@@ -494,6 +500,7 @@ On upstream error: returns `{ "data": [] }` (does NOT propagate errors).
 }
 ```
 
+Both routes are aliases and return the same response shape.
 Max 500 breweries. Sorted by distance to center when `bounds` is provided.
 
 **Error Responses:**
@@ -613,8 +620,8 @@ Max 500 breweries. Sorted by distance to center when `bounds` is provided.
 
 #### GET /api/ratings/user/:id
 
-- **Auth:** none
-- **Middleware:** `validateSort`
+- **Auth:** `softAuthMiddleware` (optional)
+- **Middleware:** `softAuthMiddleware`, `validateSort`
 - **File:** `server.js`
 
 **URL Params:** `id` — user ID (Keycloak sub)
@@ -628,6 +635,8 @@ Max 500 breweries. Sorted by distance to center when `bounds` is provided.
   "data": [
     {
       "...rating fields...",
+      "cheers_count": 3,
+      "you_cheered": true,
       "earned_achievement_ids": ["uuid"],
       "achievement_id": "uuid | null"
     }
@@ -636,7 +645,8 @@ Max 500 breweries. Sorted by distance to center when `bounds` is provided.
 }
 ```
 
-Note: Does NOT include `cheers_count` or `you_cheered` (no `attachCheersDataToRatings` call).
+Includes cheers enrichment (`cheers_count`, `you_cheered`) using the same helper as `GET /api/ratings`.
+When unauthenticated, `you_cheered` is always `false`.
 
 **Error Responses:**
 - 400: `{ "error": "Invalid sort field. Allowed: created_at, rating, beer_name" }`
@@ -721,6 +731,8 @@ Note: Accepts both `snake_case` and `camelCase` for most fields.
   "seeder_multiplier": 1.0,
   "new_beer_multiplier": 1.0,
   "is_new_beer": false,
+  "weekly_count": 4,
+  "weekly_cap": 10,
   "achievements_unlocked": [
     { "key": "first_rating", "name": "First Sip", "reward_tabs": 5 }
   ]
@@ -738,9 +750,9 @@ Note: Accepts both `snake_case` and `camelCase` for most fields.
 | `seeder_multiplier` | number | 1.5 if user is seeder, 1.0 otherwise |
 | `new_beer_multiplier` | number | 1.5 if `is_new_beer === true`, 1.0 otherwise |
 | `is_new_beer` | boolean | Whether this was a new beer submission |
+| `weekly_count` | number | Current count of this user's `rating_award` events in the current week (Mon 00:00 UTC reset), after this submission |
+| `weekly_cap` | number | Weekly cap value (currently `10`) |
 | `achievements_unlocked` | `Array<{ key: string, name: string, reward_tabs: number }>` | Achievements earned by this rating. Empty array if none. |
-
-**`weekly_count` and `weekly_cap` are NOT returned.** The weekly cap is 10 rating_award events per week (Mon 00:00 UTC reset), enforced server-side. The client only knows via `tabs_reason: "weekly_cap"`.
 
 **Success Response — UPDATE EXISTING RATING (200):**
 
@@ -970,13 +982,13 @@ Items are a merged list of ratings + venues, sorted by `created_at` desc, capped
 **Success Response (200) — toggle ON:**
 
 ```json
-{ "action": "added", "count": 6 }
+{ "action": "added", "count": 6, "cheers_count": 6, "user_cheered": true }
 ```
 
 **Success Response (200) — toggle OFF:**
 
 ```json
-{ "action": "removed", "count": 5 }
+{ "action": "removed", "count": 5, "cheers_count": 5, "user_cheered": false }
 ```
 
 **Error Responses:**
@@ -1011,8 +1023,12 @@ Items are a merged list of ratings + venues, sorted by `created_at` desc, capped
 
 #### GET /api/users/:id
 
+#### GET /api/profiles/:id
+
 - **Auth:** none
 - **File:** `routes/activity.js`
+
+Both routes are aliases and return the same response shape.
 
 **URL Params:** `id` — user ID (Keycloak sub)
 
@@ -1605,6 +1621,17 @@ Note: Crew stats rows do NOT include `avg_yg_value` or flavor averages.
   "created_by": "string",
   "created_at": "ISO8601",
   "updated_at": "ISO8601",
+  "venue": {
+    "id": "uuid",
+    "name": "string",
+    "address": "string",
+    "latitude": 40.123,
+    "longitude": -74.456,
+    "venue_type": "string",
+    "created_by": "string",
+    "created_at": "ISO8601",
+    "updated_at": "ISO8601"
+  },
   "prices": [
     {
       "id": "uuid",
@@ -1640,6 +1667,7 @@ Note: Crew stats rows do NOT include `avg_yg_value` or flavor averages.
 ```
 
 `ratings` limited to 50 most recent.
+Top-level venue fields remain present for backward compatibility; `venue` is an added wrapper alias.
 
 **Error Responses:**
 - 404: `{ "error": "Venue not found" }`
@@ -1803,10 +1831,14 @@ Note: Crew stats rows do NOT include `avg_yg_value` or flavor averages.
 
 #### POST /api/venues/:id/happy-hours/:hhId/confirm
 
+#### PATCH /api/venues/:id/happy-hours/:hhId/confirm
+
 - **Auth:** `authMiddleware` (required)
 - **File:** `routes/venues.js`
 
 **URL Params:** `id` — venue UUID, `hhId` — happy hour UUID
+
+Both methods are aliases and return the same response shape.
 
 **Success Response (200):**
 
@@ -2015,7 +2047,7 @@ Note: Crew stats rows do NOT include `avg_yg_value` or flavor averages.
 
 Both routes are identical.
 
-**Request:** `multipart/form-data` with field name `file`.
+**Request:** `multipart/form-data` with field name `file` or `photo`.
 - Max file size: 10MB
 - Accepted types: JPEG, PNG, WebP, HEIC
 
@@ -2029,7 +2061,7 @@ Both routes are identical.
 ```
 
 **Error Responses:**
-- 400: `{ "error": "No file uploaded (use field name \"file\")" }`
+- 400: `{ "error": "No file uploaded (use field name \"file\" or \"photo\")" }`
 - 400: `{ "error": "Invalid file type. Only JPEG, PNG, WebP, and HEIC are allowed." }`
 - 413: `{ "error": "File too large. Maximum size is 10MB." }`
 
@@ -2211,11 +2243,24 @@ Both routes are identical.
     }
   ],
   "pagination": { "limit": 50, "offset": 0, "total": 30 },
-  "metadata": { "unread_count": 5 }
+  "metadata": { "unread_count": 5 },
+  "notifications": [
+    {
+      "id": "string",
+      "user_id": "string",
+      "notification_type": "string",
+      "title": "string",
+      "message": "string",
+      "metadata": {},
+      "is_read": false,
+      "created_at": "ISO8601"
+    }
+  ],
+  "unread_count": 5
 }
 ```
 
-Note: Has an extra `metadata` field alongside `data` and `pagination`.
+Mobile aliases: `notifications` mirrors `data`, and `unread_count` mirrors `metadata.unread_count`.
 
 ---
 
@@ -2589,13 +2634,13 @@ Note: Response is NOT wrapped in `{ data: ... }` — returned flat.
 **Success Response (200) — now following:**
 
 ```json
-{ "following": true }
+{ "following": true, "is_following": true }
 ```
 
 **Success Response (200) — unfollowed:**
 
 ```json
-{ "following": false }
+{ "following": false, "is_following": false }
 ```
 
 This is a toggle endpoint.
@@ -2740,11 +2785,15 @@ This is a toggle endpoint.
   "created_at": "ISO8601",
   "updated_at": "ISO8601",
   "my_role": "owner",
+  "member_count": 5,
   "members": [
     {
       "user_id": "string",
       "role": "owner",
       "joined_at": "ISO8601",
+      "display_name": "string",
+      "avatar_url": "string | null",
+      "current_tier": "string | null",
       "profile": {
         "id": "string",
         "display_name": "string",
@@ -3510,9 +3559,10 @@ All admin routes require `authMiddleware` + `adminMiddleware`.
 - Responses always use `snake_case`
 
 ### 8. `weekly_count` / `weekly_cap` Not in POST /api/ratings Response
-- The weekly cap (10 rating_award events/week) is enforced server-side
-- Client only learns cap was hit via `tabs_reason: "weekly_cap"` and `tabs_earned: 0`
-- No explicit count or cap number is returned
+- `POST /api/ratings` create response now includes:
+  - `weekly_count` = current `rating_award` count this week (post-submit)
+  - `weekly_cap` = `10`
+- Update responses (`updated: true`) still do not include these fields.
 
 ### 9. Crew Join Error Uses Structured Errors
 - `POST /api/crews/join` returns `{ error_code, error, request_id }` matching auth error shape
@@ -3524,7 +3574,7 @@ All admin routes require `authMiddleware` + `adminMiddleware`.
 
 ### 11. `GET /api/tabs/notifications` Has Extra `metadata`
 - Response includes `metadata: { unread_count }` alongside `data` and `pagination`
-- This is the only paginated endpoint with this pattern
+- Also includes aliases: `notifications` (same as `data`) and `unread_count` (same as `metadata.unread_count`)
 
 ### 12. `PATCH /api/admin/tabs/submissions/:id` Has Top-Level `tabs_awarded`
 - Response shape: `{ data: {...}, tabs_awarded: 3 }` — the `tabs_awarded` is a sibling of `data`, not inside it

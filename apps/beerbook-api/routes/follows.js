@@ -63,7 +63,7 @@ module.exports = function (opts) {
           `/follows?follower_id=eq.${encodeURIComponent(me)}&followed_id=eq.${encodeURIComponent(target)}`
         );
         if (delRes.status >= 400) return res.status(502).json({ error: 'Unfollow failed' });
-        return res.json({ following: false });
+        return res.json({ following: false, is_following: false });
       }
 
       const insertRes = await rest('POST', '/follows', {
@@ -73,7 +73,7 @@ module.exports = function (opts) {
       if (insertRes.status >= 400) {
         return res.status(insertRes.status).json(insertRes.body || { error: 'Follow failed' });
       }
-      return res.json({ following: true });
+      return res.json({ following: true, is_following: true });
     } catch (e) {
       next(e);
     }

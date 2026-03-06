@@ -737,14 +737,17 @@ module.exports = function tabsRoutes(opts) {
         headers: { Prefer: 'count=exact' },
       });
       const unreadCount = unread.status < 400 ? (totalFromContentRange(unread.headers['content-range']) ?? 0) : 0;
+      const notifications = Array.isArray(out.body) ? out.body : [];
       res.json({
-        data: Array.isArray(out.body) ? out.body : [],
+        data: notifications,
         pagination: {
           limit,
           offset,
           total: totalFromContentRange(out.headers['content-range']) ?? 0,
         },
         metadata: { unread_count: unreadCount },
+        notifications,
+        unread_count: unreadCount,
       });
     } catch (e) {
       next(e);

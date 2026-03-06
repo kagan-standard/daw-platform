@@ -174,17 +174,24 @@ module.exports = function (opts) {
       const topStyle = Object.entries(styleCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
       const topBeer = Object.entries(beerCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
 
-      const detailMembers = members.map((m) => ({
-        user_id: m.user_id,
-        role: m.role,
-        joined_at: m.joined_at,
-        profile: profileMap[m.user_id] || { id: m.user_id, display_name: 'Beer Lover', avatar_url: null },
-        rating_count: ratingCountByUser[m.user_id] || 0,
-      }));
+      const detailMembers = members.map((m) => {
+        const profile = profileMap[m.user_id] || { id: m.user_id, display_name: 'Beer Lover', avatar_url: null };
+        return {
+          user_id: m.user_id,
+          role: m.role,
+          joined_at: m.joined_at,
+          display_name: profile?.display_name ?? 'Unknown',
+          avatar_url: profile?.avatar_url ?? null,
+          current_tier: profile?.current_tier ?? m.current_tier ?? null,
+          profile,
+          rating_count: ratingCountByUser[m.user_id] || 0,
+        };
+      });
 
       res.json({
         ...crew,
         my_role: membership.role,
+        member_count: detailMembers.length,
         members: detailMembers,
         stats: {
           total_ratings: totalRatings,

@@ -197,7 +197,12 @@ module.exports = function (opts) {
         if (delStatus >= 400) return res.status(502).json({ error: 'Delete failed' });
         const countRes = await rest('GET', `/reactions?rating_id=eq.${ratingId}&select=id`, { headers: { Prefer: 'count=exact' } });
         const count = opts.totalFromContentRange(countRes.headers['content-range']) ?? 0;
-        return res.json({ action: 'removed', count });
+        return res.json({
+          action: 'removed',
+          count,
+          cheers_count: count,
+          user_cheered: false,
+        });
       } else {
         const record = { rating_id: req.params.id, user_id: sub, reaction_type: 'cheers' };
         const { status: postStatus, body } = await rest('POST', '/reactions', { headers: { Prefer: 'return=representation' }, body: JSON.stringify(record) });
@@ -237,7 +242,12 @@ module.exports = function (opts) {
 
         const countRes = await rest('GET', `/reactions?rating_id=eq.${ratingId}&select=id`, { headers: { Prefer: 'count=exact' } });
         const count = opts.totalFromContentRange(countRes.headers['content-range']) ?? 1;
-        res.json({ action: 'added', count });
+        res.json({
+          action: 'added',
+          count,
+          cheers_count: count,
+          user_cheered: true,
+        });
       }
     } catch (e) {
       next(e);
@@ -333,8 +343,8 @@ module.exports = function (opts) {
       .catch(next);
   });
 
-  // GET /api/users/:id — public profile
-  router.get('/users/:id', (req, res, next) => {
+  // Shared public profile handler for /users/:id and /profiles/:id aliases.
+  const handleGetPublicProfile = (req, res, next) => {
     const id = encodeURIComponent(req.params.id);
     rest('GET', `/profiles?id=eq.${id}&limit=1`)
       .then(async ({ status, body }) => {
@@ -345,7 +355,12 @@ module.exports = function (opts) {
         res.json(enriched);
       })
       .catch(next);
-  });
+  };
+
+  // GET /api/users/:id — public profile
+  router.get('/users/:id', handleGetPublicProfile);
+  // GET /api/profiles/:id — alias for mobile compatibility
+  router.get('/profiles/:id', handleGetPublicProfile);
 
   return router;
 };

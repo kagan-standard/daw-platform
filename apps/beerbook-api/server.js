@@ -464,7 +464,24 @@ function toNumberOrNull(v) {
   return Number.isFinite(n) ? n : null;
 }
 
+function getCurrentWeekStartUtcIso() {
+  const d = new Date();
+  const utcDay = d.getUTCDay();
+  const diffToMonday = utcDay === 0 ? -6 : 1 - utcDay;
+  d.setUTCDate(d.getUTCDate() + diffToMonday);
+  d.setUTCHours(0, 0, 0, 0);
+  return d.toISOString();
+}
+
 function mapCatalogBeer(row) {
+  const reviews = {
+    aroma: toNumberOrNull(row.review_aroma),
+    appearance: toNumberOrNull(row.review_appearance),
+    palate: toNumberOrNull(row.review_palate),
+    taste: toNumberOrNull(row.review_taste),
+    overall: toNumberOrNull(row.review_overall),
+    count: toNumberOrNull(row.review_count),
+  };
   return {
     id: row.id,
     name: row.name,
@@ -487,17 +504,14 @@ function mapCatalogBeer(row) {
       spices: toNumberOrNull(row.flavor_spicy),
       malty: toNumberOrNull(row.flavor_malty),
     },
-    reviews: {
-      aroma: toNumberOrNull(row.review_aroma),
-      appearance: toNumberOrNull(row.review_appearance),
-      palate: toNumberOrNull(row.review_palate),
-      taste: toNumberOrNull(row.review_taste),
-      overall: toNumberOrNull(row.review_overall),
-      count: toNumberOrNull(row.review_count),
-    },
+    reviews,
     // Backward-compat fields still used by existing frontend code paths.
-    review_overall: toNumberOrNull(row.review_overall),
-    review_count: toNumberOrNull(row.review_count),
+    review_aroma: reviews.aroma,
+    review_appearance: reviews.appearance,
+    review_palate: reviews.palate,
+    review_taste: reviews.taste,
+    review_overall: reviews.overall ?? toNumberOrNull(row.review_overall),
+    review_count: reviews.count ?? (toNumberOrNull(row.review_count) ?? 0),
   };
 }
 
@@ -741,7 +755,7 @@ app.get('/api/breweries/search', async (req, res) => {
 });
 
 // GET /api/breweries/map?bounds=sw_lat,sw_lng,ne_lat,ne_lng — breweries in viewport, max 500
-app.get('/api/breweries/map', async (req, res) => {
+const handleBreweriesMap = async (req, res) => {
   const boundsStr = (req.query.bounds || '').trim();
   const limit = 500;
   try {
@@ -803,7 +817,10 @@ app.get('/api/breweries/map', async (req, res) => {
     console.error('Breweries map error:', e);
     res.status(502).json({ error: 'Breweries map failed' });
   }
-});
+};
+app.get('/api/breweries/map', handleBreweriesMap);
+// Alias for mobile compatibility.
+app.get('/api/map/breweries', handleBreweriesMap);
 
 // GET /api/breweries/:id — full brewery detail + linked beers
 app.get('/api/breweries/:id', async (req, res) => {
@@ -908,10 +925,11 @@ app.get('/api/ratings', softAuthMiddleware, validateSort, async (req, res) => {
 });
 
 // GET /api/ratings/user/:id — public, paginated
-app.get('/api/ratings/user/:id', validateSort, async (req, res) => {
+app.get('/api/ratings/user/:id', softAuthMiddleware, validateSort, async (req, res) => {
   const { limit, offset, sort, order } = parsePagination(req);
   const orderDir = order === 'asc' ? 'asc' : 'desc';
   const id = encodeURIComponent(req.params.id);
+  const requester = req.claims?.sub || null;
   const { status, headers, body } = await rest('GET', `/ratings?user_id=eq.${id}&limit=${limit}&offset=${offset}&order=${sort}.${orderDir}`, {
     headers: { 'Prefer': 'count=exact' },
   });
@@ -919,7 +937,8 @@ app.get('/api/ratings/user/:id', validateSort, async (req, res) => {
   if (status >= 400) {
     return res.status(status).json(body || { error: 'Upstream error' });
   }
-  const enriched = await attachRatingAchievementDataToRatings(Array.isArray(body) ? body : []);
+  const withCheers = await attachCheersDataToRatings(Array.isArray(body) ? body : [], requester);
+  const enriched = await attachRatingAchievementDataToRatings(withCheers);
   res.json({
     data: enriched,
     pagination: { limit, offset, total },
@@ -1198,6 +1217,8 @@ app.post('/api/ratings', authMiddleware, async (req, res) => {
   let tabsEarned = 0;
   let breakdown = {};
   let achievementsUnlocked = [];
+  let weeklyCount = Number(profile.ratings_this_week) || 0;
+  const weeklyCap = 10;
 
   try {
     const eventId = crypto.randomUUID();
@@ -1229,6 +1250,16 @@ app.post('/api/ratings', authMiddleware, async (req, res) => {
       ...ratingRow,
     });
     achievementsUnlocked = achRes.unlocked || [];
+
+    const weekStart = getCurrentWeekStartUtcIso();
+    const weeklyCountRes = await rest(
+      'GET',
+      `/tabs_ledger?user_id=eq.${encodeURIComponent(sub)}&event_type=eq.rating_award&created_at=gte.${encodeURIComponent(weekStart)}&select=id`,
+      { headers: { Prefer: 'count=exact' } }
+    );
+    if (weeklyCountRes.status < 400) {
+      weeklyCount = totalFromContentRange(weeklyCountRes.headers['content-range']) ?? weeklyCount;
+    }
   } catch (err) {
     if (err.status >= 400) {
       return res.status(err.status >= 500 ? 502 : err.status).json(err.body || { error: err.message });
@@ -1247,6 +1278,8 @@ app.post('/api/ratings', authMiddleware, async (req, res) => {
     new_beer_multiplier: newBeerMultiplier,
     is_new_beer: isNewBeer === true,
     achievements_unlocked: achievementsUnlocked,
+    weekly_count: weeklyCount,
+    weekly_cap: weeklyCap,
   });
 });
 

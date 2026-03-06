@@ -43,17 +43,20 @@ const upload = multer({
   },
 });
 
-function uploadResponse(req, res) {
+function uploadResponse(file, res) {
   const baseUrl = (process.env.API_BASE_URL || 'https://api.beerbook.drinksafterwork.net').replace(/\/$/, '');
-  const url = `${baseUrl}/uploads/${req.file.filename}`;
-  res.status(201).json({ url, filename: req.file.filename });
+  const url = `${baseUrl}/uploads/${file.filename}`;
+  res.status(201).json({ url, filename: file.filename });
 }
 
 module.exports = function (opts) {
   const router = express.Router();
 
   function handleUpload(req, res, next) {
-    upload.single('file')(req, res, (err) => {
+    upload.fields([
+      { name: 'file', maxCount: 1 },
+      { name: 'photo', maxCount: 1 },
+    ])(req, res, (err) => {
       if (err) {
         if (err instanceof multer.MulterError) {
           if (err.code === 'LIMIT_FILE_SIZE') return res.status(413).json({ error: 'File too large. Maximum size is 10MB.' });
@@ -62,8 +65,11 @@ module.exports = function (opts) {
         if (err.message && err.message.includes('Invalid file type')) return res.status(400).json({ error: err.message });
         return next(err);
       }
-      if (!req.file) return res.status(400).json({ error: 'No file uploaded (use field name "file")' });
-      uploadResponse(req, res);
+      const selectedFile = req.files?.file?.[0] || req.files?.photo?.[0] || null;
+      if (!selectedFile) {
+        return res.status(400).json({ error: 'No file uploaded (use field name "file" or "photo")' });
+      }
+      uploadResponse(selectedFile, res);
     });
   }
 
