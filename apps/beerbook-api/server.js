@@ -25,6 +25,8 @@ const PORT = Number(process.env.PORT) || 3000;
 const REST_URL = (process.env.SUPABASE_REST_URL || 'http://supabase-rest:3000').replace(/\/$/, '');
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const CORS_ORIGIN = process.env.CORS_ORIGIN || 'https://beerbook.drinksafterwork.net';
+const APP_SCHEME = process.env.APP_SCHEME || 'beerbook';
+const WEB_BASE_URL = (process.env.WEB_BASE_URL || CORS_ORIGIN).replace(/\/$/, '');
 // Allowlist for CORS: web origin + optional comma-separated CORS_ORIGINS (e.g. mobile app origins)
 const CORS_ORIGINS_RAW = process.env.CORS_ORIGINS || '';
 const CORS_ALLOWED_ORIGINS = new Set(
@@ -236,6 +238,60 @@ async function attachEquippedCosmeticsToProfile(profile) {
     equipped_border_asset_url: border?.asset_url ?? null,
     equipped_title_text: title?.title_text || title?.name || null,
   };
+}
+
+// ---------- Phase 2.6: Share-URL HTML helpers ----------
+function escapeHtml(str) {
+  return String(str).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function renderReviewNotFoundPage() {
+  return `<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Review Not Found — BeerBook</title>
+<style>body{font-family:-apple-system,system-ui,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#f9f5f0;color:#333}.card{text-align:center;padding:2rem;max-width:400px}h1{font-size:1.5rem;margin-bottom:.5rem}p{color:#666}</style>
+</head><body><div class="card"><h1>Review Not Found</h1><p>This review may have been removed or the link is invalid.</p></div></body></html>`;
+}
+
+function renderReviewLandingPage(rating, appUrl, webUrl) {
+  const beerName = escapeHtml(rating.beer_name || 'a beer');
+  const userName = escapeHtml(rating.user_name || 'Someone');
+  const ratingValue = Math.min(5, Math.max(0, Math.round(Number(rating.rating) || 0)));
+  const brewery = escapeHtml(rating.brewery || '');
+  const style = escapeHtml(rating.style || '');
+  const stars = '\u2605'.repeat(ratingValue) + '\u2606'.repeat(5 - ratingValue);
+  const ogTitle = escapeHtml(`${rating.user_name || 'Someone'} rated ${rating.beer_name || 'a beer'} ${stars}`);
+  const ogDesc = escapeHtml([rating.brewery, rating.style].filter(Boolean).join(' \u00b7 ') || 'Check out this beer review on BeerBook');
+  const photoMeta = rating.photo_url ? `<meta property="og:image" content="${escapeHtml(rating.photo_url)}">` : '';
+  const safeAppUrl = escapeHtml(appUrl);
+  const safeWebUrl = escapeHtml(webUrl);
+
+  return `<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${ogTitle} — BeerBook</title>
+<meta property="og:title" content="${ogTitle}">
+<meta property="og:description" content="${ogDesc}">
+<meta property="og:type" content="article">${photoMeta}
+<meta property="al:ios:url" content="${safeAppUrl}">
+<meta property="al:ios:app_name" content="BeerBook">
+<meta property="al:android:url" content="${safeAppUrl}">
+<meta property="al:android:app_name" content="BeerBook">
+<meta property="al:web:url" content="${safeWebUrl}">
+<style>body{font-family:-apple-system,system-ui,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#f9f5f0;color:#333}.card{text-align:center;padding:2rem;max-width:420px}h1{font-size:1.4rem;margin-bottom:.25rem}.stars{font-size:1.5rem;color:#f5a623;margin:.5rem 0}.meta{color:#666;font-size:.9rem;margin-bottom:1.5rem}.btn{display:inline-block;padding:.75rem 1.5rem;background:#f5a623;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;font-size:1rem}.btn:hover{background:#e0950e}.fallback{margin-top:1rem;font-size:.85rem;color:#999}.fallback a{color:#f5a623}</style>
+</head><body>
+<div class="card">
+  <h1>${beerName}</h1>
+  <div class="stars">${stars}</div>
+  <p class="meta">Reviewed by ${userName}${brewery ? ' &middot; ' + brewery : ''}${style ? ' &middot; ' + style : ''}</p>
+  <a class="btn" href="${safeAppUrl}">Open in BeerBook</a>
+  <p class="fallback"><a href="${safeWebUrl}">View on web</a></p>
+</div>
+<script>
+(function(){var u=${JSON.stringify(appUrl)};if(/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)){window.location.href=u;}})();
+</script>
+</body></html>`;
 }
 
 function requestIdMiddleware(req, res, next) {
@@ -1742,6 +1798,45 @@ app.get('/api/stats', softAuthMiddleware, async (req, res) => {
       totalUsers,
     },
   });
+});
+
+// ---------- Phase 2.6: Share-URL resolution — /review/:ratingId ----------
+const reviewLinkLimiter = rateLimit({
+  windowMs: RATE_WINDOW_MS,
+  max: RATE_MAX,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.get('/review/:ratingId', reviewLinkLimiter, async (req, res) => {
+  const ratingId = (req.params.ratingId || '').trim();
+  if (!ratingId) {
+    return res.status(400).type('html').send(renderReviewNotFoundPage());
+  }
+
+  try {
+    const { status, body } = await rest('GET',
+      `/ratings?id=eq.${encodeURIComponent(ratingId)}&select=id,beer_id,beer_name,user_name,rating,brewery,style,photo_url&limit=1`
+    );
+
+    if (status >= 400 || !Array.isArray(body) || body.length === 0) {
+      return res.status(404).type('html').send(renderReviewNotFoundPage());
+    }
+
+    const rating = body[0];
+    const beerId = rating.beer_id || null;
+    const appUrl = beerId
+      ? `${APP_SCHEME}://beer/${encodeURIComponent(beerId)}`
+      : `${APP_SCHEME}://review/${encodeURIComponent(ratingId)}`;
+    const webUrl = beerId
+      ? `${WEB_BASE_URL}/beer/${encodeURIComponent(beerId)}`
+      : WEB_BASE_URL;
+
+    res.type('html').send(renderReviewLandingPage(rating, appUrl, webUrl));
+  } catch (err) {
+    console.error('Review link resolution error:', err);
+    res.status(502).type('html').send(renderReviewNotFoundPage());
+  }
 });
 
 // Multer error handling (for upload routes)
