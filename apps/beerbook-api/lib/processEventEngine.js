@@ -160,22 +160,24 @@ async function grantAchievementCosmetics(rest, userId, achievementKey) {
   const enc = encodeURIComponent;
   const cosmeticsRes = await rest(
     'GET',
-    `/cosmetics?achievement_key=eq.${enc(key)}&type=eq.border&select=id&limit=1`
+    `/cosmetics?achievement_key=eq.${enc(key)}&select=id`
   );
   if (cosmeticsRes.status >= 400) return;
   const rows = Array.isArray(cosmeticsRes.body) ? cosmeticsRes.body : [];
-  const cosmeticId = rows[0] && rows[0].id ? String(rows[0].id) : '';
-  if (!cosmeticId) return;
+  if (rows.length === 0) return;
 
-  // Use upsert semantics so duplicate grants are a no-op.
-  await rest('POST', '/user_cosmetics?on_conflict=user_id,cosmetic_id', {
-    headers: { Prefer: 'resolution=ignore-duplicates' },
-    body: JSON.stringify({
-      user_id: userId,
-      cosmetic_id: cosmeticId,
-      acquired_via: 'achievement',
-    }),
-  });
+  for (const row of rows) {
+    const cosmeticId = row && row.id ? String(row.id) : '';
+    if (!cosmeticId) continue;
+    await rest('POST', '/user_cosmetics?on_conflict=user_id,cosmetic_id', {
+      headers: { Prefer: 'resolution=ignore-duplicates' },
+      body: JSON.stringify({
+        user_id: userId,
+        cosmetic_id: cosmeticId,
+        acquired_via: 'achievement',
+      }),
+    });
+  }
 }
 
 /**

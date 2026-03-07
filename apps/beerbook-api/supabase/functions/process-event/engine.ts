@@ -217,25 +217,26 @@ async function grantAchievementCosmetics(
   const { data, error } = await admin
     .from("cosmetics")
     .select("id")
-    .eq("achievement_key", achievementKey)
-    .eq("type", "border")
-    .limit(1);
+    .eq("achievement_key", achievementKey);
   if (error) return;
   const rows = Array.isArray(data) ? data : [];
-  const cosmeticId = rows[0]?.id;
-  if (!cosmeticId) return;
+  if (rows.length === 0) return;
 
-  await admin.from("user_cosmetics").upsert(
-    {
-      user_id: userId,
-      cosmetic_id: cosmeticId,
-      acquired_via: "achievement",
-    },
-    {
-      onConflict: "user_id,cosmetic_id",
-      ignoreDuplicates: true,
-    }
-  );
+  for (const row of rows) {
+    const cosmeticId = row?.id;
+    if (!cosmeticId) continue;
+    await admin.from("user_cosmetics").upsert(
+      {
+        user_id: userId,
+        cosmetic_id: cosmeticId,
+        acquired_via: "achievement",
+      },
+      {
+        onConflict: "user_id,cosmetic_id",
+        ignoreDuplicates: true,
+      }
+    );
+  }
 }
 
 async function getCheckinCount(admin: ReturnType<typeof createClient>, userId: string): Promise<number> {
