@@ -360,7 +360,7 @@ module.exports = function tabsRoutes(opts) {
         ),
         rest(
           'GET',
-          `/ratings?user_id=eq.${userId}&select=style,photo_url,notes,price_cents,venue_id,rating,city,created_at&limit=5000`
+          `/ratings?user_id=eq.${userId}&select=style,photo_url,notes,price_cents,venue_id,rating,location_name,created_at&limit=5000`
         ),
       ]);
 
@@ -383,8 +383,8 @@ module.exports = function tabsRoutes(opts) {
         const style = normalizeStyle(row?.style);
         if (style) distinctStyles.add(style);
         if (row?.venue_id) distinctVenues.add(String(row.venue_id));
-        const city = String(row?.city || '').trim().toLowerCase();
-        if (city) distinctCities.add(city);
+        const locationName = String(row?.location_name || '').trim().toLowerCase();
+        if (locationName) distinctCities.add(locationName);
         const createdAt = new Date(row?.created_at);
         if (!Number.isNaN(createdAt.getTime())) distinctMonths.add(createdAt.getUTCMonth() + 1);
       }

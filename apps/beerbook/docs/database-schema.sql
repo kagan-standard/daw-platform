@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS ratings (
     flavor_fruity INTEGER DEFAULT 0 CHECK (flavor_fruity >= 0 AND flavor_fruity <= 5),
     notes TEXT DEFAULT '',
     created_at TIMESTAMPTZ DEFAULT NOW(),
-    yg_value DECIMAL(3,1) CHECK (yg_value >= 0.1 AND yg_value <= 10.0),
+    yg_value DECIMAL(3,1) CHECK (yg_value >= 0 AND yg_value <= 12),
     latitude DECIMAL(9,6),
     longitude DECIMAL(9,6),
     location_name VARCHAR(255),

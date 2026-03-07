@@ -1062,6 +1062,8 @@ app.post('/api/ratings', authMiddleware, async (req, res) => {
     return res.status(400).json({ error: 'rating must be a number between 1 and 5' });
   }
   const ygValue = b.yg_value ?? b.ygValue ?? null;
+  // Keep this range in sync with DB constraint `ratings_yg_value_check`.
+  // Supabase migration: `supabase/migrations/20260306000000_update_ratings_yg_value_check.sql`.
   if (ygValue != null) {
     const yg = Number(ygValue);
     if (!Number.isFinite(yg) || yg < 0 || yg > 12 || !Number.isInteger(yg)) {

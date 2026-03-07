@@ -4,7 +4,7 @@
 -- ============================================
 
 -- 1A: Add columns to ratings
-ALTER TABLE ratings ADD COLUMN IF NOT EXISTS yg_value DECIMAL(3,1) CHECK (yg_value >= 0.1 AND yg_value <= 10.0);
+ALTER TABLE ratings ADD COLUMN IF NOT EXISTS yg_value DECIMAL(3,1) CHECK (yg_value >= 0 AND yg_value <= 12);
 ALTER TABLE ratings ADD COLUMN IF NOT EXISTS latitude DECIMAL(9,6);
 ALTER TABLE ratings ADD COLUMN IF NOT EXISTS longitude DECIMAL(9,6);
 ALTER TABLE ratings ADD COLUMN IF NOT EXISTS location_name VARCHAR(255);

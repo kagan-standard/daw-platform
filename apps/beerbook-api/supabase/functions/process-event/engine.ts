@@ -190,21 +190,24 @@ async function grantAchievementCosmetics(
     .from("cosmetics")
     .select("id")
     .eq("achievement_key", achievementKey)
-    .eq("active", true)
-    .in("unlock_type", ["achievement", "both"]);
+    .eq("type", "border")
+    .limit(1);
   if (error) return;
   const rows = Array.isArray(data) ? data : [];
-  for (const row of rows) {
-    if (!row?.id) continue;
-    const { error: insertError } = await admin
-      .from("user_cosmetics")
-      .insert({
-        user_id: userId,
-        cosmetic_id: row.id,
-        acquired_via: "achievement",
-      });
-    if (insertError?.code === "23505") continue;
-  }
+  const cosmeticId = rows[0]?.id;
+  if (!cosmeticId) return;
+
+  await admin.from("user_cosmetics").upsert(
+    {
+      user_id: userId,
+      cosmetic_id: cosmeticId,
+      acquired_via: "achievement",
+    },
+    {
+      onConflict: "user_id,cosmetic_id",
+      ignoreDuplicates: true,
+    }
+  );
 }
 
 async function getCheckinCount(admin: ReturnType<typeof createClient>, userId: string): Promise<number> {

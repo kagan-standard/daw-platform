@@ -137,22 +137,22 @@ async function grantAchievementCosmetics(rest, userId, achievementKey) {
   const enc = encodeURIComponent;
   const cosmeticsRes = await rest(
     'GET',
-    `/cosmetics?achievement_key=eq.${enc(key)}&active=eq.true&unlock_type=in.(achievement,both)&select=id`
+    `/cosmetics?achievement_key=eq.${enc(key)}&type=eq.border&select=id&limit=1`
   );
   if (cosmeticsRes.status >= 400) return;
   const rows = Array.isArray(cosmeticsRes.body) ? cosmeticsRes.body : [];
-  for (const row of rows) {
-    const cosmeticId = row && row.id ? String(row.id) : '';
-    if (!cosmeticId) continue;
-    const insertRes = await rest('POST', '/user_cosmetics', {
-      body: JSON.stringify({
-        user_id: userId,
-        cosmetic_id: cosmeticId,
-        acquired_via: 'achievement',
-      }),
-    });
-    if (isConflict(insertRes)) continue;
-  }
+  const cosmeticId = rows[0] && rows[0].id ? String(rows[0].id) : '';
+  if (!cosmeticId) return;
+
+  // Use upsert semantics so duplicate grants are a no-op.
+  await rest('POST', '/user_cosmetics?on_conflict=user_id,cosmetic_id', {
+    headers: { Prefer: 'resolution=ignore-duplicates' },
+    body: JSON.stringify({
+      user_id: userId,
+      cosmetic_id: cosmeticId,
+      acquired_via: 'achievement',
+    }),
+  });
 }
 
 async function getCheckinCount(rest, totalFromContentRange, userId) {
