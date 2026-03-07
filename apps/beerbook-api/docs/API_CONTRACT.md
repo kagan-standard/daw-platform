@@ -242,6 +242,14 @@ Most handlers return:
 - `POST /api/venues/:id/prices/:priceId/confirm`, `POST /api/venues/:id/happy-hours/:hhId/confirm`, and `PATCH /api/venues/:id/happy-hours/:hhId/confirm` return `{ ok: true }`
 - `PATCH /api/tabs/notifications/read-all` returns `{ ok: true }`
 
+### Upstream Proxy Errors
+
+Any endpoint that proxies requests to an upstream data service may return:
+
+- `502 Bad Gateway`: `{ "error": "<contextual message>" }` - returned when the upstream service fails (5xx) or the request cannot be completed.
+
+This applies to crew operations, follow operations, and any other proxied writes. It is not re-listed on every individual endpoint below unless the error carries additional structured fields.
+
 ---
 
 ## Endpoints
@@ -2753,6 +2761,7 @@ This is a toggle endpoint.
 - 400: `{ "error": "Target user is required" }`
 - 400: `{ "error": "Cannot follow yourself" }`
 - 502: `{ "error": "Unfollow failed" }`
+- 502: `{ "error": "Follow failed" }` - upstream follow insert failed
 
 ---
 
@@ -2808,6 +2817,8 @@ This is a toggle endpoint.
 ```json
 { "is_following": true }
 ```
+
+> **Note:** If `userId` is empty or blank, returns `{ "is_following": false }` without error.
 
 ---
 
@@ -2963,6 +2974,7 @@ This is a toggle endpoint.
 
 **Error Responses:**
 - 403: `{ "error": "Owner access required" }`
+- 502: `{ "error": "Delete failed" }` - upstream delete failed
 
 ---
 
@@ -3014,6 +3026,8 @@ This is a toggle endpoint.
 - 403: `{ "error_code": "CREW_FULL", "error": "Crew is full (50/50)", "request_id": "..." }`
 - 404: `{ "error_code": "CREW_NOT_FOUND", "error": "Crew not found", "request_id": "..." }`
 - 409: `{ "error_code": "ALREADY_MEMBER", "error": "Already a member", "request_id": "..." }`
+- 502: `{ "error_code": "UPSTREAM_ERROR", "error": "...", "request_id": "..." }` - upstream service returned a 5xx
+- 502: `{ "error_code": "JOIN_FAILED", "error": "...", "request_id": "..." }` - join insert failed at upstream
 
 ---
 
@@ -3029,6 +3043,7 @@ This is a toggle endpoint.
 **Error Responses:**
 - 400: `{ "error": "Owner cannot leave crew. Delete crew instead." }`
 - 403: `{ "error": "Crew access denied" }` or `{ "error": "Owner access required" }`
+- 502: `{ "error": "Remove member failed" }` - upstream delete failed
 
 **Side Effects:** Deletes from `crew_members`. If last member, deletes the crew.
 
@@ -3126,12 +3141,14 @@ All admin routes require `authMiddleware` + `adminMiddleware`.
       "unique_styles": 0,
       "unique_venues": 0,
       "last_active": "ISO8601 | null",
-      "avg_rating": 0
+      "avg_rating": "number | null"
     }
   ],
   "pagination": { "limit": 50, "offset": 0, "total": 500 }
 }
 ```
+
+`avg_rating` is `null` for users with zero ratings.
 
 ---
 
