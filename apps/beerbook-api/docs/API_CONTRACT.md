@@ -2,6 +2,7 @@
 
 Generated: 2026-03-06
 Source: `daw-platform/apps/beerbook-api`
+Verification: Endpoint parity checked against `server.js` + `routes/*.js` (`98 implemented / 98 documented`)
 
 ---
 
