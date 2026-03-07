@@ -1,17 +1,14 @@
 const express = require('express');
+const crypto = require('crypto');
 const {
   TAB_TIERS,
   ensureUserTabsProfile,
   getTierMultiplier,
-  awardTabsForBeerApproval,
 } = require('../lib/tabs');
+const { calculateAchievementProgress } = require('../lib/achievementProgress');
 
 function toBool(value) {
   return value === true || value === 'true' || value === 1 || value === '1';
-}
-
-function normalizeStyle(value) {
-  return String(value || '').trim().toLowerCase();
 }
 
 function getUtcDayKey() {
@@ -50,157 +47,50 @@ function stableIndexForSeed(seed, size) {
   return hash % size;
 }
 
-function includesAnyNeedle(value, needles) {
-  const source = String(value || '').toLowerCase();
-  return needles.some((needle) => source.includes(String(needle || '').toLowerCase()));
-}
-
-function countIf(ratings, predicate) {
-  return ratings.reduce((acc, row) => (predicate(row) ? acc + 1 : acc), 0);
-}
-
-function getRuleTarget(rules) {
-  if (!rules || typeof rules !== 'object') return 0;
-  return Number(rules.min_count ?? rules.target ?? rules.gte ?? 0);
-}
-
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const LEDGER_EVENT_TO_TRANSACTION_TYPE = {
+  rating_award: 'earn',
+  cheers_given: 'earn',
+  cheers_received: 'earn',
+  admin_grant: 'admin_adjust',
+  achievement_unlock: 'earn',
+  spend: 'spend',
+};
+
+function isIdempotentConflict(response) {
+  if (!response) return false;
+  if (response.status === 409) return true;
+  const code = response.body && (response.body.code || response.body.pgCode);
+  return code === '23505' || code === 23505;
+}
+
+function toNumberOrNull(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function mapLedgerRowToTabTransaction(row) {
+  const eventType = String(row?.event_type || '');
+  const transaction_type = LEDGER_EVENT_TO_TRANSACTION_TYPE[eventType] || (Number(row?.amount) < 0 ? 'spend' : 'earn');
+  const breakdown = row?.breakdown && typeof row.breakdown === 'object' ? row.breakdown : {};
+  const context = row?.context && typeof row.context === 'object' ? row.context : {};
+  return {
+    id: String(row?.id || ''),
+    transaction_type,
+    amount: Number(row?.amount) || 0,
+    earn_source: transaction_type === 'earn' ? eventType : null,
+    base_amount: toNumberOrNull(breakdown.base_amount),
+    tier_multiplier: toNumberOrNull(breakdown.tier_multiplier),
+    seeder_multiplier: toNumberOrNull(breakdown.seeder_multiplier),
+    rating_id: context.rating_id || null,
+    related_entity_id: context.related_entity_id || null,
+    created_at: String(row?.created_at || ''),
+  };
+}
 
 function mapPurchaseErrorStatus(errorCode) {
   if (errorCode === 'already_owned' || errorCode === 'insufficient_balance') return 409;
   return 400;
-}
-
-function computeFallbackProgress(achievement, ratings, stats) {
-  const rules = achievement?.rules && typeof achievement.rules === 'object' ? achievement.rules : null;
-  const achievementKey = String(achievement?.key || achievement?.id || 'unknown');
-  if (!rules) {
-    console.warn('[achievements/fallback] Missing rules object', { achievement_key: achievementKey });
-    return null;
-  }
-  const type = String(rules.type || '').trim().toLowerCase();
-  const targetFromRules = getRuleTarget(rules);
-  if (!type) {
-    if (Number.isFinite(targetFromRules) && targetFromRules > 0) {
-      return {
-        progress_current: stats.totalRatings,
-        progress_target: targetFromRules,
-      };
-    }
-    console.warn('[achievements/fallback] Unhandled rule: missing type', {
-      achievement_key: achievementKey,
-      rules,
-    });
-    return null;
-  }
-
-  const hasTarget = Number.isFinite(targetFromRules) && targetFromRules > 0;
-
-  if (
-    (type === 'count' || type === 'rating_count')
-    && String(rules.entity || 'ratings').toLowerCase() === 'ratings'
-    && hasTarget
-  ) {
-    return {
-      progress_current: stats.totalRatings,
-      progress_target: targetFromRules,
-    };
-  }
-
-  if (type === 'min_length' && hasTarget) {
-    const field = String(rules.field || '').trim().toLowerCase();
-    const valueField = field === 'review' ? 'notes' : field;
-    if (!valueField) return null;
-    return {
-      progress_current: countIf(
-        ratings,
-        (row) => String(row?.[valueField] || '').trim().length >= targetFromRules
-      ),
-      progress_target: 1,
-    };
-  }
-
-  if (type === 'distinct_count' && String(rules.entity || '').toLowerCase() === 'ratings' && hasTarget) {
-    const field = String(rules.field || '').toLowerCase();
-    if (field === 'style') return { progress_current: stats.distinctStyles, progress_target: targetFromRules };
-    if (field === 'venue_id') return { progress_current: stats.distinctVenues, progress_target: targetFromRules };
-    if (field === 'city') return { progress_current: stats.distinctCities, progress_target: targetFromRules };
-    if (field === 'month') return { progress_current: stats.distinctMonths, progress_target: targetFromRules };
-    return null;
-  }
-
-  if (type === 'style_contains' && hasTarget) {
-    const needle = String(rules.needle || '').trim();
-    if (!needle) return null;
-    return {
-      progress_current: countIf(ratings, (row) => String(row?.style || '').toLowerCase().includes(needle.toLowerCase())),
-      progress_target: targetFromRules,
-    };
-  }
-
-  if (type === 'style_contains_any' && hasTarget) {
-    const needles = Array.isArray(rules.needles) ? rules.needles.map((n) => String(n || '').trim()).filter(Boolean) : [];
-    if (!needles.length) return null;
-    return {
-      progress_current: countIf(ratings, (row) => includesAnyNeedle(row?.style, needles)),
-      progress_target: targetFromRules,
-    };
-  }
-
-  if (type === 'count_where' && String(rules.entity || '').toLowerCase() === 'ratings' && hasTarget) {
-    const where = rules.where && typeof rules.where === 'object' ? rules.where : null;
-    if (!where) return null;
-    const progressCurrent = countIf(ratings, (row) => {
-      if (typeof where.photo === 'boolean' && (!!(row?.photo_url ?? row?.photo)) !== where.photo) return false;
-      if (typeof where.price === 'boolean' && (!!(row?.price_cents ?? row?.price)) !== where.price) return false;
-      if (typeof where.venue_id === 'boolean' && (!!row?.venue_id) !== where.venue_id) return false;
-      if (typeof where.is_new_beer === 'boolean' && (!!row?.is_new_beer) !== where.is_new_beer) return false;
-      if (Number.isFinite(Number(where.review_min_len)) && String(row?.notes || '').trim().length < Number(where.review_min_len)) return false;
-      if (Number.isFinite(Number(where.stars_gte)) && Number(row?.rating ?? row?.stars) < Number(where.stars_gte)) return false;
-      if (Number.isFinite(Number(where.stars_lte)) && Number(row?.rating ?? row?.stars) > Number(where.stars_lte)) return false;
-      return true;
-    });
-    return { progress_current: progressCurrent, progress_target: targetFromRules };
-  }
-
-  if (type === 'has_field') {
-    const field = String(rules.field || '').trim();
-    if (!field) return null;
-    const expected = rules.value;
-    const progressCurrent = countIf(ratings, (row) => {
-      const value = field === 'photo'
-        ? (row?.photo_url ?? row?.[field])
-        : (field === 'price' ? (row?.price_cents ?? row?.price) : row?.[field]);
-      if (typeof expected === 'boolean') return (!!value) === expected;
-      return value != null;
-    });
-    return { progress_current: progressCurrent, progress_target: 1 };
-  }
-
-  if (type === 'comparison') {
-    const field = String(rules.field || '').trim();
-    const op = String(rules.op || '').trim();
-    const targetValue = Number(rules.value);
-    if (!field || !Number.isFinite(targetValue)) return null;
-    const progressCurrent = countIf(ratings, (row) => {
-      const numeric = Number(field === 'stars' ? (row?.rating ?? row?.stars) : row?.[field]);
-      if (!Number.isFinite(numeric)) return false;
-      if (op === '>=') return numeric >= targetValue;
-      if (op === '<=') return numeric <= targetValue;
-      if (op === '>') return numeric > targetValue;
-      if (op === '<') return numeric < targetValue;
-      if (op === '=') return numeric === targetValue;
-      return false;
-    });
-    return { progress_current: progressCurrent, progress_target: 1 };
-  }
-
-  console.warn('[achievements/fallback] Unhandled rule type', {
-    achievement_key: achievementKey,
-    type,
-    rules,
-  });
-  return null;
 }
 
 module.exports = function tabsRoutes(opts) {
@@ -215,17 +105,27 @@ module.exports = function tabsRoutes(opts) {
 
   async function formatTabProfile(userId, profileDefaults = {}) {
     const profile = await ensureUserTabsProfile(rest, userId, profileDefaults);
-    const tier = await getTierMultiplier(rest, profile.current_tier);
+    const weekStartIso = getPeriodStartUtc('weekly');
+    const [tier, profRes, weeklyAwardsRes] = await Promise.all([
+      getTierMultiplier(rest, profile.current_tier),
+      rest('GET', `/profiles?id=eq.${encodeURIComponent(userId)}&select=tabs_balance&limit=1`),
+      rest(
+        'GET',
+        `/tabs_ledger?user_id=eq.${encodeURIComponent(userId)}&event_type=eq.rating_award&created_at=gte.${encodeURIComponent(weekStartIso)}&select=id&limit=1`,
+        { headers: { Prefer: 'count=exact' } }
+      ),
+    ]);
     const tierMultiplier = Number(tier.multiplier) || 1.0;
     const seederMultiplier = profile.is_seeder ? 1.5 : 1.0;
     const combinedMultiplier = Number((tierMultiplier * seederMultiplier).toFixed(2));
     const ratingsThisWeek = Number(profile.ratings_this_week) || 0;
-    // Prefer profiles.tabs_balance (new ledger) when present
-    let tabBalance = Number(profile.tab_balance) || 0;
-    const profRes = await rest('GET', `/profiles?id=eq.${encodeURIComponent(userId)}&select=tabs_balance&limit=1`);
-    if (profRes.status < 400 && Array.isArray(profRes.body) && profRes.body[0] != null && typeof profRes.body[0].tabs_balance === 'number') {
-      tabBalance = profRes.body[0].tabs_balance;
-    }
+    const tabsBalanceFromProfile = profRes.status < 400 && Array.isArray(profRes.body) && profRes.body[0] != null
+      ? Number(profRes.body[0].tabs_balance)
+      : NaN;
+    const tabBalance = Number.isFinite(tabsBalanceFromProfile) ? tabsBalanceFromProfile : 0;
+    const weeklyAwardsCount = weeklyAwardsRes.status < 400
+      ? (totalFromContentRange(weeklyAwardsRes.headers['content-range']) ?? 0)
+      : 0;
     return {
       user_id: profile.user_id,
       current_tier: profile.current_tier,
@@ -238,7 +138,7 @@ module.exports = function tabsRoutes(opts) {
       lifetime_tabs_earned: Number(profile.lifetime_tabs_earned) || 0,
       ratings_this_week: ratingsThisWeek,
       current_streak_weeks: Number(profile.current_streak_weeks) || 0,
-      weekly_cap_reached: ratingsThisWeek >= 10,
+      weekly_cap_reached: weeklyAwardsCount >= 10,
       weeks_inactive: Number(profile.weeks_inactive) || 0,
       week_start: profile.week_start,
       updated_at: profile.updated_at,
@@ -303,58 +203,49 @@ module.exports = function tabsRoutes(opts) {
       const userIdRaw = String(req.claims.sub || '').trim();
       if (!userIdRaw) return res.status(400).json({ error: 'Missing user id' });
       const userId = encodeURIComponent(userIdRaw);
-      const [unlockedRes, allRes, ratingsRes] = await Promise.all([
+      const [unlockedRes, allRes] = await Promise.all([
         rest('GET', `/user_achievements?user_id=eq.${userId}&select=achievement_id`),
         rest(
           'GET',
           '/achievements?active=eq.true&trigger_type=eq.rating_submitted&select=id,key,name,description,subtype,rules,category_key,is_hidden'
         ),
-        rest('GET', `/ratings?user_id=eq.${userId}&select=style&limit=5000`),
       ]);
       if (unlockedRes.status >= 400) return res.status(unlockedRes.status).json(unlockedRes.body || { error: 'Upstream error' });
       if (allRes.status >= 400) return res.status(allRes.status).json(allRes.body || { error: 'Upstream error' });
-      if (ratingsRes.status >= 400) return res.status(ratingsRes.status).json(ratingsRes.body || { error: 'Upstream error' });
 
       const unlockedIds = new Set(
         (Array.isArray(unlockedRes.body) ? unlockedRes.body : [])
           .map((row) => row?.achievement_id)
           .filter(Boolean)
       );
-      const ratings = Array.isArray(ratingsRes.body) ? ratingsRes.body : [];
-      const totalRatings = ratings.length;
-      const styleCounts = ratings.reduce((acc, row) => {
-        const key = normalizeStyle(row?.style);
-        if (!key) return acc;
-        acc[key] = (acc[key] || 0) + 1;
-        return acc;
-      }, {});
-
-      const candidates = (Array.isArray(allRes.body) ? allRes.body : [])
-        .filter((a) => a && a.id && !a.is_hidden && !unlockedIds.has(a.id))
-        .map((a) => {
-          const rules = a.rules && typeof a.rules === 'object' ? a.rules : {};
-          const progressTarget = getRuleTarget(rules);
-          if (!Number.isFinite(progressTarget) || progressTarget <= 0) return null;
-          const styleEq = normalizeStyle(rules.style_eq);
-          const progressCurrent = styleEq ? Number(styleCounts[styleEq] || 0) : totalRatings;
-          const remaining = Math.max(progressTarget - progressCurrent, 0);
-          return {
-            id: a.id,
-            key: a.key,
-            name: a.name,
-            description: a.description || '',
-            category_key: a.category_key || null,
-            progress_current: progressCurrent,
-            progress_target: progressTarget,
-            remaining,
-          };
-        })
-        .filter(Boolean)
-        .sort((left, right) => {
-          if (left.remaining !== right.remaining) return left.remaining - right.remaining;
-          if (left.progress_target !== right.progress_target) return left.progress_target - right.progress_target;
-          return String(left.name || '').localeCompare(String(right.name || ''));
+      const candidatesRaw = (Array.isArray(allRes.body) ? allRes.body : [])
+        .filter((a) => a && a.id && !a.is_hidden && !unlockedIds.has(a.id));
+      const candidates = [];
+      for (const a of candidatesRaw) {
+        const progress = await calculateAchievementProgress({
+          rest,
+          totalFromContentRange,
+          user_id: userIdRaw,
+          rules: a.rules,
+          subtype: a.subtype,
         });
+        if (!progress) continue;
+        candidates.push({
+          id: a.id,
+          key: a.key,
+          name: a.name,
+          description: a.description || '',
+          category_key: a.category_key || null,
+          progress_current: progress.progress_current,
+          progress_target: progress.progress_target,
+          remaining: progress.remaining,
+        });
+      }
+      candidates.sort((left, right) => {
+        if (left.remaining !== right.remaining) return left.remaining - right.remaining;
+        if (left.progress_target !== right.progress_target) return left.progress_target - right.progress_target;
+        return String(left.name || '').localeCompare(String(right.name || ''));
+      });
 
       if (!candidates.length) return res.json({ data: null });
 
@@ -395,72 +286,46 @@ module.exports = function tabsRoutes(opts) {
       if (!userIdRaw) return res.status(400).json({ error: 'Missing user id' });
       const userId = encodeURIComponent(userIdRaw);
 
-      const [unlockedRes, allRes, ratingsRes] = await Promise.all([
+      const [unlockedRes, allRes] = await Promise.all([
         rest('GET', `/user_achievements?user_id=eq.${userId}&select=achievement_id`),
         rest(
           'GET',
-          '/achievements?active=eq.true&trigger_type=eq.rating_submitted&select=id,key,name,description,rules,category_key,is_hidden'
-        ),
-        rest(
-          'GET',
-          `/ratings?user_id=eq.${userId}&select=style,photo_url,notes,price_cents,venue_id,rating,location_name,created_at&limit=5000`
+          '/achievements?active=eq.true&trigger_type=eq.rating_submitted&select=id,key,name,description,subtype,rules,category_key,is_hidden'
         ),
       ]);
 
       if (unlockedRes.status >= 400) return res.status(unlockedRes.status).json(unlockedRes.body || { error: 'Upstream error' });
       if (allRes.status >= 400) return res.status(allRes.status).json(allRes.body || { error: 'Upstream error' });
-      if (ratingsRes.status >= 400) return res.status(ratingsRes.status).json(ratingsRes.body || { error: 'Upstream error' });
 
       const unlockedIds = new Set(
         (Array.isArray(unlockedRes.body) ? unlockedRes.body : [])
           .map((row) => row?.achievement_id)
           .filter(Boolean)
       );
-      const ratings = Array.isArray(ratingsRes.body) ? ratingsRes.body : [];
-
-      const distinctStyles = new Set();
-      const distinctVenues = new Set();
-      const distinctCities = new Set();
-      const distinctMonths = new Set();
-      for (const row of ratings) {
-        const style = normalizeStyle(row?.style);
-        if (style) distinctStyles.add(style);
-        if (row?.venue_id) distinctVenues.add(String(row.venue_id));
-        const locationName = String(row?.location_name || '').trim().toLowerCase();
-        if (locationName) distinctCities.add(locationName);
-        const createdAt = new Date(row?.created_at);
-        if (!Number.isNaN(createdAt.getTime())) distinctMonths.add(createdAt.getUTCMonth() + 1);
+      const candidatesRaw = (Array.isArray(allRes.body) ? allRes.body : [])
+        .filter((a) => a && a.id && !a.is_hidden && !unlockedIds.has(a.id));
+      const candidates = [];
+      for (const a of candidatesRaw) {
+        const progress = await calculateAchievementProgress({
+          rest,
+          totalFromContentRange,
+          user_id: userIdRaw,
+          rules: a.rules,
+          subtype: a.subtype,
+        });
+        if (!progress) continue;
+        candidates.push({
+          id: a.id,
+          key: a.key,
+          name: a.name,
+          description: a.description || '',
+          category_key: a.category_key || null,
+          progress_current: progress.progress_current,
+          progress_target: progress.progress_target,
+          remaining: progress.remaining,
+        });
       }
-
-      const stats = {
-        totalRatings: ratings.length,
-        distinctStyles: distinctStyles.size,
-        distinctVenues: distinctVenues.size,
-        distinctCities: distinctCities.size,
-        distinctMonths: distinctMonths.size,
-      };
-
-      const candidates = (Array.isArray(allRes.body) ? allRes.body : [])
-        .filter((a) => a && a.id && !a.is_hidden && !unlockedIds.has(a.id))
-        .map((a) => {
-          const progress = computeFallbackProgress(a, ratings, stats);
-          if (!progress) return null;
-          const progressCurrent = Math.max(Number(progress.progress_current) || 0, 0);
-          const progressTarget = Math.max(Number(progress.progress_target) || 0, 0);
-          if (!progressTarget) return null;
-          return {
-            id: a.id,
-            key: a.key,
-            name: a.name,
-            description: a.description || '',
-            category_key: a.category_key || null,
-            progress_current: progressCurrent,
-            progress_target: progressTarget,
-            remaining: Math.max(progressTarget - progressCurrent, 0),
-          };
-        })
-        .filter(Boolean)
-        .sort((left, right) => String(left.key || '').localeCompare(String(right.key || '')));
+      candidates.sort((left, right) => String(left.key || '').localeCompare(String(right.key || '')));
 
       if (!candidates.length) return res.status(204).send();
 
@@ -844,12 +709,12 @@ module.exports = function tabsRoutes(opts) {
       const userId = encodeURIComponent(req.claims.sub);
       const out = await rest(
         'GET',
-        `/tab_transactions?user_id=eq.${userId}&order=created_at.desc&limit=${limit}&offset=${offset}`,
+        `/tabs_ledger?user_id=eq.${userId}&select=id,event_type,amount,breakdown,context,created_at&order=created_at.desc&limit=${limit}&offset=${offset}`,
         { headers: { Prefer: 'count=exact' } }
       );
       if (out.status >= 400) return res.status(out.status).json(out.body || { error: 'Upstream error' });
       res.json({
-        data: Array.isArray(out.body) ? out.body : [],
+        data: (Array.isArray(out.body) ? out.body : []).map(mapLedgerRowToTabTransaction),
         pagination: {
           limit,
           offset,
@@ -1072,33 +937,41 @@ module.exports = function tabsRoutes(opts) {
       if (!reason) return res.status(400).json({ error: 'reason is required' });
 
       const profile = await ensureUserTabsProfile(rest, userId);
-      const insert = await rest('POST', '/tab_transactions', {
+      const requestedEventId = String(req.body?.event_id || '').trim();
+      const eventId = UUID_REGEX.test(requestedEventId) ? requestedEventId : crypto.randomUUID();
+      const insert = await rest('POST', '/tabs_ledger', {
         body: JSON.stringify({
+          event_id: eventId,
           user_id: userId,
-          transaction_type: 'admin_adjust',
+          event_type: 'admin_grant',
           amount,
-          admin_user_id: req.claims.sub,
-          admin_reason: reason,
-          earn_source: 'admin_grant',
-          base_amount: Math.abs(amount),
-          tier_multiplier: 1.0,
-          seeder_multiplier: 1.0,
+          breakdown: {
+            base_amount: Math.abs(amount),
+            tier_multiplier: 1.0,
+            seeder_multiplier: 1.0,
+          },
+          context: {
+            admin_user_id: req.claims.sub,
+            reason,
+          },
         }),
       });
-      if (insert.status >= 400) return res.status(insert.status).json(insert.body || { error: 'Transaction insert failed' });
-
-      const patch = {
-        tab_balance: (Number(profile.tab_balance) || 0) + amount,
-      };
-      if (amount > 0) {
-        patch.lifetime_tabs_earned = (Number(profile.lifetime_tabs_earned) || 0) + amount;
+      if (insert.status >= 400 && !isIdempotentConflict(insert)) {
+        return res.status(insert.status).json(insert.body || { error: 'Transaction insert failed' });
       }
-      const out = await rest('PATCH', `/user_tabs_profile?user_id=eq.${encodeURIComponent(userId)}`, {
-        headers: { Prefer: 'return=representation' },
-        body: JSON.stringify(patch),
-      });
-      if (out.status >= 400) return res.status(out.status).json(out.body || { error: 'Balance update failed' });
-      const row = Array.isArray(out.body) ? out.body[0] : out.body;
+
+      let row = profile;
+      const shouldIncrementLifetime = amount > 0 && !isIdempotentConflict(insert);
+      if (shouldIncrementLifetime) {
+        const out = await rest('PATCH', `/user_tabs_profile?user_id=eq.${encodeURIComponent(userId)}`, {
+          headers: { Prefer: 'return=representation' },
+          body: JSON.stringify({
+            lifetime_tabs_earned: (Number(profile.lifetime_tabs_earned) || 0) + amount,
+          }),
+        });
+        if (out.status >= 400) return res.status(out.status).json(out.body || { error: 'Balance update failed' });
+        row = Array.isArray(out.body) ? out.body[0] : out.body;
+      }
       res.json({ data: row });
     } catch (e) {
       next(e);
@@ -1147,10 +1020,41 @@ module.exports = function tabsRoutes(opts) {
 
       let tabsAwarded = 0;
       if (status === 'approved' && !submission.tabs_awarded) {
-        tabsAwarded = await awardTabsForBeerApproval(rest, submission.submitted_by, submission.id);
+        const awardAmount = 3;
+        const submissionEventId = UUID_REGEX.test(String(submission.id || '')) ? String(submission.id) : crypto.randomUUID();
+        const ledgerInsert = await rest('POST', '/tabs_ledger', {
+          body: JSON.stringify({
+            event_id: submissionEventId,
+            user_id: submission.submitted_by,
+            event_type: 'admin_grant',
+            amount: awardAmount,
+            breakdown: {
+              base_amount: awardAmount,
+              tier_multiplier: 1.0,
+              seeder_multiplier: 1.0,
+            },
+            context: {
+              submission_id: submission.id,
+              admin_user_id: req.claims.sub,
+            },
+          }),
+        });
+        if (ledgerInsert.status >= 400 && !isIdempotentConflict(ledgerInsert)) {
+          return res.status(ledgerInsert.status).json(ledgerInsert.body || { error: 'Transaction insert failed' });
+        }
+        const insertedNewAward = !isIdempotentConflict(ledgerInsert);
+        tabsAwarded = insertedNewAward ? awardAmount : 0;
         await rest('PATCH', `/beer_submissions?id=eq.${encodeURIComponent(id)}`, {
           body: JSON.stringify({ tabs_awarded: true }),
         });
+        if (insertedNewAward) {
+          const profile = await ensureUserTabsProfile(rest, submission.submitted_by);
+          await rest('PATCH', `/user_tabs_profile?user_id=eq.${encodeURIComponent(submission.submitted_by)}`, {
+            body: JSON.stringify({
+              lifetime_tabs_earned: (Number(profile.lifetime_tabs_earned) || 0) + tabsAwarded,
+            }),
+          });
+        }
       }
 
       await rest('POST', '/tab_notifications', {
