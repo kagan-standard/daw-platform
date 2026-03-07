@@ -1302,6 +1302,8 @@ app.post('/api/ratings', authMiddleware, async (req, res) => {
   let breakdown = {};
   let achievementsUnlocked = [];
   let weeklyCount = Number(profile.ratings_this_week) || 0;
+  let currentStreakWeeks = Number(profile.current_streak_weeks) || 0;
+  let longestStreakWeeks = Number(profile.longest_streak_weeks) || 0;
   const weeklyCap = 10;
 
   try {
@@ -1326,6 +1328,12 @@ app.post('/api/ratings', authMiddleware, async (req, res) => {
       },
     });
     tabsEarned = ratingAwardRes.tabs_delta;
+    if (ratingAwardRes.current_streak_weeks != null) {
+      currentStreakWeeks = Number(ratingAwardRes.current_streak_weeks) || 0;
+    }
+    if (ratingAwardRes.longest_streak_weeks != null) {
+      longestStreakWeeks = Number(ratingAwardRes.longest_streak_weeks) || 0;
+    }
 
     const achRes = await invokeProcessEvent(req.headers.authorization, 'rating_submitted', null, {
       rating_id: ratingId,
@@ -1362,6 +1370,8 @@ app.post('/api/ratings', authMiddleware, async (req, res) => {
     new_beer_multiplier: newBeerMultiplier,
     is_new_beer: isNewBeer === true,
     achievements_unlocked: achievementsUnlocked,
+    current_streak_weeks: currentStreakWeeks,
+    longest_streak_weeks: longestStreakWeeks,
     weekly_count: weeklyCount,
     weekly_cap: weeklyCap,
   });

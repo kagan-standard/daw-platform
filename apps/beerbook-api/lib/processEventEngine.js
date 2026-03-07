@@ -72,25 +72,47 @@ async function processRatingAward(rest, totalFromContentRange, userId, eventId, 
   const amount = Number(payload.amount ?? 0);
   if (!Number.isInteger(amount) || amount < 0) return { amount: 0 };
 
+  async function refreshUserTabsProfileAfterRatingAward(tabsDelta) {
+    const res = await rest('POST', '/rpc/refresh_rating_award_profile_cache', {
+      body: JSON.stringify({
+        p_user_id: userId,
+        p_tabs_delta: tabsDelta,
+      }),
+    });
+    if (res.status >= 400) {
+      throw new Error(`refresh_rating_award_profile_cache: ${(res.body && res.body.message) || res.status}`);
+    }
+    const row = Array.isArray(res.body) ? res.body[0] : res.body;
+    return {
+      current_streak_weeks: Number(row && row.current_streak_weeks) || 0,
+      longest_streak_weeks: Number(row && row.longest_streak_weeks) || 0,
+    };
+  }
+
+  let awardedAmount = amount;
   const skipWeeklyCap = isAdminUser(userId);
   if (!skipWeeklyCap) {
     const count = await countRatingAwardsThisWeek(rest, totalFromContentRange, userId);
-    if (count >= 10) return { amount: 0 };
+    if (count >= 10) awardedAmount = 0;
   }
 
-  const res = await rest('POST', '/tabs_ledger', {
-    body: JSON.stringify({
-      event_id: eventId,
-      user_id: userId,
-      event_type: 'rating_award',
-      amount,
-      breakdown,
-      context,
-    }),
-  });
-  if (isConflict(res)) return { amount: 0 };
-  if (res.status >= 400) throw new Error(`tabs_ledger insert: ${(res.body && res.body.message) || res.status}`);
-  return { amount };
+  if (awardedAmount > 0) {
+    const res = await rest('POST', '/tabs_ledger', {
+      body: JSON.stringify({
+        event_id: eventId,
+        user_id: userId,
+        event_type: 'rating_award',
+        amount: awardedAmount,
+        breakdown,
+        context,
+      }),
+    });
+    if (isConflict(res)) awardedAmount = 0;
+    else if (res.status >= 400) throw new Error(`tabs_ledger insert: ${(res.body && res.body.message) || res.status}`);
+  }
+
+  const streaks = await refreshUserTabsProfileAfterRatingAward(awardedAmount);
+  return { amount: awardedAmount, ...streaks };
 }
 
 /**
@@ -253,18 +275,22 @@ async function getTabsBalance(rest, userId) {
  * @param {string|null} eventId
  * @param {Record<string, unknown>} payload
  * @param {string} userId - Keycloak sub (JWT caller)
- * @returns {Promise<{ unlocked: Array<{ key: string, name: string, reward_tabs: number }>, tabs_delta: number, tabs_balance: number }>}
+ * @returns {Promise<{ unlocked: Array<{ key: string, name: string, reward_tabs: number }>, tabs_delta: number, tabs_balance: number, current_streak_weeks: number|null, longest_streak_weeks: number|null }>}
  */
 async function processEvent(opts, eventType, eventId, payload, userId) {
   const { rest, totalFromContentRange } = opts;
   let tabsDelta = 0;
   let unlocked = [];
   let balanceUserId = userId;
+  let currentStreakWeeks = null;
+  let longestStreakWeeks = null;
 
   if (eventType === 'rating_award') {
     if (!eventId) throw new Error('event_id required for rating_award');
     const result = await processRatingAward(rest, totalFromContentRange, userId, eventId, payload);
     tabsDelta = result.amount;
+    currentStreakWeeks = result.current_streak_weeks;
+    longestStreakWeeks = result.longest_streak_weeks;
   } else if (eventType === 'cheers_received') {
     if (!eventId) throw new Error('event_id required for cheers_received');
     const target = payload.target_user_id;
@@ -296,7 +322,13 @@ async function processEvent(opts, eventType, eventId, payload, userId) {
   // achievement_unlock, spend: no-op
 
   const tabs_balance = await getTabsBalance(rest, balanceUserId);
-  return { unlocked, tabs_delta: tabsDelta, tabs_balance };
+  return {
+    unlocked,
+    tabs_delta: tabsDelta,
+    tabs_balance,
+    current_streak_weeks: currentStreakWeeks,
+    longest_streak_weeks: longestStreakWeeks,
+  };
 }
 
 module.exports = { processEvent, VALID_EVENT_TYPES };

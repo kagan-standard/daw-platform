@@ -27,7 +27,7 @@ function setInProcessHandler(handler) {
  * @param {string} eventType - rating_award | cheers_given | cheers_received | rating_submitted | admin_grant | spend
  * @param {string|null} eventId - UUID for idempotency (required for rating_award, cheers_*, admin_grant)
  * @param {Record<string, unknown>} payload - event payload (amount, breakdown, context, etc.)
- * @returns {Promise<{ unlocked: Array<{ key: string, name: string, reward_tabs: number }>, tabs_delta: number, tabs_balance: number }>}
+ * @returns {Promise<{ unlocked: Array<{ key: string, name: string, reward_tabs: number }>, tabs_delta: number, tabs_balance: number, current_streak_weeks: number|null, longest_streak_weeks: number|null }>}
  */
 async function invokeProcessEvent(authHeader, eventType, eventId, payload) {
   const body = { event_type: eventType, payload: payload ?? {} };
@@ -66,6 +66,10 @@ async function invokeProcessEvent(authHeader, eventType, eventId, payload) {
     unlocked: Array.isArray(data.unlocked) ? data.unlocked : [],
     tabs_delta: Number(data.tabs_delta) || 0,
     tabs_balance: Number(data.tabs_balance) || 0,
+    current_streak_weeks:
+      data.current_streak_weeks == null ? null : (Number(data.current_streak_weeks) || 0),
+    longest_streak_weeks:
+      data.longest_streak_weeks == null ? null : (Number(data.longest_streak_weeks) || 0),
   };
 }
 

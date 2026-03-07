@@ -17,7 +17,7 @@ const INTERNAL_SECRET = process.env.INTERNAL_PROCESS_EVENT_SECRET || null;
  * @param {{ rest, totalFromContentRange, getKeycloakUserId }} opts
  * @param {string} authHeader - Authorization: Bearer <token>
  * @param {{ event_type?: string, event_id?: string, payload?: object }} body
- * @returns {Promise<{ unlocked: Array, tabs_delta: number, tabs_balance: number }>}
+ * @returns {Promise<{ unlocked: Array, tabs_delta: number, tabs_balance: number, current_streak_weeks: number|null, longest_streak_weeks: number|null }>}
  * @throws Error with .status and .body for 4xx
  */
 async function handleProcessEventRequest(opts, authHeader, body) {

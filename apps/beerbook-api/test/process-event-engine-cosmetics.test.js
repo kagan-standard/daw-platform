@@ -78,3 +78,59 @@ test('rating_submitted auto-grants linked border cosmetic via idempotent insert'
     acquired_via: 'achievement',
   });
 });
+
+test('rating_award refreshes streak cache even when weekly cap blocks tabs award', async () => {
+  const calls = [];
+  const rest = async (method, path, opts = {}) => {
+    calls.push({ method, path, opts });
+
+    if (
+      method === 'GET' &&
+      path.startsWith('/tabs_ledger?user_id=eq.user-123&event_type=eq.rating_award&created_at=gte.') &&
+      path.endsWith('&select=id')
+    ) {
+      return {
+        status: 200,
+        body: [],
+        headers: { 'content-range': '0-0/10' },
+      };
+    }
+
+    if (method === 'POST' && path === '/rpc/refresh_rating_award_profile_cache') {
+      return {
+        status: 200,
+        body: [{
+          current_streak_weeks: 5,
+          longest_streak_weeks: 7,
+        }],
+      };
+    }
+
+    if (method === 'GET' && path === '/profiles?id=eq.user-123&select=tabs_balance&limit=1') {
+      return { status: 200, body: [{ tabs_balance: 25 }] };
+    }
+
+    throw new Error(`Unhandled rest call: ${method} ${path}`);
+  };
+
+  const result = await processEvent(
+    { rest, totalFromContentRange: (range) => Number(String(range).split('/')[1] || 0) },
+    'rating_award',
+    '3001f17b-e3ce-4d4c-b6e4-a6f89030588f',
+    { amount: 9, breakdown: { rating_base: 9 }, context: { rating_id: 'r-1' } },
+    'user-123'
+  );
+
+  assert.equal(result.tabs_delta, 0);
+  assert.equal(result.tabs_balance, 25);
+  assert.equal(result.current_streak_weeks, 5);
+  assert.equal(result.longest_streak_weeks, 7);
+
+  assert.equal(calls.some((call) => call.path === '/tabs_ledger'), false);
+  const rpcCall = calls.find((call) => call.path === '/rpc/refresh_rating_award_profile_cache');
+  assert.ok(rpcCall, 'expected profile cache refresh RPC');
+  assert.deepEqual(JSON.parse(rpcCall.opts?.body || '{}'), {
+    p_user_id: 'user-123',
+    p_tabs_delta: 0,
+  });
+});
