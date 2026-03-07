@@ -34,6 +34,8 @@ export interface ProcessEventResult {
   unlocked: UnlockedAchievement[];
   tabs_delta: number;
   tabs_balance: number;
+  current_streak_weeks: number | null;
+  longest_streak_weeks: number | null;
 }
 
 const VALID_EVENT_TYPES: EventType[] = [
@@ -92,6 +94,25 @@ async function countRatingAwardsThisWeek(
   return count ?? 0;
 }
 
+async function refreshUserTabsProfileAfterRatingAward(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  tabsDelta: number
+): Promise<{ current_streak_weeks: number; longest_streak_weeks: number }> {
+  const { data, error } = await admin.rpc("refresh_rating_award_profile_cache", {
+    p_user_id: userId,
+    p_tabs_delta: tabsDelta,
+  });
+  if (error) {
+    throw new Error(`refresh_rating_award_profile_cache: ${error.message}`);
+  }
+  const row = Array.isArray(data) ? data[0] : data;
+  return {
+    current_streak_weeks: Number(row?.current_streak_weeks) || 0,
+    longest_streak_weeks: Number(row?.longest_streak_weeks) || 0,
+  };
+}
+
 /**
  * Rating award: enforce weekly cap (10), then insert one ledger row. Idempotent by event_id.
  */
@@ -100,30 +121,37 @@ async function processRatingAward(
   userId: string,
   eventId: string,
   payload: Record<string, unknown>
-): Promise<{ amount: number }> {
+): Promise<{ amount: number; current_streak_weeks: number; longest_streak_weeks: number }> {
   const breakdown = (payload.breakdown as Record<string, number>) ?? {};
   const context = (payload.context as Record<string, unknown>) ?? {};
   const amount = Number(payload.amount ?? 0);
-  if (!Number.isInteger(amount) || amount < 0) return { amount: 0 };
-
-  // Weekly cap: only first 10 rating_award events per week earn tabs (Monday 00:00 UTC).
-  // Admin users bypass this cap entirely.
-  if (!isAdminUser(userId)) {
-    const count = await countRatingAwardsThisWeek(admin, userId);
-    if (count >= 10) return { amount: 0 };
+  if (!Number.isInteger(amount) || amount < 0) {
+    const streaks = await refreshUserTabsProfileAfterRatingAward(admin, userId, 0);
+    return { amount: 0, ...streaks };
   }
 
-  const { error } = await admin.from("tabs_ledger").insert({
-    event_id: eventId,
-    user_id: userId,
-    event_type: "rating_award",
-    amount,
-    breakdown: breakdown,
-    context: context,
-  });
-  if (error?.code === "23505") return { amount: 0 }; // event_id conflict = already processed
-  if (error) throw new Error(`tabs_ledger insert: ${error.message}`);
-  return { amount };
+  let awardedAmount = amount;
+
+  if (!isAdminUser(userId)) {
+    const count = await countRatingAwardsThisWeek(admin, userId);
+    if (count >= 10) awardedAmount = 0;
+  }
+
+  if (awardedAmount > 0) {
+    const { error } = await admin.from("tabs_ledger").insert({
+      event_id: eventId,
+      user_id: userId,
+      event_type: "rating_award",
+      amount: awardedAmount,
+      breakdown: breakdown,
+      context: context,
+    });
+    if (error?.code === "23505") awardedAmount = 0;
+    else if (error) throw new Error(`tabs_ledger insert: ${error.message}`);
+  }
+
+  const streaks = await refreshUserTabsProfileAfterRatingAward(admin, userId, awardedAmount);
+  return { amount: awardedAmount, ...streaks };
 }
 
 /**
@@ -345,11 +373,15 @@ export async function processEvent(input: ProcessEventInput): Promise<ProcessEve
   let unlocked: UnlockedAchievement[] = [];
   /** User whose balance we return (ledger row owner for award events). */
   let balanceUserId = userId;
+  let currentStreakWeeks: number | null = null;
+  let longestStreakWeeks: number | null = null;
 
   if (eventType === "rating_award") {
     if (!eventId) throw new Error("event_id required for rating_award");
     const result = await processRatingAward(admin, userId, eventId, payload);
     tabsDelta = result.amount;
+    currentStreakWeeks = result.current_streak_weeks;
+    longestStreakWeeks = result.longest_streak_weeks;
   } else if (eventType === "cheers_received") {
     if (!eventId) throw new Error("event_id required for cheers_received");
     const target = payload.target_user_id;
@@ -383,7 +415,13 @@ export async function processEvent(input: ProcessEventInput): Promise<ProcessEve
   }
 
   const tabs_balance = await getTabsBalance(admin, balanceUserId);
-  return { unlocked, tabs_delta: tabsDelta, tabs_balance };
+  return {
+    unlocked,
+    tabs_delta: tabsDelta,
+    tabs_balance,
+    current_streak_weeks: currentStreakWeeks,
+    longest_streak_weeks: longestStreakWeeks,
+  };
 }
 
 export { VALID_EVENT_TYPES, isAdminUser };
