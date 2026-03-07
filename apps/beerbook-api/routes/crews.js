@@ -28,25 +28,12 @@ async function requireOwner(rest, crewId, userId) {
   return membership && membership.role === 'owner';
 }
 
-async function createCrewWithUniqueCode(rest, payload, attempts = 3) {
-  let lastError = null;
-  for (let i = 0; i < attempts; i += 1) {
-    const inviteCode = generateInviteCode();
-    const createRes = await rest('POST', '/crews', {
-      headers: { Prefer: 'return=representation' },
-      body: JSON.stringify({ ...payload, invite_code: inviteCode }),
-    });
-    if (createRes.status < 400) {
-      const crew = Array.isArray(createRes.body) ? createRes.body[0] : createRes.body;
-      return { crew, error: null };
-    }
-    const msg = JSON.stringify(createRes.body || {});
-    lastError = { status: createRes.status, body: createRes.body || null };
-    if (createRes.status !== 409 && !msg.includes('invite_code')) {
-      break;
-    }
-  }
-  return { crew: null, error: lastError };
+function parseRpcError(body) {
+  if (!body || typeof body !== 'object') return { code: null, message: null };
+  return {
+    code: body.code || null,
+    message: body.message || body.error || null,
+  };
 }
 
 module.exports = function (opts) {
@@ -61,20 +48,19 @@ module.exports = function (opts) {
       if (!name) return res.status(400).json({ error: 'Crew name is required' });
       if (name.length > 50) return res.status(400).json({ error: 'Crew name must be 50 chars or fewer' });
 
-      const { crew, error: createError } = await createCrewWithUniqueCode(rest, { name, created_by: me }, 3);
-      if (!crew) {
-        // Bubble the upstream failure to make schema/config issues diagnosable in clients.
-        return res.status(createError?.status || 500).json(
-          createError?.body || { error: 'Failed to create crew' }
+      const rpcRes = await rest('POST', '/rpc/create_crew_with_owner', {
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ p_name: name, p_owner_id: me }),
+      });
+
+      if (rpcRes.status >= 400) {
+        const { message } = parseRpcError(rpcRes.body);
+        return res.status(rpcRes.status >= 500 ? 502 : rpcRes.status).json(
+          rpcRes.body || { error: message || 'Failed to create crew' }
         );
       }
 
-      const ownerRes = await rest('POST', '/crew_members', {
-        headers: { Prefer: 'return=representation' },
-        body: JSON.stringify({ crew_id: crew.id, user_id: me, role: 'owner' }),
-      });
-      if (ownerRes.status >= 400) return res.status(ownerRes.status).json(ownerRes.body || { error: 'Failed to add owner' });
-
+      const crew = rpcRes.body;
       res.status(201).json(crew);
     } catch (e) {
       next(e);
@@ -295,27 +281,25 @@ module.exports = function (opts) {
         return sendError(res, req, 409, 'ALREADY_MEMBER', 'Already a member');
       }
 
-      const countRes = await rest('GET', `/crew_members?crew_id=eq.${encodeURIComponent(crew.id)}&select=user_id`);
-      const memberCount = Array.isArray(countRes.body) ? countRes.body.length : 0;
-      if (memberCount >= 50) {
-        return sendError(res, req, 403, 'CREW_FULL', 'Crew is full (50/50)');
-      }
-
-      const joinRes = await rest('POST', '/crew_members', {
-        headers: { Prefer: 'return=representation' },
-        body: JSON.stringify({ crew_id: crew.id, user_id: me, role: 'member' }),
+      const rpcRes = await rest('POST', '/rpc/join_crew', {
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ p_crew_id: crew.id, p_user_id: me }),
       });
-      if (joinRes.status >= 400) {
-        const upstreamError = JSON.stringify(joinRes.body || {});
-        if (joinRes.status === 409 || upstreamError.includes('duplicate key')) {
+
+      if (rpcRes.status >= 400) {
+        const { code, message } = parseRpcError(rpcRes.body);
+        if (code === '23505' || (message && message.includes('Already a member'))) {
           return sendError(res, req, 409, 'ALREADY_MEMBER', 'Already a member');
+        }
+        if (code === 'P0003' || (message && message.includes('full'))) {
+          return sendError(res, req, 403, 'CREW_FULL', 'Crew is full (50/50)');
         }
         return sendError(
           res,
           req,
-          joinRes.status >= 500 ? 502 : joinRes.status,
+          rpcRes.status >= 500 ? 502 : rpcRes.status,
           'JOIN_FAILED',
-          'Failed to join crew'
+          message || 'Failed to join crew'
         );
       }
 
@@ -342,17 +326,18 @@ module.exports = function (opts) {
         return res.status(400).json({ error: 'Owner cannot leave crew. Delete crew instead.' });
       }
 
-      const out = await rest(
-        'DELETE',
-        `/crew_members?crew_id=eq.${encodeURIComponent(crewId)}&user_id=eq.${encodeURIComponent(target)}`
-      );
-      if (out.status >= 400) return res.status(502).json({ error: 'Remove member failed' });
+      const rpcRes = await rest('POST', '/rpc/remove_crew_member', {
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ p_crew_id: crewId, p_user_id: target }),
+      });
 
-      const leftRes = await rest('GET', `/crew_members?crew_id=eq.${encodeURIComponent(crewId)}&select=user_id`);
-      const count = Array.isArray(leftRes.body) ? leftRes.body.length : 0;
-      if (count === 0) {
-        await rest('DELETE', `/crews?id=eq.${encodeURIComponent(crewId)}`);
+      if (rpcRes.status >= 400) {
+        const { message } = parseRpcError(rpcRes.body);
+        return res.status(rpcRes.status >= 500 ? 502 : rpcRes.status).json(
+          { error: message || 'Remove member failed' }
+        );
       }
+
       res.status(204).end();
     } catch (e) {
       next(e);
