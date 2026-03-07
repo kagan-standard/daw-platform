@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 
 const { processEvent } = require('../lib/processEventEngine');
 
-test('rating_submitted auto-grants linked border cosmetic via idempotent insert', async () => {
+test('rating_submitted auto-grants linked border cosmetic via atomic RPC', async () => {
   const calls = [];
   const rest = async (method, path, opts = {}) => {
     calls.push({ method, path, opts });
@@ -35,19 +35,16 @@ test('rating_submitted auto-grants linked border cosmetic via idempotent insert'
       };
     }
 
-    if (method === 'POST' && path === '/user_achievements') {
-      return { status: 201, body: [{ id: 'ua-1' }] };
-    }
-
-    if (
-      method === 'GET' &&
-      path === '/cosmetics?achievement_key=eq.first_checkin&select=id'
-    ) {
-      return { status: 200, body: [{ id: 'cos-border-1' }] };
-    }
-
-    if (method === 'POST' && path === '/user_cosmetics?on_conflict=user_id,cosmetic_id') {
-      return { status: 201, body: [{ id: 'uc-1' }] };
+    if (method === 'POST' && path === '/rpc/unlock_achievement_with_rewards') {
+      const body = JSON.parse(opts.body || '{}');
+      assert.equal(body.p_user_id, 'user-123');
+      assert.equal(body.p_achievement_id, 'ach-1');
+      assert.equal(body.p_achievement_key, 'first_checkin');
+      assert.equal(body.p_reward_tabs, 0);
+      return {
+        status: 200,
+        body: { already_unlocked: false, reward_tabs_granted: 0, cosmetic_ids_granted: ['cos-border-1'] },
+      };
     }
 
     if (method === 'GET' && path === '/profiles?id=eq.user-123&select=tabs_balance&limit=1') {
@@ -69,14 +66,8 @@ test('rating_submitted auto-grants linked border cosmetic via idempotent insert'
   assert.equal(result.tabs_balance, 25);
   assert.deepEqual(result.unlocked, [{ key: 'first_checkin', name: 'First Check-in', reward_tabs: 0 }]);
 
-  const grantCalls = calls.filter((call) => call.path === '/user_cosmetics?on_conflict=user_id,cosmetic_id');
-  assert.equal(grantCalls.length, 1, 'expected exactly one user_cosmetics grant call');
-  assert.equal(grantCalls[0].opts?.headers?.Prefer, 'resolution=ignore-duplicates');
-  assert.deepEqual(JSON.parse(grantCalls[0].opts?.body || '{}'), {
-    user_id: 'user-123',
-    cosmetic_id: 'cos-border-1',
-    acquired_via: 'achievement',
-  });
+  const rpcCalls = calls.filter((call) => call.path === '/rpc/unlock_achievement_with_rewards');
+  assert.equal(rpcCalls.length, 1, 'expected exactly one atomic RPC call');
 });
 
 test('rating_award refreshes streak cache even when weekly cap blocks tabs award', async () => {
@@ -135,7 +126,7 @@ test('rating_award refreshes streak cache even when weekly cap blocks tabs award
   });
 });
 
-test('achievement with border AND title cosmetics grants both types', async () => {
+test('achievement with border AND title cosmetics grants both types via atomic RPC', async () => {
   const calls = [];
   const rest = async (method, path, opts = {}) => {
     calls.push({ method, path, opts });
@@ -163,26 +154,16 @@ test('achievement with border AND title cosmetics grants both types', async () =
       return { status: 200, body: [], headers: { 'content-range': '0-0/3' } };
     }
 
-    if (method === 'POST' && path === '/user_achievements') {
-      return { status: 201, body: [{ id: 'ua-multi' }] };
-    }
-
-    if (
-      method === 'GET' &&
-      path === '/cosmetics?achievement_key=eq.beer_explorer&select=id'
-    ) {
+    if (method === 'POST' && path === '/rpc/unlock_achievement_with_rewards') {
+      const body = JSON.parse(opts.body || '{}');
+      assert.equal(body.p_user_id, 'user-456');
+      assert.equal(body.p_achievement_id, 'ach-multi');
+      assert.equal(body.p_achievement_key, 'beer_explorer');
+      assert.equal(body.p_reward_tabs, 5);
       return {
         status: 200,
-        body: [{ id: 'cos-border-10' }, { id: 'cos-title-10' }],
+        body: { already_unlocked: false, reward_tabs_granted: 5, cosmetic_ids_granted: ['cos-border-10', 'cos-title-10'] },
       };
-    }
-
-    if (method === 'POST' && path === '/user_cosmetics?on_conflict=user_id,cosmetic_id') {
-      return { status: 201, body: [{ id: 'uc-new' }] };
-    }
-
-    if (method === 'POST' && path === '/tabs_ledger') {
-      return { status: 201, body: [{ id: 'tl-new' }] };
     }
 
     if (method === 'GET' && path === '/profiles?id=eq.user-456&select=tabs_balance&limit=1') {
@@ -204,18 +185,8 @@ test('achievement with border AND title cosmetics grants both types', async () =
   assert.equal(result.tabs_balance, 30);
   assert.deepEqual(result.unlocked, [{ key: 'beer_explorer', name: 'Beer Explorer', reward_tabs: 5 }]);
 
-  const grantCalls = calls.filter((c) => c.path === '/user_cosmetics?on_conflict=user_id,cosmetic_id');
-  assert.equal(grantCalls.length, 2, 'expected two user_cosmetics grant calls (border + title)');
-
-  const grantedIds = grantCalls.map((c) => JSON.parse(c.opts.body).cosmetic_id).sort();
-  assert.deepEqual(grantedIds, ['cos-border-10', 'cos-title-10']);
-
-  for (const call of grantCalls) {
-    const body = JSON.parse(call.opts.body);
-    assert.equal(body.user_id, 'user-456');
-    assert.equal(body.acquired_via, 'achievement');
-    assert.equal(call.opts.headers.Prefer, 'resolution=ignore-duplicates');
-  }
+  const rpcCalls = calls.filter((c) => c.path === '/rpc/unlock_achievement_with_rewards');
+  assert.equal(rpcCalls.length, 1, 'expected exactly one atomic RPC call');
 });
 
 test('achievement with no linked cosmetics still unlocks without error', async () => {
@@ -246,15 +217,11 @@ test('achievement with no linked cosmetics still unlocks without error', async (
       return { status: 200, body: [], headers: { 'content-range': '0-0/1' } };
     }
 
-    if (method === 'POST' && path === '/user_achievements') {
-      return { status: 201, body: [{ id: 'ua-none' }] };
-    }
-
-    if (
-      method === 'GET' &&
-      path === '/cosmetics?achievement_key=eq.no_cosmetics&select=id'
-    ) {
-      return { status: 200, body: [] };
+    if (method === 'POST' && path === '/rpc/unlock_achievement_with_rewards') {
+      return {
+        status: 200,
+        body: { already_unlocked: false, reward_tabs_granted: 0, cosmetic_ids_granted: [] },
+      };
     }
 
     if (method === 'GET' && path === '/profiles?id=eq.user-789&select=tabs_balance&limit=1') {
@@ -273,6 +240,108 @@ test('achievement with no linked cosmetics still unlocks without error', async (
   );
 
   assert.deepEqual(result.unlocked, [{ key: 'no_cosmetics', name: 'No Cosmetics', reward_tabs: 0 }]);
-  const grantCalls = calls.filter((c) => c.path === '/user_cosmetics?on_conflict=user_id,cosmetic_id');
-  assert.equal(grantCalls.length, 0, 'no user_cosmetics calls when no cosmetics linked');
+  const rpcCalls = calls.filter((c) => c.path === '/rpc/unlock_achievement_with_rewards');
+  assert.equal(rpcCalls.length, 1, 'atomic RPC called even with no cosmetics');
+});
+
+test('already-unlocked achievement is skipped (idempotent re-evaluation)', async () => {
+  const calls = [];
+  const rest = async (method, path, opts = {}) => {
+    calls.push({ method, path, opts });
+
+    if (
+      method === 'GET' &&
+      path === '/achievements?trigger_type=eq.rating_submitted&active=eq.true&select=id,key,name,reward_tabs,subtype,rules'
+    ) {
+      return {
+        status: 200,
+        body: [
+          {
+            id: 'ach-dup',
+            key: 'dup_check',
+            name: 'Duplicate Check',
+            reward_tabs: 10,
+            subtype: 'checkin_count',
+            rules: { min_checkins: 1 },
+          },
+        ],
+      };
+    }
+
+    if (method === 'GET' && path === '/ratings?user_id=eq.user-dup&select=id') {
+      return { status: 200, body: [], headers: { 'content-range': '0-0/5' } };
+    }
+
+    if (method === 'POST' && path === '/rpc/unlock_achievement_with_rewards') {
+      return {
+        status: 200,
+        body: { already_unlocked: true, reward_tabs_granted: 0, cosmetic_ids_granted: [] },
+      };
+    }
+
+    if (method === 'GET' && path === '/profiles?id=eq.user-dup&select=tabs_balance&limit=1') {
+      return { status: 200, body: [{ tabs_balance: 50 }] };
+    }
+
+    throw new Error(`Unhandled rest call: ${method} ${path}`);
+  };
+
+  const result = await processEvent(
+    { rest, totalFromContentRange: (range) => Number(String(range).split('/')[1] || 0) },
+    'rating_submitted',
+    null,
+    { rating_id: 'r-dup' },
+    'user-dup'
+  );
+
+  assert.deepEqual(result.unlocked, [], 'already-unlocked achievement not in unlocked list');
+  assert.equal(result.tabs_delta, 0, 'no tabs awarded for already-unlocked');
+});
+
+test('atomic RPC failure propagates as hard error (tabs_ledger failure)', async () => {
+  const rest = async (method, path, opts = {}) => {
+    if (
+      method === 'GET' &&
+      path === '/achievements?trigger_type=eq.rating_submitted&active=eq.true&select=id,key,name,reward_tabs,subtype,rules'
+    ) {
+      return {
+        status: 200,
+        body: [
+          {
+            id: 'ach-fail',
+            key: 'fail_test',
+            name: 'Fail Test',
+            reward_tabs: 5,
+            subtype: 'checkin_count',
+            rules: { min_checkins: 1 },
+          },
+        ],
+      };
+    }
+
+    if (method === 'GET' && path === '/ratings?user_id=eq.user-fail&select=id') {
+      return { status: 200, body: [], headers: { 'content-range': '0-0/2' } };
+    }
+
+    if (method === 'POST' && path === '/rpc/unlock_achievement_with_rewards') {
+      return { status: 500, body: { message: 'tabs_ledger constraint violation' } };
+    }
+
+    throw new Error(`Unhandled rest call: ${method} ${path}`);
+  };
+
+  await assert.rejects(
+    () =>
+      processEvent(
+        { rest, totalFromContentRange: (range) => Number(String(range).split('/')[1] || 0) },
+        'rating_submitted',
+        null,
+        { rating_id: 'r-fail' },
+        'user-fail'
+      ),
+    (err) => {
+      assert.ok(err.message.includes('unlock_achievement_with_rewards'), `expected RPC error, got: ${err.message}`);
+      return true;
+    }
+  );
 });

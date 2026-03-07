@@ -324,34 +324,25 @@ async function processRatingSubmitted(
     const passed = await evaluate(admin, userId, payload, ach.subtype, ach.rules);
     if (!passed) continue;
 
-    // INSERT: only mint if this insert actually added a row (no conflict). On PK conflict we get 23505.
-    const { error: insertError } = await admin.from("user_achievements").insert({
-      user_id: userId,
-      achievement_id: ach.id,
-      progress: {},
-      context: payload,
+    const { data, error } = await admin.rpc("unlock_achievement_with_rewards", {
+      p_user_id: userId,
+      p_achievement_id: ach.id,
+      p_achievement_key: ach.key,
+      p_reward_tabs: ach.reward_tabs,
+      p_progress: {},
+      p_context: payload,
     });
+    if (error) throw new Error(`unlock_achievement_with_rewards: ${error.message}`);
 
-    if (insertError?.code === "23505") continue; // already unlocked
-    if (insertError) throw new Error(`user_achievements insert: ${insertError.message}`);
+    const result = data as {
+      already_unlocked: boolean;
+      reward_tabs_granted: number;
+      cosmetic_ids_granted: string[];
+    } | null;
+    if (result?.already_unlocked) continue;
 
-    // No error = row was inserted; mint tabs for this achievement only.
-    {
-      unlocked.push({ key: ach.key, name: ach.name, reward_tabs: ach.reward_tabs });
-      await grantAchievementCosmetics(admin, userId, ach.key);
-      if (ach.reward_tabs > 0) {
-        const eventId = crypto.randomUUID();
-        const { error: ledgerError } = await admin.from("tabs_ledger").insert({
-          event_id: eventId,
-          user_id: userId,
-          event_type: "achievement_unlock",
-          amount: ach.reward_tabs,
-          breakdown: {},
-          context: { achievement_key: ach.key, ...payload },
-        });
-        if (!ledgerError) tabsDelta += ach.reward_tabs;
-      }
-    }
+    unlocked.push({ key: ach.key, name: ach.name, reward_tabs: ach.reward_tabs });
+    tabsDelta += result?.reward_tabs_granted ?? 0;
   }
   return { unlocked, tabsDelta };
 }

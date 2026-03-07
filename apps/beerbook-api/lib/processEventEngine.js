@@ -197,33 +197,25 @@ async function processRatingSubmitted(rest, totalFromContentRange, userId, paylo
     });
     if (!progress || progress.progress_current < progress.progress_target) continue;
 
-    const insertRes = await rest('POST', '/user_achievements', {
+    const rpcRes = await rest('POST', '/rpc/unlock_achievement_with_rewards', {
       body: JSON.stringify({
-        user_id: userId,
-        achievement_id: ach.id,
-        progress: { progress_current: progress.progress_current },
-        context: payload,
+        p_user_id: userId,
+        p_achievement_id: ach.id,
+        p_achievement_key: ach.key,
+        p_reward_tabs: ach.reward_tabs,
+        p_progress: { progress_current: progress.progress_current },
+        p_context: payload,
       }),
     });
-    if (isConflict(insertRes)) continue;
-    if (insertRes.status >= 400) throw new Error(`user_achievements insert: ${(insertRes.body && insertRes.body.message) || insertRes.status}`);
+    if (rpcRes.status >= 400) {
+      throw new Error(`unlock_achievement_with_rewards: ${(rpcRes.body && rpcRes.body.message) || rpcRes.status}`);
+    }
+
+    const result = Array.isArray(rpcRes.body) ? rpcRes.body[0] : rpcRes.body;
+    if (result && result.already_unlocked) continue;
 
     unlocked.push({ key: ach.key, name: ach.name, reward_tabs: ach.reward_tabs });
-    await grantAchievementCosmetics(rest, userId, ach.key);
-    if (ach.reward_tabs > 0) {
-      const eventId = require('crypto').randomUUID();
-      const ledgerRes = await rest('POST', '/tabs_ledger', {
-        body: JSON.stringify({
-          event_id: eventId,
-          user_id: userId,
-          event_type: 'achievement_unlock',
-          amount: ach.reward_tabs,
-          breakdown: {},
-          context: { achievement_key: ach.key, ...payload },
-        }),
-      });
-      if (!ledgerRes.status || ledgerRes.status < 400) tabsDelta += ach.reward_tabs;
-    }
+    tabsDelta += (result && result.reward_tabs_granted) || 0;
   }
   return { unlocked, tabsDelta };
 }

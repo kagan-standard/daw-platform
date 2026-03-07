@@ -266,17 +266,11 @@ test('parity: rating_submitted with achievement unlock has canonical shape', asy
     if (method === 'GET' && path.includes('/ratings?')) {
       return { status: 200, body: [], headers: { 'content-range': '0-0/1' } };
     }
-    if (method === 'POST' && path === '/user_achievements') {
-      return { status: 201, body: [{ id: 'ua-1' }] };
-    }
-    if (method === 'GET' && path.includes('/cosmetics?')) {
-      return { status: 200, body: [{ id: 'cos-1' }] };
-    }
-    if (method === 'POST' && path.includes('/user_cosmetics')) {
-      return { status: 201, body: [{ id: 'uc-1' }] };
-    }
-    if (method === 'POST' && path === '/tabs_ledger') {
-      return { status: 201, body: [{ id: 'ledger-ach' }] };
+    if (method === 'POST' && path === '/rpc/unlock_achievement_with_rewards') {
+      return {
+        status: 200,
+        body: { already_unlocked: false, reward_tabs_granted: 10, cosmetic_ids_granted: ['cos-1'] },
+      };
     }
     if (method === 'GET' && path.startsWith('/profiles?')) {
       return { status: 200, body: [{ tabs_balance: 35 }] };
