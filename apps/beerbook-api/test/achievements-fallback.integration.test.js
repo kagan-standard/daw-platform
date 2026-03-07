@@ -139,3 +139,111 @@ test('GET /api/achievements/fallback returns 204 when no safe fallback exists', 
     await new Promise((resolve) => server.close(resolve));
   }
 });
+
+test('GET /api/achievements/next supports rules.gte and excludes hidden achievements', async () => {
+  const app = createApi(createRestMock({
+    '/user_achievements?user_id=eq.user-123&select=achievement_id': {
+      status: 200,
+      body: [],
+    },
+    '/achievements?active=eq.true&trigger_type=eq.rating_submitted&select=id,key,name,description,subtype,rules,category_key,is_hidden': {
+      status: 200,
+      body: [
+        {
+          id: 'a-hidden',
+          key: 'secret_goal',
+          name: 'Secret Goal',
+          description: 'Should not show.',
+          subtype: 'progress',
+          category_key: 'starter',
+          is_hidden: true,
+          rules: { type: 'count', entity: 'ratings', gte: 1 },
+        },
+        {
+          id: 'a-visible',
+          key: 'ten_ratings',
+          name: 'Regular',
+          description: 'Log 10 ratings.',
+          subtype: 'progress',
+          category_key: 'starter',
+          is_hidden: false,
+          rules: { type: 'count', entity: 'ratings', gte: 10 },
+        },
+      ],
+    },
+    '/ratings?user_id=eq.user-123&select=style&limit=5000': {
+      status: 200,
+      body: [{ style: 'IPA' }, { style: 'Stout' }],
+    },
+    '/achievement_categories?key=eq.starter&select=icon&limit=1': {
+      status: 200,
+      body: [{ icon: '/uploads/achievements/starter.png' }],
+    },
+  }));
+
+  const server = app.listen(0);
+  try {
+    const out = await requestJson(server, '/api/achievements/next');
+    assert.equal(out.status, 200);
+    assert.ok(out.body && out.body.data, 'expected a next-achievement payload');
+    assert.equal(out.body.data.id, 'a-visible');
+    assert.equal(out.body.data.key, 'ten_ratings');
+    assert.equal(out.body.data.progress_current, 2);
+    assert.equal(out.body.data.progress_target, 10);
+    assert.equal(out.body.data.remaining, 8);
+    assert.equal(out.body.data.is_fallback, false);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test('GET /api/achievements/fallback excludes hidden achievements from candidate pool', async () => {
+  const app = createApi(createRestMock({
+    '/user_achievements?user_id=eq.user-123&select=achievement_id': {
+      status: 200,
+      body: [],
+    },
+    '/achievements?active=eq.true&trigger_type=eq.rating_submitted&select=id,key,name,description,rules,category_key,is_hidden': {
+      status: 200,
+      body: [
+        {
+          id: 'a-hidden',
+          key: 'secret_goal',
+          name: 'Secret Goal',
+          description: 'Should not show.',
+          category_key: 'starter',
+          is_hidden: true,
+          rules: { type: 'count', entity: 'ratings', gte: 1 },
+        },
+        {
+          id: 'a-visible',
+          key: 'ten_ratings',
+          name: 'Regular',
+          description: 'Log 10 ratings.',
+          category_key: 'starter',
+          is_hidden: false,
+          rules: { type: 'count', entity: 'ratings', gte: 10 },
+        },
+      ],
+    },
+    '/ratings?user_id=eq.user-123&select=style,photo_url,notes,price_cents,venue_id,rating,location_name,created_at&limit=5000': {
+      status: 200,
+      body: [{ style: 'IPA', created_at: '2026-03-01T00:00:00.000Z' }],
+    },
+    '/achievement_categories?key=eq.starter&select=icon&limit=1': {
+      status: 200,
+      body: [{ icon: '/uploads/achievements/starter.png' }],
+    },
+  }));
+
+  const server = app.listen(0);
+  try {
+    const out = await requestJson(server, '/api/achievements/fallback');
+    assert.equal(out.status, 200);
+    assert.equal(out.body.id, 'a-visible');
+    assert.equal(out.body.key, 'ten_ratings');
+    assert.equal(out.body.is_fallback, true);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});

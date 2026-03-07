@@ -59,6 +59,11 @@ function countIf(ratings, predicate) {
   return ratings.reduce((acc, row) => (predicate(row) ? acc + 1 : acc), 0);
 }
 
+function getRuleTarget(rules) {
+  if (!rules || typeof rules !== 'object') return 0;
+  return Number(rules.min_count ?? rules.target ?? rules.gte ?? 0);
+}
+
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function mapPurchaseErrorStatus(errorCode) {
@@ -68,26 +73,59 @@ function mapPurchaseErrorStatus(errorCode) {
 
 function computeFallbackProgress(achievement, ratings, stats) {
   const rules = achievement?.rules && typeof achievement.rules === 'object' ? achievement.rules : null;
-  if (!rules) return null;
+  const achievementKey = String(achievement?.key || achievement?.id || 'unknown');
+  if (!rules) {
+    console.warn('[achievements/fallback] Missing rules object', { achievement_key: achievementKey });
+    return null;
+  }
   const type = String(rules.type || '').trim().toLowerCase();
-  if (!type) return null;
+  const targetFromRules = getRuleTarget(rules);
+  if (!type) {
+    if (Number.isFinite(targetFromRules) && targetFromRules > 0) {
+      return {
+        progress_current: stats.totalRatings,
+        progress_target: targetFromRules,
+      };
+    }
+    console.warn('[achievements/fallback] Unhandled rule: missing type', {
+      achievement_key: achievementKey,
+      rules,
+    });
+    return null;
+  }
 
-  const gte = Number(rules.gte);
-  const hasTarget = Number.isFinite(gte) && gte > 0;
+  const hasTarget = Number.isFinite(targetFromRules) && targetFromRules > 0;
 
-  if (type === 'count' && String(rules.entity || '').toLowerCase() === 'ratings' && hasTarget) {
+  if (
+    (type === 'count' || type === 'rating_count')
+    && String(rules.entity || 'ratings').toLowerCase() === 'ratings'
+    && hasTarget
+  ) {
     return {
       progress_current: stats.totalRatings,
-      progress_target: gte,
+      progress_target: targetFromRules,
+    };
+  }
+
+  if (type === 'min_length' && hasTarget) {
+    const field = String(rules.field || '').trim().toLowerCase();
+    const valueField = field === 'review' ? 'notes' : field;
+    if (!valueField) return null;
+    return {
+      progress_current: countIf(
+        ratings,
+        (row) => String(row?.[valueField] || '').trim().length >= targetFromRules
+      ),
+      progress_target: 1,
     };
   }
 
   if (type === 'distinct_count' && String(rules.entity || '').toLowerCase() === 'ratings' && hasTarget) {
     const field = String(rules.field || '').toLowerCase();
-    if (field === 'style') return { progress_current: stats.distinctStyles, progress_target: gte };
-    if (field === 'venue_id') return { progress_current: stats.distinctVenues, progress_target: gte };
-    if (field === 'city') return { progress_current: stats.distinctCities, progress_target: gte };
-    if (field === 'month') return { progress_current: stats.distinctMonths, progress_target: gte };
+    if (field === 'style') return { progress_current: stats.distinctStyles, progress_target: targetFromRules };
+    if (field === 'venue_id') return { progress_current: stats.distinctVenues, progress_target: targetFromRules };
+    if (field === 'city') return { progress_current: stats.distinctCities, progress_target: targetFromRules };
+    if (field === 'month') return { progress_current: stats.distinctMonths, progress_target: targetFromRules };
     return null;
   }
 
@@ -96,7 +134,7 @@ function computeFallbackProgress(achievement, ratings, stats) {
     if (!needle) return null;
     return {
       progress_current: countIf(ratings, (row) => String(row?.style || '').toLowerCase().includes(needle.toLowerCase())),
-      progress_target: gte,
+      progress_target: targetFromRules,
     };
   }
 
@@ -105,7 +143,7 @@ function computeFallbackProgress(achievement, ratings, stats) {
     if (!needles.length) return null;
     return {
       progress_current: countIf(ratings, (row) => includesAnyNeedle(row?.style, needles)),
-      progress_target: gte,
+      progress_target: targetFromRules,
     };
   }
 
@@ -122,7 +160,7 @@ function computeFallbackProgress(achievement, ratings, stats) {
       if (Number.isFinite(Number(where.stars_lte)) && Number(row?.rating ?? row?.stars) > Number(where.stars_lte)) return false;
       return true;
     });
-    return { progress_current: progressCurrent, progress_target: gte };
+    return { progress_current: progressCurrent, progress_target: targetFromRules };
   }
 
   if (type === 'has_field') {
@@ -157,6 +195,11 @@ function computeFallbackProgress(achievement, ratings, stats) {
     return { progress_current: progressCurrent, progress_target: 1 };
   }
 
+  console.warn('[achievements/fallback] Unhandled rule type', {
+    achievement_key: achievementKey,
+    type,
+    rules,
+  });
   return null;
 }
 
@@ -264,7 +307,7 @@ module.exports = function tabsRoutes(opts) {
         rest('GET', `/user_achievements?user_id=eq.${userId}&select=achievement_id`),
         rest(
           'GET',
-          '/achievements?active=eq.true&trigger_type=eq.rating_submitted&select=id,key,name,description,subtype,rules,category_key'
+          '/achievements?active=eq.true&trigger_type=eq.rating_submitted&select=id,key,name,description,subtype,rules,category_key,is_hidden'
         ),
         rest('GET', `/ratings?user_id=eq.${userId}&select=style&limit=5000`),
       ]);
@@ -287,10 +330,10 @@ module.exports = function tabsRoutes(opts) {
       }, {});
 
       const candidates = (Array.isArray(allRes.body) ? allRes.body : [])
-        .filter((a) => a && a.id && !unlockedIds.has(a.id))
+        .filter((a) => a && a.id && !a.is_hidden && !unlockedIds.has(a.id))
         .map((a) => {
           const rules = a.rules && typeof a.rules === 'object' ? a.rules : {};
-          const progressTarget = Number(rules.min_count);
+          const progressTarget = getRuleTarget(rules);
           if (!Number.isFinite(progressTarget) || progressTarget <= 0) return null;
           const styleEq = normalizeStyle(rules.style_eq);
           const progressCurrent = styleEq ? Number(styleCounts[styleEq] || 0) : totalRatings;
