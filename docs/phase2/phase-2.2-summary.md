@@ -77,7 +77,7 @@ After:
 - No frontend files changed. Frontend already renders cosmetics from `user_cosmetics`; the backend gate was the issue.
 - `supabase/functions/process-event/index.ts` — HTTP handler unchanged.
 - `routes/` — no HTTP route changes; API contract unchanged.
-- No migration files needed — the `cosmetics` table already stores all types; only the query filter was wrong.
+- No migration needed — the `cosmetics` table already stores all types and `user_cosmetics` already has the unique constraint. No existing user data to backfill (database will be wiped before production).
 
 ---
 
@@ -122,17 +122,6 @@ No lint errors on any of the three changed files.
 ## Known Risks / Follow-up Items
 
 1. **Edge runtime deployment required.** The `engine.ts` change only takes effect after the Supabase Edge Function is redeployed. Until then, the Edge path still uses the old `type=border` filter.
-2. **Existing achievements with title cosmetics** — if any achievements already have title-type cosmetics in the `cosmetics` table, users who previously unlocked those achievements did not receive the title cosmetic. A backfill query may be needed to grant missed cosmetics retroactively:
-   ```sql
-   INSERT INTO user_cosmetics (user_id, cosmetic_id, acquired_via)
-   SELECT ua.user_id, c.id, 'achievement'
-   FROM user_achievements ua
-   JOIN achievements a ON a.id = ua.achievement_id
-   JOIN cosmetics c ON c.achievement_key = a.key
-   LEFT JOIN user_cosmetics uc ON uc.user_id = ua.user_id AND uc.cosmetic_id = c.id
-   WHERE uc.id IS NULL
-   ON CONFLICT (user_id, cosmetic_id) DO NOTHING;
-   ```
-3. **Achievement unlock atomicity gap** persists — `tabs_ledger` failure after `user_achievements` insert is still silently swallowed. This is item 2.3's scope and depends on 2.2 being complete (which it now is).
+2. **Achievement unlock atomicity gap** persists — `tabs_ledger` failure after `user_achievements` insert is still silently swallowed. This is item 2.3's scope and depends on 2.2 being complete (which it now is).
 4. **No integration tests were run.** All validation was via unit tests with mocked dependencies. End-to-end verification against a live Supabase instance was not performed.
 5. **Sequential upsert pattern** — the loop upserts cosmetics one at a time. For achievements with many cosmetics this could be slow, but in practice achievement cosmetic counts are very small (1-3). Batch upsert optimization is not warranted now but could be a Phase 4 consideration.
