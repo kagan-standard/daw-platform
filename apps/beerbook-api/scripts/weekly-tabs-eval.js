@@ -2,9 +2,9 @@
 /* eslint-disable no-console */
 /**
  * Weekly tabs evaluation (Monday 00:00 UTC)
+ * - Applies inactivity decay and weekly counter reset
  * - Evaluates maintenance + progression
  * - Applies demotions/promotions
- * - Resets weekly counters
  */
 
 const REST_URL = (process.env.SUPABASE_REST_URL || 'http://supabase-rest:3000').replace(/\/$/, '');
@@ -69,28 +69,24 @@ async function run() {
         `/beer_submissions?submitted_by=eq.${encodedUser}&status=eq.approved&reviewed_at=gte.${encodeURIComponent(from)}&reviewed_at=lte.${encodeURIComponent(to)}&select=id&limit=1000`
       ),
     ]);
-    const txEarnRows = await rest(
-      'GET',
-      `/tab_transactions?user_id=eq.${encodedUser}&transaction_type=eq.earn&created_at=gte.${encodeURIComponent(from)}&created_at=lte.${encodeURIComponent(to)}&select=amount&limit=5000`
-    );
-
     const ratingsCount = Array.isArray(ratings) ? ratings.length : 0;
     const reviewsCount = (Array.isArray(ratings) ? ratings : []).filter((r) => (r.notes || '').trim().length >= 10).length;
     const contributionsCount = Array.isArray(submissions) ? submissions.length : 0;
-    const tabsEarnedThisWeek = (Array.isArray(txEarnRows) ? txEarnRows : []).reduce(
-      (sum, row) => sum + (Number(row.amount) || 0),
-      0
-    );
 
     let currentTier = profile.current_tier || 'taster';
+    const wasActiveLastWeek = Boolean(profile.last_active_week)
+      && new Date(profile.last_active_week).getTime() >= new Date(from).getTime();
     let weeksInactive = Number(profile.weeks_inactive) || 0;
     let currentStreak = Number(profile.current_streak_weeks) || 0;
     let notification = null;
 
-    if (ratingsCount >= 2) {
-      weeksInactive = 0;
+    if (wasActiveLastWeek) {
+      // Real-time engine already handled streak and inactivity state.
+      weeksInactive = Number(profile.weeks_inactive) || 0;
     } else {
+      // Weekly decay for users with no activity in previous week.
       weeksInactive += 1;
+      currentStreak = 0;
       if (weeksInactive >= 4) {
         const idx = TIERS.indexOf(currentTier);
         if (idx > 0) {
@@ -114,54 +110,31 @@ async function run() {
         && reviewsCount >= Number(nextReq?.required_reviews_per_week || 0)
         && contributionsCount >= Number(nextReq?.required_contributions_per_week || 0);
 
-      if (meetsNext) {
-        currentStreak += 1;
-        if (currentStreak >= Number(nextReq?.required_consecutive_weeks || 0)) {
-          currentTier = nextTier;
-          currentStreak = 0;
-          notification = {
-            user_id: userId,
-            notification_type: 'tier_promotion',
-            title: 'Tier promotion',
-            message: `Congratulations! You reached ${nextReq.display_name}.`,
-          };
-        }
-      } else {
-        currentStreak = 0;
+      if (meetsNext && currentStreak >= Number(nextReq?.required_consecutive_weeks || 0)) {
+        currentTier = nextTier;
+        notification = {
+          user_id: userId,
+          notification_type: 'tier_promotion',
+          title: 'Tier promotion',
+          message: `Congratulations! You reached ${nextReq.display_name}.`,
+        };
       }
-    } else {
-      currentStreak = 0;
     }
 
     await rest('PATCH', `/user_tabs_profile?user_id=eq.${encodedUser}`, {
       current_tier: currentTier,
       current_streak_weeks: currentStreak,
-      longest_streak_weeks: Math.max(Number(profile.longest_streak_weeks) || 0, currentStreak),
       weeks_inactive: weeksInactive,
       ratings_this_week: 0,
       week_start: weekStart,
-      last_active_week: ratingsCount >= 2 ? weekStart : profile.last_active_week,
       tier_promoted_at: currentTier !== profile.current_tier ? new Date().toISOString() : profile.tier_promoted_at,
+      updated_at: new Date().toISOString(),
     });
 
     if (notification) {
       await rest('POST', '/tab_notifications', notification);
     }
 
-    await rest('POST', '/tab_notifications', {
-      user_id: userId,
-      notification_type: 'weekly_summary',
-      title: 'Weekly tabs summary',
-      message: `You earned ${tabsEarnedThisWeek} tabs last week.`,
-      metadata: {
-        week_start: from,
-        week_end: to,
-        tabs_earned: tabsEarnedThisWeek,
-        ratings_count: ratingsCount,
-        reviews_count: reviewsCount,
-        contributions_count: contributionsCount,
-      },
-    });
   }
 
   console.log(`Weekly tabs eval completed for ${profiles.length} users`);

@@ -14,6 +14,7 @@ const VALID_EVENT_TYPES = [
   'admin_grant',
   'spend',
 ];
+const { calculateAchievementProgress } = require('./achievementProgress');
 
 function getAdminUserIds() {
   const rawValues = [
@@ -177,46 +178,6 @@ async function grantAchievementCosmetics(rest, userId, achievementKey) {
   });
 }
 
-async function getCheckinCount(rest, totalFromContentRange, userId) {
-  const enc = encodeURIComponent(userId);
-  const res = await rest('GET', `/ratings?user_id=eq.${enc}&select=id`, { headers: { Prefer: 'count=exact' } });
-  if (res.status >= 400) return 0;
-  return totalFromContentRange(res.headers['content-range']) ?? 0;
-}
-
-async function evaluateCheckinCount(rest, totalFromContentRange, userId, _payload, rules) {
-  const minCheckins = Number(rules.min_checkins);
-  if (!Number.isInteger(minCheckins) || minCheckins < 0) return false;
-  const count = await getCheckinCount(rest, totalFromContentRange, userId);
-  return count >= minCheckins;
-}
-
-function evaluateTimeWindowCheckin(_rest, _userId, payload, rules) {
-  const checkinTime = payload.checkin_time;
-  const start = rules.start;
-  const end = rules.end;
-  if (!checkinTime || !start || !end) return false;
-  const [h, m] = String(checkinTime).split(':').map(Number);
-  const [startH, startM] = String(start).split(':').map(Number);
-  const [endH, endM] = String(end).split(':').map(Number);
-  const mins = (h ?? 0) * 60 + (m ?? 0);
-  const startMins = (startH ?? 0) * 60 + (startM ?? 0);
-  const endMins = (endH ?? 0) * 60 + (endM ?? 0);
-  if (startMins <= endMins) return mins >= startMins && mins <= endMins;
-  return mins >= startMins || mins <= endMins;
-}
-
-const EVALUATORS = {
-  checkin_count: evaluateCheckinCount,
-  time_window_checkin: (rest, _userId, p, r) => Promise.resolve(evaluateTimeWindowCheckin(rest, '', p, r)),
-};
-
-async function evaluate(rest, totalFromContentRange, userId, payload, subtype, rules) {
-  const fn = EVALUATORS[subtype];
-  if (fn) return fn(rest, totalFromContentRange, userId, payload, rules);
-  return false;
-}
-
 /**
  * rating_submitted: evaluate achievements. Mint ledger only if user_achievements INSERT actually inserted (no conflict).
  */
@@ -225,14 +186,20 @@ async function processRatingSubmitted(rest, totalFromContentRange, userId, paylo
   let tabsDelta = 0;
   const achievements = await loadAchievementsForTrigger(rest, 'rating_submitted');
   for (const ach of achievements) {
-    const passed = await evaluate(rest, totalFromContentRange, userId, payload, ach.subtype, ach.rules);
-    if (!passed) continue;
+    const progress = await calculateAchievementProgress({
+      rest,
+      totalFromContentRange,
+      user_id: userId,
+      rules: ach.rules,
+      subtype: ach.subtype,
+    });
+    if (!progress || progress.progress_current < progress.progress_target) continue;
 
     const insertRes = await rest('POST', '/user_achievements', {
       body: JSON.stringify({
         user_id: userId,
         achievement_id: ach.id,
-        progress: {},
+        progress: { progress_current: progress.progress_current },
         context: payload,
       }),
     });

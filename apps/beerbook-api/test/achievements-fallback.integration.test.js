@@ -13,7 +13,11 @@ function createApi(restImpl) {
       next();
     },
     adminMiddleware: (_req, _res, next) => next(),
-    totalFromContentRange: () => 0,
+    totalFromContentRange: (value) => {
+      const match = String(value || '').match(/\/(\d+|\*)$/);
+      if (!match || match[1] === '*') return 0;
+      return Number(match[1]) || 0;
+    },
   });
   app.use('/api', router);
   return app;
@@ -47,7 +51,7 @@ test('GET /api/achievements/fallback returns a deterministic fallback object', a
       status: 200,
       body: [],
     },
-    '/achievements?active=eq.true&trigger_type=eq.rating_submitted&select=id,key,name,description,rules,category_key,is_hidden': {
+    '/achievements?active=eq.true&trigger_type=eq.rating_submitted&select=id,key,name,description,subtype,rules,category_key,is_hidden': {
       status: 200,
       body: [
         {
@@ -55,18 +59,17 @@ test('GET /api/achievements/fallback returns a deterministic fallback object', a
           key: 'ten_ratings',
           name: 'Regular',
           description: 'Log 10 ratings.',
+          subtype: 'total_ratings',
           category_key: 'starter',
           is_hidden: false,
           rules: { type: 'count', entity: 'ratings', gte: 10 },
         },
       ],
     },
-    '/ratings?user_id=eq.user-123&select=style,photo_url,notes,price_cents,venue_id,rating,location_name,created_at&limit=5000': {
+    '/ratings?user_id=eq.user-123&select=id': {
       status: 200,
-      body: [
-        { style: 'IPA', stars: 4, created_at: '2026-03-01T00:00:00.000Z' },
-        { style: 'Stout', stars: 5, created_at: '2026-03-02T00:00:00.000Z' },
-      ],
+      body: [],
+      headers: { 'content-range': '0-0/2' },
     },
     '/achievement_categories?key=eq.starter&select=icon&limit=1': {
       status: 200,
@@ -101,7 +104,7 @@ test('GET /api/achievements/fallback returns 204 when no safe fallback exists', 
       status: 200,
       body: [{ achievement_id: 'a1' }],
     },
-    '/achievements?active=eq.true&trigger_type=eq.rating_submitted&select=id,key,name,description,rules,category_key,is_hidden': {
+    '/achievements?active=eq.true&trigger_type=eq.rating_submitted&select=id,key,name,description,subtype,rules,category_key,is_hidden': {
       status: 200,
       body: [
         {
@@ -109,6 +112,7 @@ test('GET /api/achievements/fallback returns 204 when no safe fallback exists', 
           key: 'ten_ratings',
           name: 'Regular',
           description: 'Log 10 ratings.',
+          subtype: 'total_ratings',
           category_key: 'starter',
           is_hidden: false,
           rules: { type: 'count', entity: 'ratings', gte: 10 },
@@ -118,15 +122,17 @@ test('GET /api/achievements/fallback returns 204 when no safe fallback exists', 
           key: 'unsupported_rule',
           name: 'Unsupported',
           description: 'Not computable for fallback.',
+          subtype: 'special',
           category_key: 'starter',
           is_hidden: false,
           rules: { type: 'weekly_streak', weeks: 4 },
         },
       ],
     },
-    '/ratings?user_id=eq.user-123&select=style,photo_url,notes,price_cents,venue_id,rating,location_name,created_at&limit=5000': {
+    '/ratings?user_id=eq.user-123&select=id': {
       status: 200,
       body: [],
+      headers: { 'content-range': '*/0' },
     },
   }));
 
@@ -171,9 +177,10 @@ test('GET /api/achievements/next supports rules.gte and excludes hidden achievem
         },
       ],
     },
-    '/ratings?user_id=eq.user-123&select=style&limit=5000': {
+    '/ratings?user_id=eq.user-123&select=id': {
       status: 200,
-      body: [{ style: 'IPA' }, { style: 'Stout' }],
+      body: [],
+      headers: { 'content-range': '0-0/2' },
     },
     '/achievement_categories?key=eq.starter&select=icon&limit=1': {
       status: 200,
@@ -203,7 +210,7 @@ test('GET /api/achievements/fallback excludes hidden achievements from candidate
       status: 200,
       body: [],
     },
-    '/achievements?active=eq.true&trigger_type=eq.rating_submitted&select=id,key,name,description,rules,category_key,is_hidden': {
+    '/achievements?active=eq.true&trigger_type=eq.rating_submitted&select=id,key,name,description,subtype,rules,category_key,is_hidden': {
       status: 200,
       body: [
         {
@@ -211,6 +218,7 @@ test('GET /api/achievements/fallback excludes hidden achievements from candidate
           key: 'secret_goal',
           name: 'Secret Goal',
           description: 'Should not show.',
+          subtype: 'total_ratings',
           category_key: 'starter',
           is_hidden: true,
           rules: { type: 'count', entity: 'ratings', gte: 1 },
@@ -220,15 +228,17 @@ test('GET /api/achievements/fallback excludes hidden achievements from candidate
           key: 'ten_ratings',
           name: 'Regular',
           description: 'Log 10 ratings.',
+          subtype: 'total_ratings',
           category_key: 'starter',
           is_hidden: false,
           rules: { type: 'count', entity: 'ratings', gte: 10 },
         },
       ],
     },
-    '/ratings?user_id=eq.user-123&select=style,photo_url,notes,price_cents,venue_id,rating,location_name,created_at&limit=5000': {
+    '/ratings?user_id=eq.user-123&select=id': {
       status: 200,
-      body: [{ style: 'IPA', created_at: '2026-03-01T00:00:00.000Z' }],
+      body: [],
+      headers: { 'content-range': '*/1' },
     },
     '/achievement_categories?key=eq.starter&select=icon&limit=1': {
       status: 200,

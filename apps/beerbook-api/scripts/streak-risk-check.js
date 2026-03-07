@@ -32,7 +32,7 @@ async function rest(method, path, body) {
 }
 
 async function run() {
-  const profiles = await rest('GET', '/user_tabs_profile?select=user_id,ratings_this_week,weeks_inactive,current_tier&limit=10000');
+  const profiles = await rest('GET', '/user_tabs_profile?select=user_id,ratings_this_week,current_streak_weeks,weeks_inactive,current_tier&limit=10000');
   for (const profile of profiles) {
     const ratingsThisWeek = Number(profile.ratings_this_week) || 0;
     const weeksInactive = Number(profile.weeks_inactive) || 0;
