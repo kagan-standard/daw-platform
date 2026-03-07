@@ -8,6 +8,7 @@ import { createRemoteJWKSet, jwtVerify } from "npm:jose@5";
 import {
   processEvent,
   VALID_EVENT_TYPES,
+  isAdminUser,
   type EventType,
 } from "./engine.ts";
 
@@ -116,6 +117,13 @@ Deno.serve(async (req) => {
     );
   }
 
+  if (eventType === "admin_grant" && !isAdminUser(userId)) {
+    return new Response(
+      JSON.stringify({ error: "Forbidden: admin_grant requires admin role" }),
+      { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+
   try {
     const result = await processEvent({
       eventType: eventType as EventType,
@@ -131,9 +139,18 @@ Deno.serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const errStatus = (err as Record<string, unknown>)?.status;
+    if (typeof errStatus === "number" && errStatus >= 400 && errStatus < 500) {
+      const message = err instanceof Error ? err.message : String(err);
+      return new Response(
+        JSON.stringify({ error: message }),
+        { status: errStatus, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+    const correlationId = crypto.randomUUID();
+    console.error(`[process-event] internal_error correlation_id=${correlationId}`, err);
     return new Response(
-      JSON.stringify({ error: message }),
+      JSON.stringify({ error: "internal_error", correlation_id: correlationId }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }

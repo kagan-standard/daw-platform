@@ -15,6 +15,7 @@ const {
   calculateRatingComponents,
 } = require('./lib/tabs');
 const { invokeProcessEvent } = require('./lib/processEvent');
+const { requireCrewMembership } = require('./lib/crewAuth');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -278,8 +279,21 @@ app.use(requestIdMiddleware);
 app.use(express.json());
 // Serve static assets from /public at the root path (e.g., /images/...)
 app.use(express.static(path.join(__dirname, 'public')));
-// Phase 2.1: serve uploaded images (same origin as API)
-app.use('/uploads', express.static(UPLOAD_DIR));
+
+// Phase 1.4: serve uploaded images with security headers.
+// X-Content-Type-Options: nosniff prevents browsers from MIME-sniffing.
+// Non-image files get Content-Disposition: attachment to force download.
+const UPLOAD_IMAGE_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/heic']);
+app.use('/uploads', (req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  const ext = path.extname(req.path).toLowerCase();
+  const mimeMap = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.heic': 'image/heic' };
+  const inferredMime = mimeMap[ext];
+  if (!inferredMime || !UPLOAD_IMAGE_MIMES.has(inferredMime)) {
+    res.setHeader('Content-Disposition', 'attachment');
+  }
+  next();
+}, express.static(UPLOAD_DIR));
 
 // ---------- Rate limiting (all /api routes) ----------
 const limiter = rateLimit({
@@ -499,7 +513,29 @@ app.use('/api', trackingRoutes);
 app.use('/api', tabsRoutes);
 app.use('/api', followsRoutes);
 app.use('/api', crewsRoutes);
-app.use('/internal', internalRoutes);
+if (process.env.INTERNAL_PROCESS_EVENT_SECRET) {
+  const internalLimiter = rateLimit({
+    windowMs: RATE_WINDOW_MS,
+    max: Math.max(1, Math.floor(RATE_MAX / 4)),
+    standardHeaders: true,
+    legacyHeaders: false,
+    handler: (req, res) => {
+      const retryAfter = Math.ceil(RATE_WINDOW_MS / 1000);
+      res.setHeader('Retry-After', String(retryAfter));
+      res.status(429).json({
+        error_code: 'RATE_LIMITED',
+        error: 'Too Many Requests',
+        retryAfter,
+        request_id: req.requestId || null,
+      });
+    },
+  });
+  app.use('/internal', internalLimiter, internalRoutes);
+} else {
+  app.use('/internal', (_req, res) => {
+    res.status(503).json({ error: 'Internal routes disabled — INTERNAL_PROCESS_EVENT_SECRET not configured' });
+  });
+}
 
 // ---------- Phase 3.2: Catalog (no auth — public catalog) ----------
 function toNumberOrNull(v) {
@@ -932,6 +968,8 @@ app.get('/api/ratings', softAuthMiddleware, validateSort, async (req, res) => {
     let filtered = Array.isArray(ratingsRaw.body) ? ratingsRaw.body : [];
     if (feed === 'crew') {
       if (!crewId) return res.status(400).json({ error: 'crew_id is required for feed=crew' });
+      const crewMembership = await requireCrewMembership(rest, requester, crewId);
+      if (!crewMembership) return res.status(403).json({ error_code: 'CREW_MEMBERSHIP_REQUIRED', error: 'Crew membership required', request_id: req.requestId || null });
       const membersRes = await rest('GET', `/crew_members?crew_id=eq.${encodeURIComponent(crewId)}&select=user_id`);
       if (membersRes.status >= 400) return res.status(membersRes.status).json(membersRes.body || { error: 'Upstream error' });
       const memberIds = new Set((Array.isArray(membersRes.body) ? membersRes.body : []).map((m) => m.user_id));
@@ -1637,6 +1675,8 @@ app.get('/api/stats', softAuthMiddleware, async (req, res) => {
   if (crewId) {
     const requester = req.claims?.sub || null;
     if (!requester) return res.status(401).json({ error: 'Authentication required for crew stats' });
+    const crewMembership = await requireCrewMembership(rest, requester, crewId);
+    if (!crewMembership) return res.status(403).json({ error_code: 'CREW_MEMBERSHIP_REQUIRED', error: 'Crew membership required', request_id: req.requestId || null });
     const membersRes = await rest('GET', `/crew_members?crew_id=eq.${encodeURIComponent(crewId)}&select=user_id`);
     if (membersRes.status >= 400) return res.status(membersRes.status).json(membersRes.body || { error: 'Upstream error' });
     const memberIds = new Set((Array.isArray(membersRes.body) ? membersRes.body : []).map((m) => m.user_id));
@@ -1724,6 +1764,39 @@ if (!SERVICE_ROLE_KEY) {
   console.error('SUPABASE_SERVICE_ROLE_KEY is required');
   process.exit(1);
 }
+if (!process.env.INTERNAL_PROCESS_EVENT_SECRET) {
+  console.error('INTERNAL_PROCESS_EVENT_SECRET is required — /internal routes will NOT be mounted');
+}
+
+// Phase 1.4: Validate UPLOAD_DIR at startup.
+// Resolve realpath, require it to be under an approved base prefix, and fail fast
+// if the directory cannot be created or is a symlink escape.
+const UPLOAD_DIR_APPROVED_PREFIXES = (process.env.UPLOAD_DIR_APPROVED_PREFIXES || '')
+  .split(',')
+  .map((p) => p.trim())
+  .filter(Boolean);
+if (UPLOAD_DIR_APPROVED_PREFIXES.length === 0) {
+  UPLOAD_DIR_APPROVED_PREFIXES.push(path.resolve(__dirname));
+  UPLOAD_DIR_APPROVED_PREFIXES.push('/data');
+}
+try {
+  const fs = require('fs');
+  fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+  const resolved = fs.realpathSync(UPLOAD_DIR);
+  const withinApproved = UPLOAD_DIR_APPROVED_PREFIXES.some((prefix) => {
+    const normalizedPrefix = path.resolve(prefix);
+    return resolved === normalizedPrefix || resolved.startsWith(normalizedPrefix + path.sep);
+  });
+  if (!withinApproved) {
+    console.error(`UPLOAD_DIR realpath "${resolved}" is outside approved prefixes: ${UPLOAD_DIR_APPROVED_PREFIXES.join(', ')}`);
+    process.exit(1);
+  }
+  console.log(`UPLOAD_DIR validated: ${resolved}`);
+} catch (err) {
+  console.error(`UPLOAD_DIR validation failed: ${err.message}`);
+  process.exit(1);
+}
+
 app.listen(PORT, () => {
   console.log(`beerbook-api listening on port ${PORT}`);
 });

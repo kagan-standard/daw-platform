@@ -276,6 +276,11 @@ async function processEvent(opts, eventType, eventId, payload, userId) {
     tabsDelta = await processSingleAward(rest, ledgerUserId, eventId, eventType, payload, context);
   } else if (eventType === 'cheers_given' || eventType === 'admin_grant') {
     if (!eventId) throw new Error(`event_id required for ${eventType}`);
+    if (eventType === 'admin_grant' && !isAdminUser(userId)) {
+      const err = new Error('Forbidden: admin_grant requires admin role');
+      err.status = 403;
+      throw err;
+    }
     const context =
       eventType === 'cheers_given'
         ? { from_user_id: userId, to_user_id: payload.to_user_id ?? null, ...(payload.context || {}) }
@@ -298,4 +303,4 @@ async function processEvent(opts, eventType, eventId, payload, userId) {
   };
 }
 
-module.exports = { processEvent, VALID_EVENT_TYPES };
+module.exports = { processEvent, VALID_EVENT_TYPES, isAdminUser };

@@ -366,7 +366,9 @@ export async function processEvent(input: ProcessEventInput): Promise<ProcessEve
     tabsDelta = await processSingleAward(admin, ledgerUserId, eventId, eventType, payload, context);
   } else if (eventType === "cheers_given" || eventType === "admin_grant") {
     if (!eventId) throw new Error(`event_id required for ${eventType}`);
-    // Ignore target_user_id for non-cheers_received; ledger user = JWT sub
+    if (eventType === "admin_grant" && !isAdminUser(userId)) {
+      throw Object.assign(new Error("Forbidden: admin_grant requires admin role"), { status: 403 });
+    }
     const context =
       eventType === "cheers_given"
         ? { from_user_id: userId, to_user_id: payload.to_user_id ?? null, ...((payload.context as Record<string, unknown>) ?? {}) }
@@ -384,4 +386,4 @@ export async function processEvent(input: ProcessEventInput): Promise<ProcessEve
   return { unlocked, tabs_delta: tabsDelta, tabs_balance };
 }
 
-export { VALID_EVENT_TYPES };
+export { VALID_EVENT_TYPES, isAdminUser };

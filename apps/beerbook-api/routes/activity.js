@@ -6,6 +6,7 @@ const express = require('express');
 const crypto = require('crypto');
 const { ensureProfileExists } = require('../lib/tabs');
 const { invokeProcessEvent } = require('../lib/processEvent');
+const { requireCrewMembership } = require('../lib/crewAuth');
 
 module.exports = function (opts) {
   const { rest } = opts;
@@ -161,6 +162,8 @@ module.exports = function (opts) {
           if (!requester) return res.status(401).json({ error: 'Authentication required for feed filters' });
           if (feed === 'crew') {
             if (!crewId) return res.status(400).json({ error: 'crew_id is required for feed=crew' });
+            const crewMembership = await requireCrewMembership(rest, requester, crewId);
+            if (!crewMembership) return res.status(403).json({ error_code: 'CREW_MEMBERSHIP_REQUIRED', error: 'Crew membership required', request_id: req.requestId || null });
             const crewMembersRes = await rest('GET', `/crew_members?crew_id=eq.${encodeURIComponent(crewId)}&select=user_id`);
             if (crewMembersRes.status >= 400) {
               return res.status(crewMembersRes.status).json(crewMembersRes.body || { error: 'Upstream error' });

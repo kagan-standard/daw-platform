@@ -1,4 +1,5 @@
 const express = require('express');
+const { requireCrewMembership } = require('../lib/crewAuth');
 
 function generateInviteCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -22,17 +23,8 @@ function sendError(res, req, status, errorCode, message, extras = {}) {
   });
 }
 
-async function getMembership(rest, crewId, userId) {
-  const out = await rest(
-    'GET',
-    `/crew_members?crew_id=eq.${encodeURIComponent(crewId)}&user_id=eq.${encodeURIComponent(userId)}&limit=1`
-  );
-  if (out.status >= 400) return null;
-  return Array.isArray(out.body) && out.body[0] ? out.body[0] : null;
-}
-
 async function requireOwner(rest, crewId, userId) {
-  const membership = await getMembership(rest, crewId, userId);
+  const membership = await requireCrewMembership(rest, userId, crewId);
   return membership && membership.role === 'owner';
 }
 
@@ -132,7 +124,7 @@ module.exports = function (opts) {
     try {
       const me = req.claims.sub;
       const crewId = String(req.params.id || '').trim();
-      const membership = await getMembership(rest, crewId, me);
+      const membership = await requireCrewMembership(rest, me, crewId);
       if (!membership) return res.status(403).json({ error: 'Crew access denied' });
 
       const [crewRes, membersRes] = await Promise.all([
@@ -298,7 +290,7 @@ module.exports = function (opts) {
         return sendError(res, req, 404, 'CREW_NOT_FOUND', 'Crew not found');
       }
 
-      const existing = await getMembership(rest, crew.id, me);
+      const existing = await requireCrewMembership(rest, me, crew.id);
       if (existing) {
         return sendError(res, req, 409, 'ALREADY_MEMBER', 'Already a member');
       }
@@ -339,7 +331,7 @@ module.exports = function (opts) {
       const me = req.claims.sub;
       const crewId = String(req.params.id || '').trim();
       const target = String(req.params.userId || '').trim();
-      const myMembership = await getMembership(rest, crewId, me);
+      const myMembership = await requireCrewMembership(rest, me, crewId);
       if (!myMembership) return res.status(403).json({ error: 'Crew access denied' });
 
       const removingSelf = target === me;

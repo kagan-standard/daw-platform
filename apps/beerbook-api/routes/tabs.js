@@ -69,6 +69,17 @@ function toNumberOrNull(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function getAchievementProgressTarget(rules) {
+  if (!rules || typeof rules !== 'object' || Array.isArray(rules)) return null;
+  const directTarget = toNumberOrNull(rules.target);
+  if (directTarget != null) return directTarget;
+  const gteTarget = toNumberOrNull(rules.gte);
+  if (gteTarget != null) return gteTarget;
+  const countTarget = toNumberOrNull(rules.count);
+  if (countTarget != null) return countTarget;
+  return null;
+}
+
 function mapLedgerRowToTabTransaction(row) {
   const eventType = String(row?.event_type || '');
   const transaction_type = LEDGER_EVENT_TO_TRANSACTION_TYPE[eventType] || (Number(row?.amount) < 0 ? 'spend' : 'earn');
@@ -371,7 +382,56 @@ module.exports = function tabsRoutes(opts) {
         '/cosmetics?active=eq.true&select=id,key,type,name,description,rarity,asset_url,preview_asset_url,title_text,unlock_type,achievement_key,tab_price,active,sort_order,created_at&order=sort_order.asc,created_at.asc'
       );
       if (out.status >= 400) return res.status(out.status).json(out.body || { error: 'Upstream error' });
-      res.json({ data: Array.isArray(out.body) ? out.body : [] });
+      const cosmetics = Array.isArray(out.body) ? out.body : [];
+      if (!cosmetics.length) return res.json({ data: [] });
+
+      const userId = req?.claims?.sub ? String(req.claims.sub).trim() : '';
+      const achievementKeys = [...new Set(cosmetics.map((item) => item?.achievement_key).filter(Boolean))];
+
+      let achievementByKey = Object.create(null);
+      let progressByAchievementId = Object.create(null);
+
+      if (achievementKeys.length) {
+        const keyList = achievementKeys.map((key) => encodeURIComponent(String(key))).join(',');
+        const achievementsOut = await rest(
+          'GET',
+          `/achievements?key=in.(${keyList})&select=id,key,is_hidden,rules`
+        );
+        if (achievementsOut.status >= 400) {
+          return res.status(achievementsOut.status).json(achievementsOut.body || { error: 'Upstream error' });
+        }
+
+        const achievements = Array.isArray(achievementsOut.body) ? achievementsOut.body : [];
+        achievementByKey = Object.fromEntries(achievements.map((achievement) => [achievement.key, achievement]));
+
+        if (userId && achievements.length) {
+          const achievementIds = achievements.map((achievement) => achievement.id).filter(Boolean);
+          if (achievementIds.length) {
+            const idList = achievementIds.map((id) => encodeURIComponent(String(id))).join(',');
+            const userAchievementsOut = await rest(
+              'GET',
+              `/user_achievements?user_id=eq.${encodeURIComponent(userId)}&achievement_id=in.(${idList})&select=achievement_id,progress`
+            );
+            if (userAchievementsOut.status >= 400) {
+              return res.status(userAchievementsOut.status).json(userAchievementsOut.body || { error: 'Upstream error' });
+            }
+            const progressRows = Array.isArray(userAchievementsOut.body) ? userAchievementsOut.body : [];
+            progressByAchievementId = Object.fromEntries(progressRows.map((row) => [row.achievement_id, toNumberOrNull(row.progress)]));
+          }
+        }
+      }
+
+      const data = cosmetics.map((cosmetic) => {
+        const achievement = cosmetic.achievement_key ? achievementByKey[cosmetic.achievement_key] : null;
+        return {
+          ...cosmetic,
+          achievement_hidden: !!achievement?.is_hidden,
+          achievement_progress_current: userId && achievement ? (progressByAchievementId[achievement.id] ?? null) : null,
+          achievement_progress_target: achievement ? getAchievementProgressTarget(achievement.rules) : null,
+        };
+      });
+
+      res.json({ data });
     } catch (e) {
       next(e);
     }

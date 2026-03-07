@@ -1,19 +1,24 @@
 # Database Schemas Overview
 
-This file outlines the current BeerBook database schema across the canonical SQL and Supabase migrations.
+Generated: 2026-03-07  
+Source commit: `e8bb7fc88c42905e9f57ad8f0a18800095e3af92` (`2026-03-07T00:04:53-05:00`)  
+Scope: `apps/beerbook-api/supabase/migrations`
+
+This file outlines the current BeerBook database schema state after applying the BeerBook API Supabase migrations in order.
 
 ## Source Files Used
 
-- `apps/beerbook/docs/database-schema.sql` (canonical baseline)
 - `apps/beerbook-api/supabase/migrations/20250301000000_add_ratings_serve_type.sql`
 - `apps/beerbook-api/supabase/migrations/20250301100000_add_rating_comments.sql`
 - `apps/beerbook-api/supabase/migrations/20250304000000_achievements_tabs_ledger.sql`
 - `apps/beerbook-api/supabase/migrations/20260305000000_add_cosmetics_system.sql`
 - `apps/beerbook-api/supabase/migrations/20260306000000_update_ratings_yg_value_check.sql`
+- `apps/beerbook-api/supabase/migrations/20260306_ledger_migration_reset.sql`
+- `apps/beerbook-api/supabase/migrations/20260306003000_refresh_rating_award_profile_cache.sql`
 
 ## Schemas
 
-- `public` (all tables below are in `public`)
+- `public` (all app tables below are in `public`)
 - `_realtime` (support schema created for publication setup)
 
 ## Core User and Rating Tables
@@ -21,21 +26,16 @@ This file outlines the current BeerBook database schema across the canonical SQL
 ### `profiles`
 - **Primary key:** `id` (text)
 - **Core columns:** `display_name`, `email`, `avatar_url`, `created_at`, `updated_at`
-- **Added later:** `tabs_balance`, `equipped_border_id`, `equipped_title_id`
-- **Relationships:**
-  - Referenced by `user_tabs_profile.user_id`
-  - Referenced by `tab_transactions.user_id`
-  - Referenced by `beer_submissions.submitted_by`
-  - Referenced by `tab_notifications.user_id`
-  - Equipped cosmetic FKs to `cosmetics.id`
+- **Added columns:** `tabs_balance`, `equipped_border_id`, `equipped_title_id`
+- **Tabs note:** `tabs_balance` is the canonical balance, maintained by `tabs_ledger` insert trigger.
 
 ### `ratings`
 - **Primary key:** `id` (text, uuid string)
-- **Core columns:** `user_id`, `user_name`, `beer_name`, `brewery`, `style`, `abv`, `rating`, flavor columns, `notes`, `created_at`, `yg_value`, location columns, `venue_id`, `photo_url`
-- **Added later:** `beer_id`, `price_cents`, `serve_type`, `comment_count`
+- **Core columns:** `user_id`, `user_name`, `beer_name`, `brewery`, `style`, `abv`, `rating`, flavor fields, `notes`, `created_at`, `yg_value`, location fields, `venue_id`, `photo_url`
+- **Added columns:** `beer_id`, `price_cents`, `serve_type`, `comment_count`
 - **Constraints:**
   - `rating` in range 1-5
-  - flavor columns in range 0-5
+  - flavor fields in range 0-5
   - `yg_value` in range 0-12
   - `serve_type` in (`draft`, `can`, `bottle`, `crowler`, `growler`, `nitro`)
 
@@ -60,12 +60,12 @@ This file outlines the current BeerBook database schema across the canonical SQL
 
 ### `happy_hours`
 - **Primary key:** `id` (text, uuid string)
-- **Columns:** `venue_id`, `day_of_week`, `start_time`, `end_time`, `description`, `reported_by`, timestamps and confirmation columns
+- **Columns:** `venue_id`, `day_of_week`, `start_time`, `end_time`, `description`, `reported_by`, timestamps and confirmation fields
 - **Relationships:** `venue_id -> venues.id` (cascade delete)
 
 ### `price_logs`
 - **Primary key:** `id` (text, uuid string)
-- **Columns:** `venue_id`, `beer_name`, `style`, `price_cents`, `is_happy_hour`, `rating_id`, `logged_by`, timestamps and confirmation columns
+- **Columns:** `venue_id`, `beer_name`, `style`, `price_cents`, `is_happy_hour`, `rating_id`, `logged_by`, timestamps and confirmation fields
 - **Relationships:**
   - `venue_id -> venues.id` (cascade delete)
   - `rating_id -> ratings.id` (set null on delete)
@@ -74,11 +74,11 @@ This file outlines the current BeerBook database schema across the canonical SQL
 
 ### `breweries`
 - **Primary key:** `id` (text, uuid string)
-- **Columns:** identity/location fields (`name`, `slug`, `normalized_name`, address/city/state/country, geo), contact fields, metadata (`source`, `source_id`, `import_batch_id`, `verified`, `claimed`, `crew_id`), timestamps
+- **Columns:** identity/location (`name`, `slug`, `normalized_name`, address/city/state/country, geo), contact fields, metadata (`source`, `source_id`, `import_batch_id`, `verified`, `claimed`, `crew_id`), timestamps
 
 ### `beers`
 - **Primary key:** `id` (text, uuid string)
-- **Columns:** naming/style fields, `brewery_id`, review aggregate metrics, flavor notes, ingredients/pairings, media URLs, source/import metadata, timestamps
+- **Columns:** naming/style fields, `brewery_id`, review aggregates, flavor notes, ingredients/pairings, media URLs, source/import metadata, timestamps
 - **Relationships:** `brewery_id -> breweries.id` (set null on delete)
 - **Uniqueness:** `(brewery_id, normalized_name)`
 
@@ -108,15 +108,18 @@ This file outlines the current BeerBook database schema across the canonical SQL
 
 ### `user_tabs_profile`
 - **Primary key:** `user_id`
-- **Columns:** tier and streak tracking, seeder fields, `tab_balance`, lifetime/weekly counters, timestamps
+- **Columns:** tier/streak/cache fields, seeder fields, `tab_balance`, `lifetime_tabs_earned`, `ratings_this_week`, inactivity fields, timestamps
 - **Relationships:** `user_id -> profiles.id` (cascade delete)
+- **Runtime behavior:** real-time cache refreshed on each `rating_award` event via `public.refresh_rating_award_profile_cache(...)`.
+- **Important:** `user_tabs_profile.tab_balance` is legacy/cache data and is not the canonical balance source.
 
-### `tab_transactions`
+### `tab_transactions` (deprecated)
 - **Primary key:** `id` (text, uuid string)
-- **Columns:** `user_id`, `transaction_type`, `amount`, earn source and multiplier fields, `rating_id`, admin fields, `created_at`
+- **Columns:** `user_id`, `transaction_type`, `amount`, earn source/multiplier fields, `rating_id`, admin fields, `created_at`
 - **Relationships:**
   - `user_id -> profiles.id` (cascade delete)
   - `rating_id -> ratings.id` (set null on delete)
+- **Status:** deprecated/orphaned in current backend flows. Kept in schema for compatibility only; active tab movement logic uses `tabs_ledger`.
 
 ### `tier_requirements`
 - **Primary key:** `tier` (`user_tier` enum)
@@ -153,7 +156,8 @@ This file outlines the current BeerBook database schema across the canonical SQL
 - **Primary key:** `id` (uuid)
 - **Columns:** `event_id`, `user_id`, `event_type`, `amount`, `breakdown`, `context`, `created_at`
 - **Uniqueness:** `event_id` (idempotency key)
-- **Notes:** append-only ledger; trigger updates `profiles.tabs_balance` after insert
+- **Status:** sole source of truth for all tab movements (rating awards, cheers, admin grants, achievement rewards, spends).
+- **Balance sync:** trigger `tabs_ledger_after_insert()` updates `profiles.tabs_balance` on each insert.
 
 ## Cosmetics Tables
 
@@ -162,10 +166,6 @@ This file outlines the current BeerBook database schema across the canonical SQL
 - **Columns:** `key`, `type`, `name`, `description`, `rarity`, `asset_url`, `preview_asset_url`, `title_text`, `unlock_type`, `achievement_key`, `tab_price`, `active`, `sort_order`, `created_at`
 - **Relationships:** `achievement_key -> achievements.key`
 - **Uniqueness:** `key`
-- **Check constraints:**
-  - `type` in (`border`, `title`)
-  - `rarity` in (`common`, `rare`, `epic`, `legendary`)
-  - `unlock_type` in (`achievement`, `purchase`, `both`)
 
 ### `user_cosmetics`
 - **Primary key:** `id` (uuid)
@@ -210,7 +210,8 @@ This file outlines the current BeerBook database schema across the canonical SQL
 ## Functions and Triggers (Schema-impacting)
 
 - `update_updated_at()` trigger function for updated timestamps
-- `tabs_ledger_after_insert()` trigger function to keep `profiles.tabs_balance` in sync
-- `purchase_cosmetic(p_user_id text, p_cosmetic_key text)` RPC for atomic cosmetic purchase flow
+- `tabs_ledger_after_insert()` trigger function that keeps `profiles.tabs_balance` in sync with ledger inserts
+- `refresh_rating_award_profile_cache(p_user_id text, p_tabs_delta int)` for real-time `user_tabs_profile` cache updates after rating awards
+- `purchase_cosmetic(p_user_id text, p_cosmetic_key text)` RPC for atomic cosmetic purchase flow (writes `tabs_ledger` spend + `user_cosmetics`)
 - `increment_comment_count(rating_id_input text)` and `decrement_comment_count(rating_id_input text)`
 - Search/utility functions: `search_beer_catalog`, `search_breweries`, `venues_within_radius`

@@ -4,7 +4,8 @@ const express = require('express');
 
 const tabsRoutes = require('../routes/tabs');
 
-function createApi(restImpl) {
+function createApi(restImpl, options = {}) {
+  const withSoftAuth = options.withSoftAuth !== false;
   const app = express();
   app.use(express.json());
   const router = tabsRoutes({
@@ -14,7 +15,7 @@ function createApi(restImpl) {
       next();
     },
     softAuthMiddleware: (req, _res, next) => {
-      req.claims = { sub: 'user-123' };
+      if (withSoftAuth) req.claims = { sub: 'user-123' };
       next();
     },
     adminMiddleware: (_req, _res, next) => next(),
@@ -73,6 +74,133 @@ test('POST /api/cosmetics/purchase accepts cosmetic_id and forwards cosmetic_key
     assert.equal(out.status, 200);
     assert.equal(out.body?.data?.cosmetic_key, 'gold_border');
     assert.equal(calls.some((c) => c.path === '/rpc/purchase_cosmetic'), true);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test('GET /api/cosmetics enriches achievement visibility and progress fields', async () => {
+  const app = createApi(async (method, path) => {
+    if (method === 'GET' && path === '/cosmetics?active=eq.true&select=id,key,type,name,description,rarity,asset_url,preview_asset_url,title_text,unlock_type,achievement_key,tab_price,active,sort_order,created_at&order=sort_order.asc,created_at.asc') {
+      return {
+        status: 200,
+        body: [
+          {
+            id: '00000000-0000-4000-8000-000000000001',
+            key: 'mystery_border',
+            type: 'border',
+            name: 'Mystery Border',
+            description: 'Locked border',
+            rarity: 'epic',
+            asset_url: '/uploads/cosmetics/mystery.png',
+            preview_asset_url: '/uploads/cosmetics/mystery_preview.png',
+            title_text: null,
+            unlock_type: 'achievement',
+            achievement_key: 'hidden_ach',
+            tab_price: 0,
+            active: true,
+            sort_order: 1,
+            created_at: '2026-03-06T00:00:00.000Z',
+          },
+          {
+            id: '00000000-0000-4000-8000-000000000002',
+            key: 'shop_border',
+            type: 'border',
+            name: 'Shop Border',
+            description: 'Buyable border',
+            rarity: 'common',
+            asset_url: '/uploads/cosmetics/shop.png',
+            preview_asset_url: '/uploads/cosmetics/shop_preview.png',
+            title_text: null,
+            unlock_type: 'purchase',
+            achievement_key: null,
+            tab_price: 25,
+            active: true,
+            sort_order: 2,
+            created_at: '2026-03-06T00:00:00.000Z',
+          },
+        ],
+      };
+    }
+    if (method === 'GET' && path === '/achievements?key=in.(hidden_ach)&select=id,key,is_hidden,rules') {
+      return {
+        status: 200,
+        body: [
+          { id: 'a1', key: 'hidden_ach', is_hidden: true, rules: { gte: 10 } },
+        ],
+      };
+    }
+    if (method === 'GET' && path === '/user_achievements?user_id=eq.user-123&achievement_id=in.(a1)&select=achievement_id,progress') {
+      return {
+        status: 200,
+        body: [{ achievement_id: 'a1', progress: 3 }],
+      };
+    }
+    throw new Error(`Unhandled rest path: ${path}`);
+  });
+
+  const server = app.listen(0);
+  try {
+    const out = await requestJson(server, 'GET', '/api/cosmetics');
+    assert.equal(out.status, 200);
+    assert.equal(Array.isArray(out.body?.data), true);
+    assert.equal(out.body.data.length, 2);
+    assert.equal(out.body.data[0].achievement_hidden, true);
+    assert.equal(out.body.data[0].achievement_progress_current, 3);
+    assert.equal(out.body.data[0].achievement_progress_target, 10);
+    assert.equal(out.body.data[1].achievement_hidden, false);
+    assert.equal(out.body.data[1].achievement_progress_current, null);
+    assert.equal(out.body.data[1].achievement_progress_target, null);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test('GET /api/cosmetics skips user progress lookup when unauthenticated', async () => {
+  const app = createApi(async (method, path) => {
+    if (method === 'GET' && path === '/cosmetics?active=eq.true&select=id,key,type,name,description,rarity,asset_url,preview_asset_url,title_text,unlock_type,achievement_key,tab_price,active,sort_order,created_at&order=sort_order.asc,created_at.asc') {
+      return {
+        status: 200,
+        body: [
+          {
+            id: '00000000-0000-4000-8000-000000000001',
+            key: 'mystery_border',
+            type: 'border',
+            name: 'Mystery Border',
+            description: 'Locked border',
+            rarity: 'epic',
+            asset_url: '/uploads/cosmetics/mystery.png',
+            preview_asset_url: '/uploads/cosmetics/mystery_preview.png',
+            title_text: null,
+            unlock_type: 'achievement',
+            achievement_key: 'hidden_ach',
+            tab_price: 0,
+            active: true,
+            sort_order: 1,
+            created_at: '2026-03-06T00:00:00.000Z',
+          },
+        ],
+      };
+    }
+    if (method === 'GET' && path === '/achievements?key=in.(hidden_ach)&select=id,key,is_hidden,rules') {
+      return {
+        status: 200,
+        body: [{ id: 'a1', key: 'hidden_ach', is_hidden: true, rules: { count: 5 } }],
+      };
+    }
+    if (path.startsWith('/user_achievements?')) {
+      throw new Error('Should not query user progress for unauthenticated request');
+    }
+    throw new Error(`Unhandled rest path: ${path}`);
+  }, { withSoftAuth: false });
+
+  const server = app.listen(0);
+  try {
+    const out = await requestJson(server, 'GET', '/api/cosmetics');
+    assert.equal(out.status, 200);
+    assert.equal(out.body.data[0].achievement_hidden, true);
+    assert.equal(out.body.data[0].achievement_progress_current, null);
+    assert.equal(out.body.data[0].achievement_progress_target, 5);
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }

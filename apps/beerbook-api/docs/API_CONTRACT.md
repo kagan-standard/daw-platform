@@ -1,8 +1,10 @@
 # BeerBook API Contract (Backend Source of Truth)
 
-Generated: 2026-03-06
+Generated: 2026-03-07
 Source: `daw-platform/apps/beerbook-api`
+Source commit: `e8bb7fc88c42905e9f57ad8f0a18800095e3af92` (`2026-03-07T00:04:53-05:00`)
 Verification: Endpoint parity checked against `server.js` + `routes/*.js` (`98 implemented / 98 documented`)
+Process-event source: `lib/processEvent.js` + `lib/processEventEngine.js` + `routes/internal.js`
 
 ---
 
@@ -744,7 +746,9 @@ Note: Accepts both `snake_case` and `camelCase` for most fields.
   "weekly_cap": 10,
   "achievements_unlocked": [
     { "key": "first_rating", "name": "First Sip", "reward_tabs": 5 }
-  ]
+  ],
+  "current_streak_weeks": 2,
+  "longest_streak_weeks": 7
 }
 ```
 
@@ -762,6 +766,8 @@ Note: Accepts both `snake_case` and `camelCase` for most fields.
 | `weekly_count` | number | Current count of this user's `rating_award` events in the current week (Mon 00:00 UTC reset), after this submission |
 | `weekly_cap` | number | Weekly cap value (currently `10`) for non-admin enforcement; admin users listed in env-admin IDs bypass this cap in `rating_award`. |
 | `achievements_unlocked` | `Array<{ key: string, name: string, reward_tabs: number }>` | Achievements earned by this rating. Empty array if none. |
+| `current_streak_weeks` | number | Current weekly rating streak from real-time profile cache refresh after `rating_award`. |
+| `longest_streak_weeks` | number | Longest weekly rating streak from real-time profile cache refresh after `rating_award`. |
 
 **Success Response — UPDATE EXISTING RATING (200):**
 
@@ -777,7 +783,7 @@ Note: Accepts both `snake_case` and `camelCase` for most fields.
 }
 ```
 
-Note: Update response does NOT include `tabs_earned`, `tabs_breakdown`, `tier_multiplier`, `seeder_multiplier`, `new_beer_multiplier`, `is_new_beer`, or `achievements_unlocked`. No tabs are awarded on update.
+Note: Update response does NOT include `tabs_earned`, `tabs_breakdown`, `tier_multiplier`, `seeder_multiplier`, `new_beer_multiplier`, `is_new_beer`, `achievements_unlocked`, `current_streak_weeks`, or `longest_streak_weeks`. No tabs are awarded on update.
 
 **Error Responses:**
 - 400: `{ "error": "rating must be a number between 1 and 5" }`
@@ -791,7 +797,7 @@ Note: Update response does NOT include `tabs_earned`, `tabs_breakdown`, `tier_mu
 - 400: `{ "error": "style is required for new beer flow" }`
 - 400: `{ "error": "abv must be a number between 0 and 30" }`
 - 400: `{ "error": "style required when beer style is unknown" }`
-- 400: `{ "error": "beer_name and rating required" }`
+- 400: `{ "error": "beer_name required when beer_id is missing or unresolved" }`
 - 409: `{ "error": "Very similar beer already exists", "matches": [{ "id", "name", "brewery_name", "style", "abv", "similarity" }] }` (new beer flow only)
 - 502: various upstream/process-event errors
 
@@ -2228,6 +2234,9 @@ Both routes are identical.
 }
 ```
 
+`weekly_cap_reached` is computed from current-week `tabs_ledger` `rating_award` row count (Monday 00:00 UTC boundary), not from `ratings_this_week`.
+`tab_balance` is sourced from `profiles.tabs_balance` (DB-trigger maintained from `tabs_ledger`), not from `user_tabs_profile.tab_balance`.
+
 **Side Effects:** May create/update `profiles` and `user_tabs_profile`.
 
 ---
@@ -2308,7 +2317,6 @@ Ranking and sort order remain based on `lifetime_tabs_earned desc`.
   "data": [
     {
       "id": "string",
-      "user_id": "string",
       "transaction_type": "string",
       "amount": 0,
       "earn_source": "string",
@@ -2317,14 +2325,14 @@ Ranking and sort order remain based on `lifetime_tabs_earned desc`.
       "seeder_multiplier": 1.0,
       "rating_id": "string | null",
       "related_entity_id": "string | null",
-      "admin_user_id": "string | null",
-      "admin_reason": "string | null",
       "created_at": "ISO8601"
     }
   ],
   "pagination": { "limit": 50, "offset": 0, "total": 200 }
 }
 ```
+
+Read source is `tabs_ledger`; rows are mapped into a legacy transaction response shape for API compatibility.
 
 ---
 
@@ -2600,6 +2608,9 @@ Legacy achievement rule keys such as `review_min_len`, `stars_gte`/`stars_lte`, 
       "title_text": "string",
       "unlock_type": "string",
       "achievement_key": "string",
+      "achievement_hidden": false,
+      "achievement_progress_current": 0,
+      "achievement_progress_target": 10,
       "tab_price": 0,
       "active": true,
       "sort_order": 0,
@@ -2608,6 +2619,14 @@ Legacy achievement rule keys such as `review_min_len`, `stars_gte`/`stars_lte`, 
   ]
 }
 ```
+
+Additional cosmetic achievement fields:
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `achievement_hidden` | boolean | `true` when linked achievement is hidden (`achievements.is_hidden`); `false` for visible or non-achievement cosmetics. |
+| `achievement_progress_current` | number \| null | Current authenticated user progress from `user_achievements.progress`; `null` when unauthenticated, no link, or no progress row. |
+| `achievement_progress_target` | number \| null | Target parsed from achievement `rules` (`target`, `gte`, then `count` fallback); `null` when no achievement link. |
 
 ---
 
@@ -3445,7 +3464,7 @@ All admin routes require `authMiddleware` + `adminMiddleware`.
 - 400: `{ "error": "amount must be a non-zero integer" }`
 - 400: `{ "error": "reason is required" }`
 
-**Side Effects:** Inserts into `tab_transactions`, updates `user_tabs_profile`.
+**Side Effects:** Inserts into `tabs_ledger`, updates `user_tabs_profile` (lifetime tabs cache for positive grants).
 
 ---
 
@@ -3526,7 +3545,7 @@ All admin routes require `authMiddleware` + `adminMiddleware`.
 - 400: `{ "error": "status must be 'approved' or 'rejected'" }`
 - 404: `{ "error": "Submission not found" }`
 
-**Side Effects:** Updates `beer_submissions`. If approved: creates tab transaction, updates tabs profile, creates notification.
+**Side Effects:** Updates `beer_submissions`. If approved: inserts into `tabs_ledger`, updates tabs profile cache, creates notification.
 
 ---
 
@@ -3592,7 +3611,9 @@ All admin routes require `authMiddleware` + `adminMiddleware`.
     { "key": "string", "name": "string", "reward_tabs": 0 }
   ],
   "tabs_delta": 8,
-  "tabs_balance": 100
+  "tabs_balance": 100,
+  "current_streak_weeks": 2,
+  "longest_streak_weeks": 7
 }
 ```
 
@@ -3606,13 +3627,21 @@ All admin routes require `authMiddleware` + `adminMiddleware`.
 
 **Side Effects:** Inserts into `tabs_ledger`, `user_achievements`, `user_cosmetics`. Updates `profiles.tabs_balance` via DB trigger.
 
+#### Process-Event Profile Cache Refresh RPC
+
+`rating_award` processing also invokes:
+
+- `POST /rpc/refresh_rating_award_profile_cache`
+- SQL function: `public.refresh_rating_award_profile_cache(p_user_id text, p_tabs_delta int)`
+- Behavior: updates `user_tabs_profile` cache fields (`ratings_this_week`, `current_streak_weeks`, `longest_streak_weeks`, `last_active_week`, `weeks_inactive`, `lifetime_tabs_earned`) and returns streak values used in API responses.
+
 ---
 
 ## Side Effects Matrix
 
 | Endpoint | DB Writes | Notifications | Tabs |
 |----------|-----------|---------------|------|
-| `POST /api/ratings` (create) | `ratings`, possibly `beers`, `venues`, `profiles`, `user_tabs_profile` | Achievement unlocks | Yes: rating_award + rating_submitted |
+| `POST /api/ratings` (create) | `ratings`, possibly `beers`, `venues`, `profiles`, `tabs_ledger`, `user_tabs_profile`, `user_achievements`, `user_cosmetics` | Achievement unlocks | Yes: rating_award + rating_submitted |
 | `POST /api/ratings` (update) | `ratings` | None | No |
 | `DELETE /api/ratings/:id` | `ratings` (delete) | None | No (tabs NOT reversed) |
 | `POST /api/ratings/:id/cheers` (add) | `reactions` (insert), `profiles` | Yes (cheers_received) | Yes: cheers_given + cheers_received |
@@ -3632,10 +3661,10 @@ All admin routes require `authMiddleware` + `adminMiddleware`.
 | `POST /api/cosmetics/purchase` | `tabs_ledger`, `user_cosmetics`, `profiles.tabs_balance` | None | Yes (spend) |
 | `POST /api/cosmetics/equip` | `profiles` (equipped IDs) | None | No |
 | `POST /api/tabs/submissions` | `beer_submissions` | None | No |
-| `PATCH /api/admin/tabs/submissions/:id` (approve) | `beer_submissions`, `tab_transactions`, `user_tabs_profile` | Yes | Yes |
+| `PATCH /api/admin/tabs/submissions/:id` (approve) | `beer_submissions`, `tabs_ledger`, `user_tabs_profile` | Yes | Yes |
 | `PATCH /api/admin/tabs/users/:userId/seeder` | `user_tabs_profile` | Yes (if granting) | No |
 | `PATCH /api/admin/tabs/users/:userId/tier` | `user_tabs_profile` | Yes | No |
-| `POST /api/admin/tabs/users/:userId/adjust` | `tab_transactions`, `user_tabs_profile` | None | Yes |
+| `POST /api/admin/tabs/users/:userId/adjust` | `tabs_ledger`, `user_tabs_profile` | None | Yes |
 | `POST /api/track/click` | `referral_clicks` (async) | None | No |
 | `POST /api/track/pageview` | `page_views` (async) | None | No |
 
@@ -3682,6 +3711,7 @@ All admin routes require `authMiddleware` + `adminMiddleware`.
 - `POST /api/ratings` create response includes:
   - `weekly_count` = current `rating_award` count this week (post-submit)
   - `weekly_cap` = `10` (cap enforced for non-admin users; env-admin IDs bypass cap)
+- It also includes `current_streak_weeks` and `longest_streak_weeks` from real-time profile cache refresh.
 - Update responses (`updated: true`) still do not include these fields.
 
 ### 9. Crew Join Error Uses Structured Errors
@@ -3698,3 +3728,9 @@ All admin routes require `authMiddleware` + `adminMiddleware`.
 
 ### 12. `PATCH /api/admin/tabs/submissions/:id` Has Top-Level `tabs_awarded`
 - Response shape: `{ data: {...}, tabs_awarded: 3 }` — the `tabs_awarded` is a sibling of `data`, not inside it
+
+### 13. Tabs Architecture Is Single-Ledger
+- `tabs_ledger` is the sole source of truth for tab movements (rating awards, cheers, admin grants, achievement unlock rewards, spends).
+- `tab_transactions` remains in schema but is deprecated/orphaned by active backend routes/engine paths.
+- `profiles.tabs_balance` is canonical and trigger-maintained from `tabs_ledger` inserts.
+- `user_tabs_profile` is a real-time cache refreshed on `rating_award` via `public.refresh_rating_award_profile_cache`.
