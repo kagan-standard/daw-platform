@@ -1500,7 +1500,7 @@ app.get('/api/ratings/:id/comments', async (req, res) => {
   res.json({ data: Array.isArray(body) ? body : [] });
 });
 
-// POST /api/ratings/:id/comments — auth required, creates comment and increments comment_count
+// POST /api/ratings/:id/comments — auth required, creates comment and increments comment_count (atomic RPC)
 app.post('/api/ratings/:id/comments', authMiddleware, async (req, res) => {
   const id = encodeURIComponent(req.params.id);
   const { body: bodyText } = req.body || {};
@@ -1515,78 +1515,50 @@ app.post('/api/ratings/:id/comments', authMiddleware, async (req, res) => {
     return res.status(400).json({ error: 'Comment must be 500 characters or less' });
   }
 
-  const { status: ratingStatus, body: ratingRow } = await rest('GET', `/ratings?id=eq.${id}&select=id&limit=1`);
-  if (ratingStatus >= 400 || !Array.isArray(ratingRow) || ratingRow.length === 0) {
-    return res.status(404).json({ error: 'Rating not found' });
-  }
-
-  const insertPayload = {
-    rating_id: id,
-    user_id: userId,
-    user_name: userName,
-    body: trimmed,
-  };
-  const { status: insertStatus, body: comment } = await rest('POST', '/rating_comments', {
-    headers: { Prefer: 'return=representation' },
-    body: JSON.stringify(insertPayload),
-  });
-  if (insertStatus >= 400) {
-    return res.status(insertStatus >= 500 ? 502 : insertStatus).json(comment || { error: 'Failed to create comment' });
-  }
-
-  // Non-blocking counter update. If this RPC fails, comment rows remain source-of-truth.
-  // Reconcile periodically (manual or scheduled):
-  // UPDATE ratings SET comment_count = (
-  //   SELECT count(*) FROM rating_comments WHERE rating_id = ratings.id
-  // ) WHERE id IN (
-  //   SELECT r.id FROM ratings r
-  //   LEFT JOIN (SELECT rating_id, count(*) AS actual FROM rating_comments GROUP BY rating_id) c
-  //   ON r.id = c.rating_id
-  //   WHERE r.comment_count != COALESCE(c.actual, 0)
-  // );
-  const { status: incrementStatus, body: incrementBody } = await rest('POST', '/rpc/increment_comment_count', {
+  const { status: rpcStatus, body: comment } = await rest('POST', '/rpc/create_comment_and_increment', {
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ rating_id_input: id }),
+    body: JSON.stringify({
+      rating_id: id,
+      user_id: userId,
+      user_name: userName,
+      content: trimmed,
+    }),
   });
-  if (incrementStatus >= 400) {
-    const rpcMessage = (incrementBody && (incrementBody.message || incrementBody.error || incrementBody.hint))
-      || `status ${incrementStatus}`;
-    console.error(`[WARN] comment_count RPC failed for rating ${id}:`, rpcMessage);
+  if (rpcStatus >= 400) {
+    const errBody = comment && typeof comment === 'object' ? comment : {};
+    const msg = errBody.message || errBody.error || (typeof comment === 'string' ? comment : 'Failed to create comment');
+    if (errBody.code === 'P0002' || (typeof msg === 'string' && msg.toLowerCase().includes('rating not found'))) {
+      return res.status(404).json({ error: 'Rating not found' });
+    }
+    return res.status(rpcStatus >= 500 ? 502 : rpcStatus).json(comment || { error: 'Failed to create comment' });
   }
 
-  const row = Array.isArray(comment) ? comment[0] : comment;
-  res.status(201).json({ data: row || insertPayload });
+  const row = comment && typeof comment === 'object' && !Array.isArray(comment) ? comment : null;
+  res.status(201).json({ data: row || { rating_id: id, user_id: userId, user_name: userName, body: trimmed } });
 });
 
-// DELETE /api/ratings/:id/comments/:commentId — auth required, author only, decrements comment_count
+// DELETE /api/ratings/:id/comments/:commentId — auth required, author only; atomic delete + decrement RPC
 app.delete('/api/ratings/:id/comments/:commentId', authMiddleware, async (req, res) => {
-  const id = encodeURIComponent(req.params.id);
   const commentId = encodeURIComponent(req.params.commentId);
   const userId = req.claims.sub;
 
-  const { status: fetchStatus, body: commentRows } = await rest('GET', `/rating_comments?id=eq.${commentId}&rating_id=eq.${id}&limit=1`);
-  if (fetchStatus >= 400 || !Array.isArray(commentRows) || commentRows.length === 0) {
+  const { status: rpcStatus, body: result } = await rest('POST', '/rpc/delete_comment_and_decrement', {
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ comment_id: commentId, user_id: userId }),
+  });
+  if (rpcStatus >= 400) {
+    return res.status(rpcStatus >= 500 ? 502 : rpcStatus).json(result || { error: 'Failed to delete comment' });
+  }
+  const ok = result && result.ok === true;
+  const err = result && result.error;
+  if (!ok && err === 'not_found') {
     return res.status(404).json({ error: 'Comment not found' });
   }
-  const comment = commentRows[0];
-  if (comment.user_id !== userId) {
+  if (!ok && err === 'forbidden') {
     return res.status(403).json({ error: 'You can only delete your own comments' });
   }
-
-  const { status: deleteStatus } = await rest('DELETE', `/rating_comments?id=eq.${commentId}`);
-  if (deleteStatus >= 400) {
-    return res.status(502).json({ error: 'Failed to delete comment' });
-  }
-
-  // Non-blocking counter update. See reconciliation query note above.
-  const { status: decrementStatus, body: decrementBody } = await rest('POST', '/rpc/decrement_comment_count', {
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ rating_id_input: id }),
-  });
-  if (decrementStatus >= 400) {
-    const rpcMessage = (decrementBody && (decrementBody.message || decrementBody.error || decrementBody.hint))
-      || `status ${decrementStatus}`;
-    console.error(`[WARN] comment_count RPC failed for rating ${id}:`, rpcMessage);
+  if (!ok) {
+    return res.status(502).json(result || { error: 'Failed to delete comment' });
   }
 
   res.status(200).json({ success: true });
