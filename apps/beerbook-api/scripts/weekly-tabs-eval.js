@@ -19,11 +19,6 @@ const PAGE_SIZE = 1000;
 const REST_URL = (process.env.SUPABASE_REST_URL || 'http://supabase-rest:3000').replace(/\/$/, '');
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-if (!SERVICE_ROLE_KEY) {
-  console.error('SUPABASE_SERVICE_ROLE_KEY is required');
-  process.exit(1);
-}
-
 const TIERS = ['taster', 'regular', 'local', 'patron', 'house_account', 'cellar_reserve'];
 
 function previousWeekRange() {
@@ -39,27 +34,31 @@ function previousWeekRange() {
   return { from: prevMonday.toISOString(), to: prevSundayEnd.toISOString(), weekStart: currentMonday.toISOString() };
 }
 
-async function rest(method, path, body) {
-  const res = await fetch(`${REST_URL}${path}`, {
-    method,
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${SERVICE_ROLE_KEY}`,
-      apikey: SERVICE_ROLE_KEY,
-      Prefer: 'return=representation',
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const text = await res.text();
-  let json;
-  try { json = text ? JSON.parse(text) : null; } catch { json = null; }
-  if (res.status >= 400) {
-    throw new Error(`PostgREST ${res.status} ${path}: ${text}`);
-  }
-  return json;
+function createRest() {
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const url = (process.env.SUPABASE_REST_URL || 'http://supabase-rest:3000').replace(/\/$/, '');
+  return async function rest(method, path, body) {
+    const res = await fetch(`${url}${path}`, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${key}`,
+        apikey: key,
+        Prefer: 'return=representation',
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const text = await res.text();
+    let json;
+    try { json = text ? JSON.parse(text) : null; } catch { json = null; }
+    if (res.status >= 400) {
+      throw new Error(`PostgREST ${res.status} ${path}: ${text}`);
+    }
+    return json;
+  };
 }
 
-async function fetchAllProfiles() {
+async function fetchAllProfiles(rest) {
   const profiles = [];
   let cursor = null;
 
@@ -78,7 +77,7 @@ async function fetchAllProfiles() {
   return profiles;
 }
 
-async function sendNotification(userId, type, title, message, weekStart) {
+async function sendNotification(rest, userId, type, title, message, weekStart) {
   await rest('POST', '/rpc/insert_scheduler_notification', {
     p_user_id: userId,
     p_notification_type: type,
@@ -90,7 +89,14 @@ async function sendNotification(userId, type, title, message, weekStart) {
   });
 }
 
-async function run() {
+/**
+ * Run weekly tabs evaluation. When rest is not provided (e.g. when run as script),
+ * uses createRest() from env. Exported for tests (Phase 4.6).
+ * @param {Function} [restFn] - Optional (method, path, body) => Promise<json>
+ * @returns {Promise<void>}
+ */
+async function run(restFn) {
+  const rest = restFn || createRest();
   const { from, to, weekStart } = previousWeekRange();
 
   // ---- Idempotency guard ----
@@ -105,7 +111,7 @@ async function run() {
 
   try {
     // ---- Paginated profile fetch ----
-    const profiles = await fetchAllProfiles();
+    const profiles = await fetchAllProfiles(rest);
     const requirements = await rest('GET', '/tier_requirements?order=display_order.asc');
     const reqByTier = new Map(requirements.map((r) => [r.tier, r]));
 
@@ -181,7 +187,7 @@ async function run() {
       });
 
       if (notification) {
-        await sendNotification(userId, notification.type, notification.title, notification.message, weekStart);
+        await sendNotification(rest, userId, notification.type, notification.title, notification.message, weekStart);
       }
     }
 
@@ -205,7 +211,15 @@ async function run() {
   }
 }
 
-run().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+if (require.main === module) {
+  if (!SERVICE_ROLE_KEY) {
+    console.error('SUPABASE_SERVICE_ROLE_KEY is required');
+    process.exit(1);
+  }
+  run().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+} else {
+  module.exports = { run, previousWeekRange, JOB_NAME, PAGE_SIZE };
+}

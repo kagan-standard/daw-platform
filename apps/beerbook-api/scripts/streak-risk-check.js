@@ -16,11 +16,6 @@ const PAGE_SIZE = 1000;
 const REST_URL = (process.env.SUPABASE_REST_URL || 'http://supabase-rest:3000').replace(/\/$/, '');
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-if (!SERVICE_ROLE_KEY) {
-  console.error('SUPABASE_SERVICE_ROLE_KEY is required');
-  process.exit(1);
-}
-
 function currentWeekStart() {
   const now = new Date();
   const day = now.getUTCDay();
@@ -31,26 +26,30 @@ function currentWeekStart() {
   return monday.toISOString();
 }
 
-async function rest(method, path, body) {
-  const res = await fetch(`${REST_URL}${path}`, {
-    method,
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${SERVICE_ROLE_KEY}`,
-      apikey: SERVICE_ROLE_KEY,
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const text = await res.text();
-  let json;
-  try { json = text ? JSON.parse(text) : null; } catch { json = null; }
-  if (res.status >= 400) {
-    throw new Error(`PostgREST ${res.status} ${path}: ${text}`);
-  }
-  return json;
+function createRest() {
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const url = (process.env.SUPABASE_REST_URL || 'http://supabase-rest:3000').replace(/\/$/, '');
+  return async function rest(method, path, body) {
+    const res = await fetch(`${url}${path}`, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${key}`,
+        apikey: key,
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const text = await res.text();
+    let json;
+    try { json = text ? JSON.parse(text) : null; } catch { json = null; }
+    if (res.status >= 400) {
+      throw new Error(`PostgREST ${res.status} ${path}: ${text}`);
+    }
+    return json;
+  };
 }
 
-async function fetchAllProfiles() {
+async function fetchAllProfiles(rest) {
   const profiles = [];
   let cursor = null;
 
@@ -69,7 +68,7 @@ async function fetchAllProfiles() {
   return profiles;
 }
 
-async function sendNotification(userId, type, title, message, weekStart) {
+async function sendNotification(rest, userId, type, title, message, weekStart) {
   await rest('POST', '/rpc/insert_scheduler_notification', {
     p_user_id: userId,
     p_notification_type: type,
@@ -81,7 +80,14 @@ async function sendNotification(userId, type, title, message, weekStart) {
   });
 }
 
-async function run() {
+/**
+ * Run streak risk check. When rest is not provided, uses createRest() from env.
+ * Exported for tests (Phase 4.6).
+ * @param {Function} [restFn] - Optional (method, path, body) => Promise<json>
+ * @returns {Promise<void>}
+ */
+async function run(restFn) {
+  const rest = restFn || createRest();
   const weekStart = currentWeekStart();
 
   // ---- Idempotency guard ----
@@ -96,7 +102,7 @@ async function run() {
 
   try {
     // ---- Paginated profile fetch ----
-    const profiles = await fetchAllProfiles();
+    const profiles = await fetchAllProfiles(rest);
 
     for (const profile of profiles) {
       const ratingsThisWeek = Number(profile.ratings_this_week) || 0;
@@ -105,6 +111,7 @@ async function run() {
 
       if (ratingsThisWeek < 2) {
         await sendNotification(
+          rest,
           userId,
           'streak_at_risk',
           'Streak at risk',
@@ -114,6 +121,7 @@ async function run() {
       }
       if (weeksInactive === 3) {
         await sendNotification(
+          rest,
           userId,
           'approaching_demotion',
           'Demotion warning',
@@ -143,7 +151,15 @@ async function run() {
   }
 }
 
-run().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+if (require.main === module) {
+  if (!SERVICE_ROLE_KEY) {
+    console.error('SUPABASE_SERVICE_ROLE_KEY is required');
+    process.exit(1);
+  }
+  run().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+} else {
+  module.exports = { run, JOB_NAME, PAGE_SIZE };
+}
