@@ -351,6 +351,8 @@ module.exports = function (opts) {
           return tb - ta;
         });
         const total = items.length;
+        const ACTIVITY_FEED_CAP = 4000;
+        const truncated = total >= ACTIVITY_FEED_CAP;
         const page = items.slice(offset, offset + limit);
         const pagedRatingItems = page.filter((item) => item.type === 'rating');
         const ratingsWithCheers = await attachCheersData(pagedRatingItems, requester);
@@ -363,6 +365,7 @@ module.exports = function (opts) {
         res.json({
           data: enrichedItems,
           pagination: { limit, offset, total },
+          truncated,
         });
       })
       .catch(next);
@@ -440,73 +443,40 @@ module.exports = function (opts) {
   });
 
   // GET /api/users/:id/stats (define before /users/:id so path matches)
+  // Phase 4.1: rating-derived stats from user_stats_aggregate RPC; follower/following/crew from follow_counts and crew_members.
   router.get('/users/:id/stats', (req, res, next) => {
-    const id = encodeURIComponent(req.params.id);
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'User id required' });
     Promise.all([
-      rest('GET', `/ratings?user_id=eq.${id}`),
-      rest('GET', `/follow_counts?user_id=eq.${id}&limit=1`),
-      rest('GET', `/crew_members?user_id=eq.${id}&select=crew_id`),
+      rest('POST', '/rpc/user_stats_aggregate', {
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ p_user_id: id }),
+      }),
+      rest('GET', `/follow_counts?user_id=eq.${encodeURIComponent(id)}&limit=1`),
+      rest('GET', `/crew_members?user_id=eq.${encodeURIComponent(id)}&select=crew_id`),
     ])
-      .then(([ratingsOut, followCountsOut, crewOut]) => {
-        const { status, body } = ratingsOut;
-        if (status >= 400) return res.status(status).json(body || { error: 'Upstream error' });
-        const ratings = Array.isArray(body) ? body : [];
+      .then(([statsOut, followCountsOut, crewOut]) => {
+        if (statsOut.status >= 400) return res.status(statsOut.status).json(statsOut.body || { error: 'Upstream error' });
+        const stats = statsOut.body && typeof statsOut.body === 'object' ? statsOut.body : {};
         const followRow = Array.isArray(followCountsOut.body) && followCountsOut.body[0] ? followCountsOut.body[0] : null;
         const crewRows = Array.isArray(crewOut.body) ? crewOut.body : [];
         const crewCount = new Set(crewRows.map((r) => r.crew_id).filter(Boolean)).size;
-        const followerCount = Number(followRow?.follower_count || 0);
-        const followingCount = Number(followRow?.following_count || 0);
-        const totalRatings = ratings.length;
-        if (totalRatings === 0) {
-          return res.json({
-            total_ratings: 0,
-            total_styles: 0,
-            avg_rating: 0,
-            avg_yg_value: 0,
-            total_yg_portfolio: 0,
-            most_rated_style: null,
-            highest_rated_beer: null,
-            style_distribution: {},
-            rating_distribution: {},
-            monthly_activity: [],
-            follower_count: followerCount,
-            following_count: followingCount,
-            crew_count: crewCount,
-          });
-        }
-        const styles = new Set(ratings.map((r) => r.style || ''));
-        const avgRating = ratings.reduce((s, r) => s + (Number(r.rating) || 0), 0) / totalRatings;
-        const withYg = ratings.filter((r) => r.yg_value != null);
-        const avgYg = withYg.length ? withYg.reduce((s, r) => s + (Number(r.yg_value) || 0), 0) / withYg.length : 0;
-        const totalYgPortfolio = withYg.reduce((s, r) => s + (Number(r.yg_value) || 0), 0);
-        const styleCounts = {};
-        ratings.forEach((r) => {
-          const st = r.style || 'Unknown';
-          styleCounts[st] = (styleCounts[st] || 0) + 1;
-        });
-        const mostRatedStyle = Object.entries(styleCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
-        const byStars = ratings.sort((a, b) => (Number(b.rating) || 0) - (Number(a.rating) || 0));
-        const highestRatedBeer = byStars[0] ? { beer_name: byStars[0].beer_name, rating: byStars[0].rating } : null;
-        const ratingDist = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
-        ratings.forEach((r) => { ratingDist[Number(r.rating) || 0] = (ratingDist[Number(r.rating) || 0] || 0) + 1; });
-        const byMonth = {};
-        ratings.forEach((r) => {
-        const d = new Date(r.created_at);
-        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-        byMonth[key] = (byMonth[key] || 0) + 1;
-        });
-        const monthlyActivity = Object.entries(byMonth).sort((a, b) => b[0].localeCompare(a[0])).slice(0, 12).map(([month, count]) => ({ month, count }));
+        const followerCount = Number(followRow?.follower_count ?? 0);
+        const followingCount = Number(followRow?.following_count ?? 0);
+        const ratingDist = stats.rating_distribution && typeof stats.rating_distribution === 'object' ? stats.rating_distribution : {};
+        const distWithDefaults = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+        [1, 2, 3, 4, 5].forEach((k) => { distWithDefaults[k] = Number(ratingDist[k] ?? ratingDist[String(k)] ?? 0); });
         res.json({
-          total_ratings: totalRatings,
-          total_styles: styles.size,
-          avg_rating: Math.round(avgRating * 100) / 100,
-          avg_yg_value: Math.round(avgYg * 100) / 100,
-          total_yg_portfolio: Math.round(totalYgPortfolio * 100) / 100,
-          most_rated_style: mostRatedStyle,
-          highest_rated_beer: highestRatedBeer,
-          style_distribution: styleCounts,
-          rating_distribution: ratingDist,
-          monthly_activity: monthlyActivity,
+          total_ratings: Number(stats.total_ratings ?? 0),
+          total_styles: Number(stats.total_styles ?? 0),
+          avg_rating: Number(stats.avg_rating ?? 0),
+          avg_yg_value: Number(stats.avg_yg_value ?? 0),
+          total_yg_portfolio: Number(stats.total_yg_portfolio ?? 0),
+          most_rated_style: stats.most_rated_style ?? null,
+          highest_rated_beer: stats.highest_rated_beer ?? null,
+          style_distribution: stats.style_distribution && typeof stats.style_distribution === 'object' ? stats.style_distribution : {},
+          rating_distribution: distWithDefaults,
+          monthly_activity: Array.isArray(stats.monthly_activity) ? stats.monthly_activity : [],
           follower_count: followerCount,
           following_count: followingCount,
           crew_count: crewCount,

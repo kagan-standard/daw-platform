@@ -917,11 +917,13 @@ const handleBreweriesMap = async (req, res) => {
       path += `&latitude=gte.${minLat}&latitude=lte.${maxLat}&longitude=gte.${minLng}&longitude=lte.${maxLng}`;
     }
 
-    const { status, body } = await rest('GET', path);
+    const { status, body, headers } = await rest('GET', path, { headers: { 'Prefer': 'count=exact' } });
     if (status >= 400) {
       return res.status(status >= 500 ? 502 : status).json(body || { error: 'Breweries fetch failed' });
     }
     let list = Array.isArray(body) ? body : [];
+    const total = totalFromContentRange(headers['content-range']) ?? list.length;
+    const truncated = total > limit;
     if (boundsStr) {
       const parts = boundsStr.split(',').map((s) => parseFloat(s.trim()));
       if (parts.length >= 4) {
@@ -947,7 +949,7 @@ const handleBreweriesMap = async (req, res) => {
       website_url: b.website_url ?? null,
       phone: b.phone ?? null,
     }));
-    res.json({ data });
+    res.json({ data, pagination: { limit, offset: 0, total }, truncated });
   } catch (e) {
     console.error('Breweries map error:', e);
     res.status(502).json({ error: 'Breweries map failed' });
@@ -1705,43 +1707,24 @@ app.get('/api/stats', softAuthMiddleware, async (req, res) => {
     if (!requester) return res.status(401).json({ error: 'Authentication required for crew stats' });
     const crewMembership = await requireCrewMembership(rest, requester, crewId);
     if (!crewMembership) return res.status(403).json({ error_code: 'CREW_MEMBERSHIP_REQUIRED', error: 'Crew membership required', request_id: req.requestId || null });
-    const membersRes = await rest('GET', `/crew_members?crew_id=eq.${encodeURIComponent(crewId)}&select=user_id`);
-    if (membersRes.status >= 400) return res.status(membersRes.status).json(membersRes.body || { error: 'Upstream error' });
-    const memberIds = new Set((Array.isArray(membersRes.body) ? membersRes.body : []).map((m) => m.user_id));
-    const ratingsRes = await rest('GET', '/ratings?limit=5000&order=created_at.desc');
-    if (ratingsRes.status >= 400) return res.status(ratingsRes.status).json(ratingsRes.body || { error: 'Upstream error' });
-    const ratings = (Array.isArray(ratingsRes.body) ? ratingsRes.body : []).filter((r) => memberIds.has(r.user_id));
-
-    const byBeer = {};
-    ratings.forEach((r) => {
-      const key = `${r.beer_name || ''}|${r.brewery || ''}|${r.style || ''}`;
-      if (!byBeer[key]) byBeer[key] = { beer_name: r.beer_name || '', brewery: r.brewery || '', style: r.style || '', review_count: 0, rating_sum: 0, last_reviewed: null };
-      byBeer[key].review_count += 1;
-      byBeer[key].rating_sum += Number(r.rating) || 0;
-      const t = new Date(r.created_at || 0).getTime();
-      const prev = byBeer[key].last_reviewed ? new Date(byBeer[key].last_reviewed).getTime() : 0;
-      if (t >= prev) byBeer[key].last_reviewed = r.created_at;
+    const rpcRes = await rest('POST', '/rpc/crew_beer_stats', {
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ p_crew_id: crewId, p_limit: limit, p_offset: offset }),
     });
-    const allBeers = Object.values(byBeer).map((b) => ({
-      beer_name: b.beer_name,
-      brewery: b.brewery,
-      style: b.style,
-      review_count: b.review_count,
-      avg_rating: Math.round((b.rating_sum / Math.max(1, b.review_count)) * 100) / 100,
-      last_reviewed: b.last_reviewed,
-    })).sort((a, b) => b.avg_rating - a.avg_rating);
-    const data = allBeers.slice(offset, offset + limit);
-    const totalBeers = allBeers.length;
-    const totalReviews = ratings.length;
-    const totalUsers = new Set(ratings.map((r) => r.user_id)).size;
+    if (rpcRes.status >= 400) return res.status(rpcRes.status).json(rpcRes.body || { error: 'Upstream error' });
+    const result = rpcRes.body && typeof rpcRes.body === 'object' ? rpcRes.body : {};
+    const data = Array.isArray(result.data) ? result.data : [];
+    const pagination = result.pagination && typeof result.pagination === 'object' ? result.pagination : { limit, offset, total: 0 };
+    const summary = result.summary && typeof result.summary === 'object' ? result.summary : { totalBeers: 0, totalReviews: 0, totalUsers: 0 };
     return res.json({
       data,
-      pagination: { limit, offset, total: totalBeers },
+      pagination: { limit: pagination.limit, offset: pagination.offset, total: pagination.total },
       summary: {
-        totalBeers,
-        totalReviews,
-        totalUsers,
+        totalBeers: Number(summary.totalBeers ?? 0),
+        totalReviews: Number(summary.totalReviews ?? 0),
+        totalUsers: Number(summary.totalUsers ?? 0),
       },
+      truncated: result.truncated === true,
     });
   }
 
@@ -1754,12 +1737,22 @@ app.get('/api/stats', softAuthMiddleware, async (req, res) => {
   const list = Array.isArray(averages) ? averages : [];
   const totalBeers = totalFromContentRange(viewHeaders['content-range']) ?? list.length;
 
-  const countRes = await rest('GET', '/ratings?limit=0', { headers: { 'Prefer': 'count=exact' } });
-  const totalReviews = totalFromContentRange(countRes.headers['content-range']) ?? 0;
-
-  const ratingsRes = await rest('GET', '/ratings?limit=5000&select=user_id');
-  const allRatings = Array.isArray(ratingsRes.body) ? ratingsRes.body : [];
-  const totalUsers = new Set(allRatings.map((r) => r.user_id)).size;
+  let totalReviews = 0;
+  let totalUsers = 0;
+  const countsRes = await rest('POST', '/rpc/global_stats_counts', {
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (countsRes.status < 400 && countsRes.body && typeof countsRes.body === 'object') {
+    totalReviews = Number(countsRes.body.total_ratings ?? 0);
+    totalUsers = Number(countsRes.body.total_users ?? 0);
+  } else {
+    const countRes = await rest('GET', '/ratings?limit=0', { headers: { 'Prefer': 'count=exact' } });
+    totalReviews = totalFromContentRange(countRes.headers['content-range']) ?? 0;
+    const ratingsRes = await rest('GET', '/ratings?limit=5000&select=user_id');
+    const allRatings = Array.isArray(ratingsRes.body) ? ratingsRes.body : [];
+    totalUsers = new Set(allRatings.map((r) => r.user_id)).size;
+  }
 
   res.json({
     data: list,

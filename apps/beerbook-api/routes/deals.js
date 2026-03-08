@@ -1,9 +1,11 @@
 /**
  * GET /api/deals?lat=&lng=&radius= — best beers near me right now (value by yg_per_dollar)
+ * Phase 4.1: response includes truncated and pagination when results are capped.
  */
 const express = require('express');
 
 const DEFAULT_RADIUS = 5000;
+const DEALS_RESPONSE_LIMIT = 100;
 
 module.exports = function (opts) {
   const { rest } = opts;
@@ -89,7 +91,13 @@ module.exports = function (opts) {
         });
       }
       deals.sort((a, b) => (b.yg_per_dollar || 0) - (a.yg_per_dollar || 0));
-      res.json({ data: deals });
+      const truncated = deals.length > DEALS_RESPONSE_LIMIT;
+      const data = deals.slice(0, DEALS_RESPONSE_LIMIT);
+      res.json({
+        data,
+        truncated,
+        pagination: { limit: DEALS_RESPONSE_LIMIT, offset: 0, total: data.length },
+      });
     } catch (e) {
       next(e);
     }
