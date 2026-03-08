@@ -2,6 +2,7 @@
 -- Resolves: FE-I-03, FE-I-04, INT-09
 -- Adds destination metadata so frontend can navigate on notification press.
 -- Existing notifications keep NULL target fields (backward compatible).
+-- NOTE: Use p_user_id uuid to match Phase 2.10 signature so REPLACE works.
 
 --------------------------------------------------------------------------------
 -- 1. Add target_type and target_id to tab_notifications
@@ -25,11 +26,10 @@ COMMENT ON COLUMN tab_notifications.target_id IS
   'Phase 3.4: Destination entity id for navigation (e.g. submission id for beer, user id for tabs_profile).';
 
 --------------------------------------------------------------------------------
--- 2. Update insert_scheduler_notification to accept target_type/target_id
--- Backward compatible: new params default to NULL.
+-- 2. Replace insert_scheduler_notification (same arg types as Phase 2.10 + optional target_type/target_id)
 --------------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION insert_scheduler_notification(
-    p_user_id           text,
+    p_user_id           uuid,
     p_notification_type text,
     p_title             text,
     p_message           text,
@@ -54,5 +54,5 @@ BEGIN
 END;
 $$;
 
-COMMENT ON FUNCTION insert_scheduler_notification IS
+COMMENT ON FUNCTION insert_scheduler_notification(uuid, text, text, text, timestamptz, text, text) IS
   'Phase 2.10 + 3.4: Scheduler notification insert with dedupe. Optional target_type/target_id for notification action contract.';
