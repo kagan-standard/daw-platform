@@ -2500,6 +2500,12 @@ Mobile aliases: `notifications` mirrors `data`, and `unread_count` mirrors `meta
 - **Auth:** `authMiddleware` (required)
 - **File:** `routes/tabs.js`
 
+**Query Params:**
+
+| Param | Type | Required | Notes |
+|-------|------|----------|-------|
+| `user_id` | string | no | Optional target profile user id. Defaults to authenticated user. |
+
 **Success Response (200):**
 
 ```json
@@ -2510,6 +2516,7 @@ Mobile aliases: `notifications` mirrors `data`, and `unread_count` mirrors `meta
       "achievement_id": "uuid",
       "key": "string",
       "name": "string",
+      "tier": "easy | medium | hard | string | null",
       "description": "string",
       "reward_tabs": 0,
       "earned_at": "ISO8601 | null",
@@ -2518,6 +2525,8 @@ Mobile aliases: `notifications` mirrors `data`, and `unread_count` mirrors `meta
   ]
 }
 ```
+
+When `user_id` differs from the authenticated user, response remains the same shape but returns only public achievement metadata for that profile's unlocked achievements (for example `name`, `icon_url`, `tier`). In that foreign-profile mode, `earned_at` is returned as `null`.
 
 ---
 

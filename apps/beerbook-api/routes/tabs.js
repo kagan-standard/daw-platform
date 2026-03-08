@@ -156,13 +156,18 @@ module.exports = function tabsRoutes(opts) {
     };
   }
 
-  // GET /api/achievements — unlocked achievements for current user (Keycloak sub)
+  // GET /api/achievements — unlocked achievements (optionally scoped by user_id)
   router.get('/achievements', authMiddleware, async (req, res, next) => {
     try {
-      const userId = encodeURIComponent(req.claims.sub);
+      const requesterUserId = String(req.claims?.sub || '').trim();
+      if (!requesterUserId) return res.status(400).json({ error: 'Missing user id' });
+      const requestedUserId = String(req.query?.user_id || '').trim();
+      const targetUserIdRaw = requestedUserId || requesterUserId;
+      const targetUserId = encodeURIComponent(targetUserIdRaw);
+      const isForeignProfile = targetUserIdRaw !== requesterUserId;
       const uaRes = await rest(
         'GET',
-        `/user_achievements?user_id=eq.${userId}&select=achievement_id,unlocked_at&order=unlocked_at.desc`
+        `/user_achievements?user_id=eq.${targetUserId}&select=achievement_id,unlocked_at&order=unlocked_at.desc`
       );
       if (uaRes.status >= 400) return res.status(uaRes.status).json(uaRes.body || { error: 'Upstream error' });
       const rows = Array.isArray(uaRes.body) ? uaRes.body : [];
@@ -171,7 +176,7 @@ module.exports = function tabsRoutes(opts) {
       const idList = ids.map((id) => encodeURIComponent(id)).join(',');
       const aRes = await rest(
         'GET',
-        `/achievements?id=in.(${idList})&select=id,key,name,description,reward_tabs,category_key`
+        `/achievements?id=in.(${idList})&select=id,key,name,description,reward_tabs,category_key,difficulty`
       );
       if (aRes.status >= 400) return res.status(aRes.status).json(aRes.body || { error: 'Upstream error' });
       const achievements = Array.isArray(aRes.body) ? aRes.body : [];
@@ -196,9 +201,10 @@ module.exports = function tabsRoutes(opts) {
           achievement_id: a.id,
           key: a.key,
           name: a.name,
+          tier: a.difficulty || null,
           description: a.description || '',
           reward_tabs: Number(a.reward_tabs) || 0,
-          earned_at: row.unlocked_at || null,
+          earned_at: isForeignProfile ? null : (row.unlocked_at || null),
           icon_url: iconByCategory[a.category_key] || null,
         };
       }).filter(Boolean);

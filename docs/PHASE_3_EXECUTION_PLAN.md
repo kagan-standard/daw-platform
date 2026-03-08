@@ -323,27 +323,27 @@ graph TD
 
 ### 3.7 -- Fix Achievement Labels on Foreign Profiles
 
-- **Repo:** Coordinated (backend-first recommended; frontend-only interim available)
-- **Designation:** Backend-first (Option A) or Frontend-only (Option B)
+- **Repo:** Coordinated (backend-first)
+- **Designation:** Backend-first, then frontend. **Chosen approach: Option A** (user-scoped achievements endpoint + frontend consumption).
 - **Root cause:** INT-04 -- `UserProfileScreen` renders other users' ratings with achievement badges, but labels are hydrated from `useUnlockedAchievements()` which returns the current viewer's achievements. Badges show incorrect names/icons on foreign profiles.
 - **Issues resolved:** FE-G-02 (Medium), INT-04 (Medium)
 - **Files:**
-  - Backend (Option A): achievement query endpoint
+  - Backend: achievements route (e.g. `routes/achievements.js` or equivalent)
   - Frontend: [screens/profile/UserProfileScreen.tsx](screens/profile/UserProfileScreen.tsx), [hooks/useAchievements.ts](hooks/useAchievements.ts)
 - **Action:**
-  - **Option A (recommended -- backend-first):**
-    - Backend: Add `GET /api/achievements?user_id=:userId` query parameter support to existing achievements endpoint. When `user_id` differs from authenticated user, return public achievement metadata (name, icon, tier) without granting any data.
-    - Frontend: In `UserProfileScreen`, when viewing another user's profile, call `useAchievements(profileUserId)` instead of `useUnlockedAchievements()` (which is implicitly current-user-scoped).
-  - **Option B (interim -- frontend-only):**
-    - Frontend: Remove achievement labels from other users' rating cards until a user-scoped endpoint exists. Show achievement badge placeholder or omit entirely.
-    - No backend changes required.
-  - **Product decision required:** Option A is more complete but requires backend work. Option B ships faster and avoids showing incorrect data.
-- **Contract/doc update:** If Option A: document `user_id` query parameter on achievements endpoint. If Option B: document decision to defer foreign-profile achievements.
+  - **Backend (first):**
+    - Add `GET /api/achievements?user_id=:userId` query parameter support to the existing achievements endpoint. When `user_id` is present and differs from the authenticated user, return **public** achievement metadata only (name, icon, tier, achievement id) for that user -- no grant or privilege data. When `user_id` is omitted or equals the current user, keep existing behavior (current-user achievements).
+  - **Frontend (after backend ships):**
+    - **User-scoped achievements hook:** Extend [hooks/useAchievements.ts](hooks/useAchievements.ts) to accept an optional `userId` (e.g. `useAchievements(userId)` or `useUserAchievements(userId)`). When `userId` is passed, call the backend with `user_id=userId`; when omitted, use existing current-user behavior. Reuse the same achievement metadata shape so badge/label components work for both.
+    - **UserProfileScreen:** In [screens/profile/UserProfileScreen.tsx](screens/profile/UserProfileScreen.tsx), when the profile being viewed is **another user** (`profileUserId !== currentUser.id`), call the achievements hook with that user's id (e.g. `useAchievements(profileUserId)`) and pass that data as the source for achievement labels on rating cards. When viewing **own profile**, keep using existing current-user achievements (e.g. `useUnlockedAchievements()` or `useAchievements()` with no args).
+    - **Rating cards on foreign profile:** Ensure achievement labels on rating cards in the profile feed use the **profile owner's** achievement set (from the user-scoped query), not the viewer's. No change to rating card component contract if it already receives an achievement map/lookup.
+    - **Edge cases:** While user-scoped achievements are loading, hide achievement labels or show a neutral placeholder (do not fall back to viewer's data). On error or empty response, show no labels for that profile's ratings.
+- **Contract/doc update:** Document `user_id` query parameter on the achievements endpoint and the public response shape for foreign-user requests.
 - **Validation:**
-  - Test (Option A): viewing user B's profile shows user B's achievement labels (not viewer's)
-  - Test (Option A): viewing own profile still shows own achievements
-  - Test (Option B): viewing user B's profile shows no achievement labels
+  - Test: viewing user B's profile shows user B's achievement labels (not viewer's)
+  - Test: viewing own profile still shows own achievements (unchanged behavior)
   - Test: no achievement data cross-contamination between profiles
+  - Test: loading/error states on foreign profile do not show viewer's achievements
   - Regression: own profile achievement display unchanged
 
 ---
@@ -357,7 +357,7 @@ Batch 1 (parallel tracks, no cross-repo coordination):
 
 Batch 2 (backend-first, then frontend):
   3.4: Backend schema migration → Frontend notification UX
-  3.7: Backend endpoint (Option A) → Frontend consumption (or Frontend-only Option B)
+  3.7: Backend endpoint (user_id param) → Frontend user-scoped hook + UserProfileScreen (Option A)
 ```
 
 ---
@@ -397,10 +397,11 @@ Batch 2 (backend-first, then frontend):
 - All pull-to-refresh surfaces show spinner during refetch
 - Spinner disappears when all queries complete
 
-**Achievement Labels (3.7):**
+**Achievement Labels (3.7, Option A):**
 
-- Foreign profiles show correct user's achievement data (Option A) or no achievement data (Option B)
+- Foreign profiles show the profile owner's achievement labels (from user-scoped achievements API)
 - Own profile unchanged
+- Loading/error on foreign profile do not show viewer's data
 
 **Error UX (3.8):**
 
@@ -437,7 +438,7 @@ Batch 2 (backend-first, then frontend):
 
 **Coordinated items:** 3.4 (Notifications) and 3.7 (Achievement Labels) are the only items requiring cross-repo work. Both are backend-first: backend ships schema/endpoint changes, frontend follows. If backend work is delayed, the frontend portions can be deferred without blocking Batch 1.
 
-**3.7 product decision:** Option A (backend endpoint) vs Option B (frontend-only interim removal). Recommend Option A for completeness, but Option B eliminates incorrect data display immediately with zero backend effort.
+**3.7 (Option A chosen):** Backend implements user-scoped achievements endpoint; frontend adds user-scoped hook and uses it in UserProfileScreen for foreign profiles only.
 
 **3.3 cross-repo impact:** Venue validation tightening (radius clamping, coordinate validation) may surface new 400 errors for edge-case frontend inputs. These are correct rejections. No frontend code changes are required, but verify the venue search and create flows handle 400 responses gracefully (error states should already exist from general error handling).
 
