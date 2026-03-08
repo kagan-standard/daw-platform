@@ -1268,11 +1268,11 @@ app.post('/api/ratings', authMiddleware, async (req, res) => {
   }
   const ygValue = b.yg_value ?? b.ygValue ?? null;
   // Keep this range in sync with DB constraint `ratings_yg_value_check`.
-  // Supabase migration: `supabase/migrations/20260306000000_update_ratings_yg_value_check.sql`.
+  // Supabase migration: `supabase/migrations/20260310100000_ratings_yg_value_1_12.sql`.
   if (ygValue != null) {
     const yg = Number(ygValue);
-    if (!Number.isFinite(yg) || yg < 0 || yg > 12 || !Number.isInteger(yg)) {
-      return res.status(400).json({ error: 'yg_value must be an integer between 0 and 12' });
+    if (!Number.isFinite(yg) || yg < 1 || yg > 12 || !Number.isInteger(yg)) {
+      return res.status(400).json({ error: 'yg_value must be an integer between 1 and 12' });
     }
   }
   const lat = b.latitude ?? b.lat;
