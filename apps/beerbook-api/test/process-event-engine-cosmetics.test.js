@@ -75,16 +75,8 @@ test('rating_award refreshes streak cache even when weekly cap blocks tabs award
   const rest = async (method, path, opts = {}) => {
     calls.push({ method, path, opts });
 
-    if (
-      method === 'GET' &&
-      path.startsWith('/tabs_ledger?user_id=eq.user-123&event_type=eq.rating_award&created_at=gte.') &&
-      path.endsWith('&select=id')
-    ) {
-      return {
-        status: 200,
-        body: [],
-        headers: { 'content-range': '0-0/10' },
-      };
+    if (method === 'POST' && path === '/rpc/award_rating_tabs_with_cap') {
+      return { status: 200, body: 0 };
     }
 
     if (method === 'POST' && path === '/rpc/refresh_rating_award_profile_cache') {
@@ -117,7 +109,8 @@ test('rating_award refreshes streak cache even when weekly cap blocks tabs award
   assert.equal(result.current_streak_weeks, 5);
   assert.equal(result.longest_streak_weeks, 7);
 
-  assert.equal(calls.some((call) => call.path === '/tabs_ledger'), false);
+  const capRpc = calls.find((call) => call.path === '/rpc/award_rating_tabs_with_cap');
+  assert.ok(capRpc, 'expected award_rating_tabs_with_cap RPC (returns 0 when at cap)');
   const rpcCall = calls.find((call) => call.path === '/rpc/refresh_rating_award_profile_cache');
   assert.ok(rpcCall, 'expected profile cache refresh RPC');
   assert.deepEqual(JSON.parse(rpcCall.opts?.body || '{}'), {

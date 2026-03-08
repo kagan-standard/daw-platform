@@ -76,24 +76,6 @@ function getCurrentWeekStartUtc(): string {
   return d.toISOString();
 }
 
-/**
- * Count rating_award rows in tabs_ledger for user in current week (Monday 00:00 UTC).
- */
-async function countRatingAwardsThisWeek(
-  admin: ReturnType<typeof createClient>,
-  userId: string
-): Promise<number> {
-  const weekStart = getCurrentWeekStartUtc();
-  const { count, error } = await admin
-    .from("tabs_ledger")
-    .select("id", { count: "exact", head: true })
-    .eq("user_id", userId)
-    .eq("event_type", "rating_award")
-    .gte("created_at", weekStart);
-  if (error) return 999;
-  return count ?? 0;
-}
-
 async function refreshUserTabsProfileAfterRatingAward(
   admin: ReturnType<typeof createClient>,
   userId: string,
@@ -114,7 +96,8 @@ async function refreshUserTabsProfileAfterRatingAward(
 }
 
 /**
- * Rating award: enforce weekly cap (10), then insert one ledger row. Idempotent by event_id.
+ * Rating award: enforce weekly cap via atomic RPC (Phase 3.1). Idempotent by event_id.
+ * Applied in both Node and Edge runtimes for parity.
  */
 async function processRatingAward(
   admin: ReturnType<typeof createClient>,
@@ -130,25 +113,17 @@ async function processRatingAward(
     return { amount: 0, ...streaks };
   }
 
-  let awardedAmount = amount;
-
-  if (!isAdminUser(userId)) {
-    const count = await countRatingAwardsThisWeek(admin, userId);
-    if (count >= 10) awardedAmount = 0;
-  }
-
-  if (awardedAmount > 0) {
-    const { error } = await admin.from("tabs_ledger").insert({
-      event_id: eventId,
-      user_id: userId,
-      event_type: "rating_award",
-      amount: awardedAmount,
-      breakdown: breakdown,
-      context: context,
-    });
-    if (error?.code === "23505") awardedAmount = 0;
-    else if (error) throw new Error(`tabs_ledger insert: ${error.message}`);
-  }
+  const weeklyCap = isAdminUser(userId) ? 99999 : 10;
+  const { data, error } = await admin.rpc("award_rating_tabs_with_cap", {
+    p_user_id: userId,
+    p_amount: amount,
+    p_weekly_cap: weeklyCap,
+    p_event_id: eventId,
+    p_breakdown: breakdown,
+    p_context: context,
+  });
+  if (error) throw new Error(`award_rating_tabs_with_cap: ${error.message}`);
+  const awardedAmount = typeof data === "number" ? data : 0;
 
   const streaks = await refreshUserTabsProfileAfterRatingAward(admin, userId, awardedAmount);
   return { amount: awardedAmount, ...streaks };

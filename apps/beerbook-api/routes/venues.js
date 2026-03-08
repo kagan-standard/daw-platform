@@ -144,23 +144,17 @@ module.exports = function (opts) {
       .catch(next);
   });
 
-  // POST /api/venues/:id/prices/:priceId/confirm
+  // POST /api/venues/:id/prices/:priceId/confirm (Phase 3.1: atomic RPC)
   router.post('/:id/prices/:priceId/confirm', opts.authMiddleware, (req, res, next) => {
-    const priceId = encodeURIComponent(req.params.priceId);
-    rest('GET', `/price_logs?id=eq.${priceId}&limit=1`)
+    const priceId = req.params.priceId;
+    const venueId = req.params.id;
+    rest('POST', '/rpc/confirm_venue_price', {
+      body: JSON.stringify({ p_price_id: priceId, p_venue_id: venueId }),
+    })
       .then(({ status, body }) => {
-        if (status >= 400 || !Array.isArray(body) || body.length === 0) {
-          return res.status(404).json({ error: 'Price log not found' });
-        }
-        const row = body[0];
-        const newCount = (row.confirmed_count || 1) + 1;
-        return rest('PATCH', `/price_logs?id=eq.${priceId}`, {
-          body: JSON.stringify({ confirmed_count: newCount, last_confirmed_at: new Date().toISOString() }),
-        });
-      })
-      .then((patch) => {
-        if (!patch) return;
-        if (patch.status >= 400) return res.status(patch.status).json(patch.body || { error: 'Update failed' });
+        if (status >= 400) return res.status(status).json(body || { error: 'Upstream error' });
+        const rows = Array.isArray(body) ? body : [];
+        if (rows.length === 0) return res.status(404).json({ error: 'Price log not found' });
         res.json({ ok: true });
       })
       .catch(next);
@@ -205,23 +199,17 @@ module.exports = function (opts) {
       .catch(next);
   });
 
-  // POST/PATCH /api/venues/:id/happy-hours/:hhId/confirm
+  // POST/PATCH /api/venues/:id/happy-hours/:hhId/confirm (Phase 3.1: atomic RPC)
   const confirmHappyHourHandler = (req, res, next) => {
-    const hhId = encodeURIComponent(req.params.hhId);
-    rest('GET', `/happy_hours?id=eq.${hhId}&limit=1`)
+    const hhId = req.params.hhId;
+    const venueId = req.params.id;
+    rest('POST', '/rpc/confirm_happy_hour', {
+      body: JSON.stringify({ p_hh_id: hhId, p_venue_id: venueId }),
+    })
       .then(({ status, body }) => {
-        if (status >= 400 || !Array.isArray(body) || body.length === 0) {
-          return res.status(404).json({ error: 'Happy hour not found' });
-        }
-        const row = body[0];
-        const newCount = (row.confirmed_count || 1) + 1;
-        return rest('PATCH', `/happy_hours?id=eq.${hhId}`, {
-          body: JSON.stringify({ confirmed_count: newCount, last_confirmed_at: new Date().toISOString() }),
-        });
-      })
-      .then((patch) => {
-        if (!patch) return;
-        if (patch.status >= 400) return res.status(patch.status).json(patch.body || { error: 'Update failed' });
+        if (status >= 400) return res.status(status).json(body || { error: 'Upstream error' });
+        const rows = Array.isArray(body) ? body : [];
+        if (rows.length === 0) return res.status(404).json({ error: 'Happy hour not found' });
         res.json({ ok: true });
       })
       .catch(next);

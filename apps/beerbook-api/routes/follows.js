@@ -41,7 +41,7 @@ module.exports = function (opts) {
   const { rest, authMiddleware, totalFromContentRange } = opts;
   const router = express.Router();
 
-  // POST /api/follows/:userId -> toggle follow
+  // POST /api/follows/:userId -> toggle follow (Phase 3.1: atomic RPC)
   router.post('/follows/:userId', authMiddleware, async (req, res, next) => {
     try {
       const me = req.claims.sub;
@@ -49,31 +49,15 @@ module.exports = function (opts) {
       if (!target) return res.status(400).json({ error: 'Target user is required' });
       if (target === me) return res.status(400).json({ error: 'Cannot follow yourself' });
 
-      const existsRes = await rest(
-        'GET',
-        `/follows?follower_id=eq.${encodeURIComponent(me)}&followed_id=eq.${encodeURIComponent(target)}&limit=1`
-      );
-      if (existsRes.status >= 400) {
-        return res.status(existsRes.status).json(existsRes.body || { error: 'Upstream error' });
-      }
-      const exists = Array.isArray(existsRes.body) && existsRes.body.length > 0;
-      if (exists) {
-        const delRes = await rest(
-          'DELETE',
-          `/follows?follower_id=eq.${encodeURIComponent(me)}&followed_id=eq.${encodeURIComponent(target)}`
-        );
-        if (delRes.status >= 400) return res.status(502).json({ error: 'Unfollow failed' });
-        return res.json({ following: false, is_following: false });
-      }
-
-      const insertRes = await rest('POST', '/follows', {
-        headers: { Prefer: 'return=representation' },
-        body: JSON.stringify({ follower_id: me, followed_id: target }),
+      const rpcRes = await rest('POST', '/rpc/toggle_follow', {
+        body: JSON.stringify({ p_follower_id: me, p_following_id: target }),
       });
-      if (insertRes.status >= 400) {
-        return res.status(insertRes.status).json(insertRes.body || { error: 'Follow failed' });
+      if (rpcRes.status >= 400) {
+        return res.status(rpcRes.status).json(rpcRes.body || { error: 'Upstream error' });
       }
-      return res.json({ following: true, is_following: true });
+      const result = rpcRes.body && typeof rpcRes.body === 'object' ? rpcRes.body : {};
+      const following = result.following === true;
+      return res.json({ following, is_following: following });
     } catch (e) {
       next(e);
     }

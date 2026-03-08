@@ -52,20 +52,8 @@ function isConflict(res) {
 }
 
 /**
- * Count rating_award rows in tabs_ledger for user in current week (Monday 00:00 UTC).
- */
-async function countRatingAwardsThisWeek(rest, totalFromContentRange, userId) {
-  const weekStart = getCurrentWeekStartUtc();
-  const enc = encodeURIComponent;
-  const res = await rest('GET', `/tabs_ledger?user_id=eq.${enc(userId)}&event_type=eq.rating_award&created_at=gte.${enc(weekStart)}&select=id`, {
-    headers: { Prefer: 'count=exact' },
-  });
-  if (res.status >= 400) return 999;
-  return totalFromContentRange(res.headers['content-range']) ?? 0;
-}
-
-/**
- * Rating award: enforce weekly cap (10), then insert one ledger row. Idempotent by event_id.
+ * Rating award: enforce weekly cap via atomic RPC (Phase 3.1). Idempotent by event_id.
+ * Applied in both Node and Edge runtimes for parity; admin uses high cap.
  */
 async function processRatingAward(rest, totalFromContentRange, userId, eventId, payload) {
   const breakdown = payload.breakdown ?? {};
@@ -90,27 +78,19 @@ async function processRatingAward(rest, totalFromContentRange, userId, eventId, 
     };
   }
 
-  let awardedAmount = amount;
-  const skipWeeklyCap = isAdminUser(userId);
-  if (!skipWeeklyCap) {
-    const count = await countRatingAwardsThisWeek(rest, totalFromContentRange, userId);
-    if (count >= 10) awardedAmount = 0;
-  }
-
-  if (awardedAmount > 0) {
-    const res = await rest('POST', '/tabs_ledger', {
-      body: JSON.stringify({
-        event_id: eventId,
-        user_id: userId,
-        event_type: 'rating_award',
-        amount: awardedAmount,
-        breakdown,
-        context,
-      }),
-    });
-    if (isConflict(res)) awardedAmount = 0;
-    else if (res.status >= 400) throw new Error(`tabs_ledger insert: ${(res.body && res.body.message) || res.status}`);
-  }
+  const weeklyCap = isAdminUser(userId) ? 99999 : 10;
+  const res = await rest('POST', '/rpc/award_rating_tabs_with_cap', {
+    body: JSON.stringify({
+      p_user_id: userId,
+      p_amount: amount,
+      p_weekly_cap: weeklyCap,
+      p_event_id: eventId,
+      p_breakdown: breakdown,
+      p_context: context,
+    }),
+  });
+  if (res.status >= 400) throw new Error(`award_rating_tabs_with_cap: ${(res.body && res.body.message) || res.status}`);
+  const awardedAmount = typeof res.body === 'number' ? res.body : 0;
 
   const streaks = await refreshUserTabsProfileAfterRatingAward(awardedAmount);
   return { amount: awardedAmount, ...streaks };

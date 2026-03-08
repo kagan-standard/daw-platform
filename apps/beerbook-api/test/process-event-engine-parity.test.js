@@ -53,18 +53,15 @@ function assertCanonicalShape(result, label) {
   );
 }
 
-// ---------- rating_award: normal award under cap ----------
+// ---------- rating_award: normal award under cap (Phase 3.1: uses award_rating_tabs_with_cap RPC) ----------
 
 test('parity: rating_award under cap returns streak fields and canonical shape', async () => {
   const calls = [];
   const rest = async (method, path, opts = {}) => {
     calls.push({ method, path, opts });
 
-    if (method === 'GET' && path.includes('/tabs_ledger?') && path.includes('event_type=eq.rating_award')) {
-      return { status: 200, body: [], headers: { 'content-range': '0-0/3' } };
-    }
-    if (method === 'POST' && path === '/tabs_ledger') {
-      return { status: 201, body: [{ id: 'ledger-1' }] };
+    if (method === 'POST' && path === '/rpc/award_rating_tabs_with_cap') {
+      return { status: 200, body: 9 };
     }
     if (method === 'POST' && path === '/rpc/refresh_rating_award_profile_cache') {
       return { status: 200, body: [{ current_streak_weeks: 4, longest_streak_weeks: 8 }] };
@@ -89,6 +86,13 @@ test('parity: rating_award under cap returns streak fields and canonical shape',
   assert.equal(result.current_streak_weeks, 4);
   assert.equal(result.longest_streak_weeks, 8);
 
+  const capRpc = calls.find((c) => c.path === '/rpc/award_rating_tabs_with_cap');
+  assert.ok(capRpc, 'must call award_rating_tabs_with_cap');
+  const capBody = JSON.parse(capRpc.opts.body);
+  assert.equal(capBody.p_user_id, 'user-42');
+  assert.equal(capBody.p_amount, 9);
+  assert.equal(capBody.p_weekly_cap, 10);
+
   const rpcCall = calls.find((c) => c.path === '/rpc/refresh_rating_award_profile_cache');
   assert.ok(rpcCall, 'must call refresh_rating_award_profile_cache');
   const rpcBody = JSON.parse(rpcCall.opts.body);
@@ -96,15 +100,15 @@ test('parity: rating_award under cap returns streak fields and canonical shape',
   assert.equal(rpcBody.p_tabs_delta, 9);
 });
 
-// ---------- rating_award: cap reached, zero award, still calls RPC ----------
+// ---------- rating_award: cap reached, zero award, still calls RPC (Phase 3.1: RPC returns 0) ----------
 
 test('parity: rating_award at weekly cap still calls RPC and returns streak fields', async () => {
   const calls = [];
   const rest = async (method, path, opts = {}) => {
     calls.push({ method, path, opts });
 
-    if (method === 'GET' && path.includes('/tabs_ledger?') && path.includes('event_type=eq.rating_award')) {
-      return { status: 200, body: [], headers: { 'content-range': '0-0/10' } };
+    if (method === 'POST' && path === '/rpc/award_rating_tabs_with_cap') {
+      return { status: 200, body: 0 };
     }
     if (method === 'POST' && path === '/rpc/refresh_rating_award_profile_cache') {
       return { status: 200, body: [{ current_streak_weeks: 2, longest_streak_weeks: 5 }] };
@@ -132,22 +136,19 @@ test('parity: rating_award at weekly cap still calls RPC and returns streak fiel
   assert.ok(rpcCall, 'must call refresh_rating_award_profile_cache even at cap');
   assert.equal(JSON.parse(rpcCall.opts.body).p_tabs_delta, 0);
 
-  const ledgerInsert = calls.find((c) => c.method === 'POST' && c.path === '/tabs_ledger');
-  assert.equal(ledgerInsert, undefined, 'no tabs_ledger insert when at cap');
+  const capRpc = calls.find((c) => c.path === '/rpc/award_rating_tabs_with_cap');
+  assert.ok(capRpc, 'must call award_rating_tabs_with_cap (RPC returns 0 when at cap)');
 });
 
-// ---------- rating_award: idempotent (conflict) still calls RPC ----------
+// ---------- rating_award: idempotent (RPC returns 0 on duplicate event_id) ----------
 
 test('parity: rating_award idempotent replay (conflict) still calls RPC', async () => {
   const calls = [];
   const rest = async (method, path, opts = {}) => {
     calls.push({ method, path, opts });
 
-    if (method === 'GET' && path.includes('/tabs_ledger?') && path.includes('event_type=eq.rating_award')) {
-      return { status: 200, body: [], headers: { 'content-range': '0-0/5' } };
-    }
-    if (method === 'POST' && path === '/tabs_ledger') {
-      return { status: 409, body: { code: '23505', message: 'duplicate' } };
+    if (method === 'POST' && path === '/rpc/award_rating_tabs_with_cap') {
+      return { status: 200, body: 0 };
     }
     if (method === 'POST' && path === '/rpc/refresh_rating_award_profile_cache') {
       return { status: 200, body: [{ current_streak_weeks: 3, longest_streak_weeks: 3 }] };
@@ -167,7 +168,7 @@ test('parity: rating_award idempotent replay (conflict) still calls RPC', async 
   );
 
   assertCanonicalShape(result, 'rating_award conflict');
-  assert.equal(result.tabs_delta, 0, 'conflict means zero delta');
+  assert.equal(result.tabs_delta, 0, 'duplicate event_id means zero delta');
   assert.equal(result.current_streak_weeks, 3);
   assert.equal(result.longest_streak_weeks, 3);
 });

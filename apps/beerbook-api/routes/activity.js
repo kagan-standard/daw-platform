@@ -368,33 +368,23 @@ module.exports = function (opts) {
       .catch(next);
   });
 
-  // POST /api/ratings/:id/cheers — toggle (insert or delete)
+  // POST /api/ratings/:id/cheers — toggle (Phase 3.1: atomic RPC)
   router.post('/ratings/:id/cheers', opts.authMiddleware, async (req, res, next) => {
     try {
-      const ratingId = encodeURIComponent(req.params.id);
+      const ratingId = req.params.id;
       const { sub } = req.claims;
-      const { status: getStatus, body: existing } = await rest('GET', `/reactions?rating_id=eq.${ratingId}&user_id=eq.${encodeURIComponent(sub)}&reaction_type=eq.cheers&limit=1`);
-      if (getStatus >= 400) return res.status(getStatus).json(existing || { error: 'Upstream error' });
-      const found = Array.isArray(existing) && existing.length > 0;
-      if (found) {
-        const { status: delStatus } = await rest('DELETE', `/reactions?rating_id=eq.${ratingId}&user_id=eq.${encodeURIComponent(sub)}&reaction_type=eq.cheers`);
-        if (delStatus >= 400) return res.status(502).json({ error: 'Delete failed' });
-        const countRes = await rest('GET', `/reactions?rating_id=eq.${ratingId}&select=id`, { headers: { Prefer: 'count=exact' } });
-        const count = opts.totalFromContentRange(countRes.headers['content-range']) ?? 0;
-        return res.json({
-          action: 'removed',
-          count,
-          cheers_count: count,
-          user_cheered: false,
-        });
-      } else {
-        const record = { rating_id: req.params.id, user_id: sub, reaction_type: 'cheers' };
-        const { status: postStatus, body } = await rest('POST', '/reactions', { headers: { Prefer: 'return=representation' }, body: JSON.stringify(record) });
-        if (postStatus >= 400) return res.status(postStatus).json(body || { error: 'Insert failed' });
-        const ratingOut = await rest('GET', `/ratings?id=eq.${ratingId}&select=id,user_id&limit=1`);
+      const rpcRes = await rest('POST', '/rpc/toggle_cheers', {
+        body: JSON.stringify({ p_rating_id: ratingId, p_user_id: sub }),
+      });
+      if (rpcRes.status >= 400) return res.status(rpcRes.status).json(rpcRes.body || { error: 'Upstream error' });
+      const result = rpcRes.body && typeof rpcRes.body === 'object' ? rpcRes.body : {};
+      const cheered = result.cheered === true;
+      const cheersCount = typeof result.cheers_count === 'number' ? result.cheers_count : 0;
+
+      if (cheered) {
+        const ratingOut = await rest('GET', `/ratings?id=eq.${encodeURIComponent(ratingId)}&select=id,user_id&limit=1`);
         const rating = ratingOut.status < 400 && Array.isArray(ratingOut.body) && ratingOut.body[0] ? ratingOut.body[0] : null;
         const receiverUserId = rating && rating.user_id ? rating.user_id : null;
-
         if (receiverUserId) {
           await ensureProfileExists(rest, sub, req.claims.preferred_username, req.claims.email);
           await ensureProfileExists(rest, receiverUserId);
@@ -423,16 +413,14 @@ module.exports = function (opts) {
             throw err;
           }
         }
-
-        const countRes = await rest('GET', `/reactions?rating_id=eq.${ratingId}&select=id`, { headers: { Prefer: 'count=exact' } });
-        const count = opts.totalFromContentRange(countRes.headers['content-range']) ?? 1;
-        res.json({
-          action: 'added',
-          count,
-          cheers_count: count,
-          user_cheered: true,
-        });
       }
+
+      res.json({
+        action: cheered ? 'added' : 'removed',
+        count: cheersCount,
+        cheers_count: cheersCount,
+        user_cheered: cheered,
+      });
     } catch (e) {
       next(e);
     }

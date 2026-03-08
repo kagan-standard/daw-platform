@@ -987,7 +987,7 @@ module.exports = function tabsRoutes(opts) {
     }
   });
 
-  // POST /api/admin/tabs/users/:userId/adjust
+  // POST /api/admin/tabs/users/:userId/adjust (Phase 3.1: atomic RPC)
   router.post('/admin/tabs/users/:userId/adjust', authMiddleware, adminMiddleware, async (req, res, next) => {
     try {
       const userId = req.params.userId;
@@ -996,42 +996,22 @@ module.exports = function tabsRoutes(opts) {
       if (!Number.isInteger(amount) || amount === 0) return res.status(400).json({ error: 'amount must be a non-zero integer' });
       if (!reason) return res.status(400).json({ error: 'reason is required' });
 
-      const profile = await ensureUserTabsProfile(rest, userId);
       const requestedEventId = String(req.body?.event_id || '').trim();
       const eventId = UUID_REGEX.test(requestedEventId) ? requestedEventId : crypto.randomUUID();
-      const insert = await rest('POST', '/tabs_ledger', {
+      const rpcRes = await rest('POST', '/rpc/award_tabs', {
         body: JSON.stringify({
-          event_id: eventId,
-          user_id: userId,
-          event_type: 'admin_grant',
-          amount,
-          breakdown: {
-            base_amount: Math.abs(amount),
-            tier_multiplier: 1.0,
-            seeder_multiplier: 1.0,
-          },
-          context: {
-            admin_user_id: req.claims.sub,
-            reason,
-          },
+          p_user_id: userId,
+          p_amount: amount,
+          p_reason: reason,
+          p_admin_user_id: req.claims.sub,
+          p_event_id: eventId,
         }),
       });
-      if (insert.status >= 400 && !isIdempotentConflict(insert)) {
-        return res.status(insert.status).json(insert.body || { error: 'Transaction insert failed' });
-      }
+      if (rpcRes.status >= 400) return res.status(rpcRes.status).json(rpcRes.body || { error: 'Award failed' });
 
-      let row = profile;
-      const shouldIncrementLifetime = amount > 0 && !isIdempotentConflict(insert);
-      if (shouldIncrementLifetime) {
-        const out = await rest('PATCH', `/user_tabs_profile?user_id=eq.${encodeURIComponent(userId)}`, {
-          headers: { Prefer: 'return=representation' },
-          body: JSON.stringify({
-            lifetime_tabs_earned: (Number(profile.lifetime_tabs_earned) || 0) + amount,
-          }),
-        });
-        if (out.status >= 400) return res.status(out.status).json(out.body || { error: 'Balance update failed' });
-        row = Array.isArray(out.body) ? out.body[0] : out.body;
-      }
+      const out = await rest('GET', `/user_tabs_profile?user_id=eq.${encodeURIComponent(userId)}&limit=1`);
+      if (out.status >= 400) return res.status(out.status).json(out.body || { error: 'Failed to fetch profile' });
+      const row = Array.isArray(out.body) && out.body[0] ? out.body[0] : null;
       res.json({ data: row });
     } catch (e) {
       next(e);
@@ -1082,39 +1062,23 @@ module.exports = function tabsRoutes(opts) {
       if (status === 'approved' && !submission.tabs_awarded) {
         const awardAmount = 3;
         const submissionEventId = UUID_REGEX.test(String(submission.id || '')) ? String(submission.id) : crypto.randomUUID();
-        const ledgerInsert = await rest('POST', '/tabs_ledger', {
+        const rpcRes = await rest('POST', '/rpc/award_tabs', {
           body: JSON.stringify({
-            event_id: submissionEventId,
-            user_id: submission.submitted_by,
-            event_type: 'admin_grant',
-            amount: awardAmount,
-            breakdown: {
-              base_amount: awardAmount,
-              tier_multiplier: 1.0,
-              seeder_multiplier: 1.0,
-            },
-            context: {
-              submission_id: submission.id,
-              admin_user_id: req.claims.sub,
-            },
+            p_user_id: submission.submitted_by,
+            p_amount: awardAmount,
+            p_reason: `Submission approved: ${submission.id}`,
+            p_admin_user_id: req.claims.sub,
+            p_event_id: submissionEventId,
           }),
         });
-        if (ledgerInsert.status >= 400 && !isIdempotentConflict(ledgerInsert)) {
-          return res.status(ledgerInsert.status).json(ledgerInsert.body || { error: 'Transaction insert failed' });
+        if (rpcRes.status >= 400) {
+          return res.status(rpcRes.status).json(rpcRes.body || { error: 'Tab award failed' });
         }
-        const insertedNewAward = !isIdempotentConflict(ledgerInsert);
-        tabsAwarded = insertedNewAward ? awardAmount : 0;
+        const payload = rpcRes.body && typeof rpcRes.body === 'object' ? rpcRes.body : {};
+        tabsAwarded = payload.inserted ? awardAmount : 0;
         await rest('PATCH', `/beer_submissions?id=eq.${encodeURIComponent(id)}`, {
           body: JSON.stringify({ tabs_awarded: true }),
         });
-        if (insertedNewAward) {
-          const profile = await ensureUserTabsProfile(rest, submission.submitted_by);
-          await rest('PATCH', `/user_tabs_profile?user_id=eq.${encodeURIComponent(submission.submitted_by)}`, {
-            body: JSON.stringify({
-              lifetime_tabs_earned: (Number(profile.lifetime_tabs_earned) || 0) + tabsAwarded,
-            }),
-          });
-        }
       }
 
       await rest('POST', '/tab_notifications', {
