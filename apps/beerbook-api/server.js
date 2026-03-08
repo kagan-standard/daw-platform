@@ -16,6 +16,7 @@ const {
 } = require('./lib/tabs');
 const { invokeProcessEvent } = require('./lib/processEvent');
 const { requireCrewMembership } = require('./lib/crewAuth');
+const { getAdminToken, createUser, getTokensForUser } = require('./lib/keycloakAdmin');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -595,6 +596,111 @@ if (process.env.INTERNAL_PROCESS_EVENT_SECRET) {
     res.status(503).json({ error: 'Internal routes disabled — INTERNAL_PROCESS_EVENT_SECRET not configured' });
   });
 }
+
+// ---------- POST /api/auth/register — public, creates Keycloak user + BeerBook profile ----------
+const registerLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  message: { error: 'rate_limited', message: 'Too many registration attempts. Please try again later.' },
+});
+
+app.post('/api/auth/register', registerLimiter, async (req, res) => {
+  try {
+    const { email, username, password, display_name } = req.body;
+
+    const fieldErrors = {};
+
+    const trimmedEmail = (email || '').trim().toLowerCase();
+    if (!trimmedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      fieldErrors.email = 'Please enter a valid email address';
+    }
+
+    const trimmedUsername = (username || '').trim().toLowerCase();
+    if (!trimmedUsername || trimmedUsername.length < 3 || trimmedUsername.length > 20) {
+      fieldErrors.username = 'Username must be 3-20 characters';
+    } else if (!/^[a-zA-Z0-9_]+$/.test(trimmedUsername)) {
+      fieldErrors.username = 'Letters, numbers, and underscores only';
+    }
+
+    if (!password || password.length < 8) {
+      fieldErrors.password = 'Password must be at least 8 characters';
+    } else if (!/(?=.*[a-zA-Z])(?=.*\d)/.test(password)) {
+      fieldErrors.password = 'Must contain at least 1 letter and 1 number';
+    }
+
+    const trimmedDisplayName = (display_name || '').trim();
+    if (trimmedDisplayName && trimmedDisplayName.length > 30) {
+      fieldErrors.display_name = 'Display name must be 30 characters or less';
+    }
+
+    if (Object.keys(fieldErrors).length > 0) {
+      return res.status(400).json({
+        error: 'validation_failed',
+        message: 'Please fix the errors below',
+        fields: fieldErrors,
+      });
+    }
+
+    const adminToken = await getAdminToken();
+    const createResult = await createUser(adminToken, {
+      email: trimmedEmail,
+      username: trimmedUsername,
+      password,
+      display_name: trimmedDisplayName || trimmedUsername,
+    });
+
+    if (createResult.error) {
+      const statusCode = createResult.error.includes('exists') ? 409 : 500;
+      return res.status(statusCode).json({
+        error: createResult.error,
+        message: createResult.message,
+      });
+    }
+
+    const effectiveDisplayName = trimmedDisplayName || trimmedUsername;
+    try {
+      await rest('POST', '/profiles', {
+        headers: {
+          'Prefer': 'resolution=merge-duplicates,return=representation',
+        },
+        body: JSON.stringify({
+          id: createResult.userId,
+          display_name: effectiveDisplayName,
+          email: trimmedEmail,
+        }),
+      });
+    } catch (profileErr) {
+      console.error('Profile creation failed (non-fatal):', profileErr.message);
+    }
+
+    const tokens = await getTokensForUser(trimmedUsername, password);
+    if (!tokens) {
+      return res.status(201).json({
+        success: true,
+        user_id: createResult.userId,
+        display_name: effectiveDisplayName,
+        auto_login: false,
+        message: 'Account created. Please sign in.',
+      });
+    }
+
+    return res.status(201).json({
+      success: true,
+      user_id: createResult.userId,
+      access_token: tokens.access_token,
+      refresh_token: tokens.refresh_token,
+      expires_in: tokens.expires_in,
+      display_name: effectiveDisplayName,
+      auto_login: true,
+    });
+  } catch (err) {
+    console.error('Registration error:', err);
+    return res.status(500).json({
+      error: 'server_error',
+      message: 'Registration failed. Please try again later.',
+    });
+  }
+});
 
 // ---------- Phase 3.2: Catalog (no auth — public catalog) ----------
 function toNumberOrNull(v) {
@@ -1668,6 +1774,46 @@ app.patch('/api/profile', authMiddleware, async (req, res) => {
   });
 });
 
+async function enrichStatsWithInferredFlavors(stats, userId) {
+  if (!stats || typeof stats !== 'object') return stats ?? {};
+  const flavors = stats.flavors;
+  const explicitEmpty = !flavors
+    || typeof flavors !== 'object'
+    || Object.values(flavors).every(v => !v || Number(v) === 0);
+
+  if (!explicitEmpty) {
+    return { ...stats, flavors_inferred: false };
+  }
+
+  try {
+    const inferRes = await rest('POST', '/rpc/compute_inferred_flavors', {
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ p_user_id: userId }),
+    });
+    if (inferRes.status < 400 && Array.isArray(inferRes.body) && inferRes.body.length > 0) {
+      const row = inferRes.body[0];
+      const hasData = Object.values(row).some(v => Number(v) > 0);
+      if (hasData) {
+        return {
+          ...stats,
+          flavors: {
+            hoppy: Number(row.hoppy),
+            malty: Number(row.malty),
+            bitter: Number(row.bitter),
+            sweet: Number(row.sweet),
+            fruity: Number(row.fruity),
+          },
+          flavors_inferred: true,
+        };
+      }
+    }
+  } catch (err) {
+    console.error('Failed to compute inferred flavors:', err);
+  }
+
+  return { ...stats, flavors_inferred: false };
+}
+
 // GET /api/stats/me — auth required, enhanced user stats (flavors, style_distribution, etc.)
 app.get('/api/stats/me', authMiddleware, async (req, res) => {
   try {
@@ -1677,7 +1823,8 @@ app.get('/api/stats/me', authMiddleware, async (req, res) => {
       body: JSON.stringify({ target_user_id: userId }),
     });
     if (status >= 400) return res.status(status).json(body || { error: 'Upstream error' });
-    res.json(body != null ? body : {});
+    const enriched = await enrichStatsWithInferredFlavors(body, userId);
+    res.json(enriched);
   } catch (err) {
     console.error('Stats error:', err);
     res.status(500).json({ error: 'Failed to fetch stats' });
@@ -1693,7 +1840,8 @@ app.get('/api/stats/:userId', async (req, res) => {
       body: JSON.stringify({ target_user_id: userId }),
     });
     if (status >= 400) return res.status(status).json(body || { error: 'Upstream error' });
-    res.json(body != null ? body : {});
+    const enriched = await enrichStatsWithInferredFlavors(body, userId);
+    res.json(enriched);
   } catch (err) {
     console.error('Stats error:', err);
     res.status(500).json({ error: 'Failed to fetch stats' });
