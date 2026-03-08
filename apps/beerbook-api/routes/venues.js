@@ -6,6 +6,7 @@ const express = require('express');
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
 const DEFAULT_RADIUS = 5000;
+const MAX_VENUE_RADIUS_M = Number(process.env.MAX_VENUE_RADIUS_M) || 50000;
 
 module.exports = function (opts) {
   const { rest, totalFromContentRange } = opts;
@@ -24,7 +25,14 @@ module.exports = function (opts) {
   router.get('/', (req, res, next) => {
     const lat = parseFloat(req.query.lat);
     const lng = parseFloat(req.query.lng);
-    const radius = parseInt(req.query.radius, 10) || DEFAULT_RADIUS;
+    const radiusRaw = req.query.radius;
+    const radiusParsed = radiusRaw != null ? parseInt(radiusRaw, 10) : NaN;
+    if (radiusRaw != null && (Number.isNaN(radiusParsed) || radiusParsed <= 0)) {
+      return res.status(400).json({ error: 'radius must be a positive number (meters)' });
+    }
+    const radius = Number.isFinite(radiusParsed)
+      ? Math.min(radiusParsed, MAX_VENUE_RADIUS_M)
+      : DEFAULT_RADIUS;
     const { limit, offset } = parsePag(req);
     if (Number.isFinite(lat) && Number.isFinite(lng)) {
       rest('POST', '/rpc/venues_within_radius', {
@@ -59,11 +67,22 @@ module.exports = function (opts) {
     if (!name || latitude == null || longitude == null) {
       return res.status(400).json({ error: 'name, latitude, and longitude required' });
     }
+    const latNum = Number(latitude);
+    const lngNum = Number(longitude);
+    if (!Number.isFinite(latNum) || !Number.isFinite(lngNum)) {
+      return res.status(400).json({ error: 'latitude and longitude must be finite numbers' });
+    }
+    if (latNum < -90 || latNum > 90) {
+      return res.status(400).json({ error: 'latitude must be between -90 and 90' });
+    }
+    if (lngNum < -180 || lngNum > 180) {
+      return res.status(400).json({ error: 'longitude must be between -180 and 180' });
+    }
     const record = {
       name,
       address: b.address ?? null,
-      latitude: Number(latitude),
-      longitude: Number(longitude),
+      latitude: latNum,
+      longitude: lngNum,
       created_by: sub,
     };
     rest('POST', '/venues', { headers: { Prefer: 'return=representation' }, body: JSON.stringify(record) })
