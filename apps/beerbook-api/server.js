@@ -1558,10 +1558,14 @@ app.post('/api/ratings', authMiddleware, async (req, res) => {
       weeklyCount = totalFromContentRange(weeklyCountRes.headers['content-range']) ?? weeklyCount;
     }
   } catch (err) {
-    if (err.status >= 400) {
-      return res.status(err.status >= 500 ? 502 : err.status).json(err.body || { error: err.message });
+    if (err.status >= 400 && err.status < 500) {
+      return res.status(err.status).json(err.body || { error: err.message });
     }
-    throw err;
+    console.error('process-event failed for rating; returning 201 with fallback tabs fields:', {
+      ratingId,
+      userId: sub,
+      error: err.message || err,
+    });
   }
 
   res.status(201).json({

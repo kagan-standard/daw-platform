@@ -92,7 +92,15 @@ async function processRatingAward(rest, totalFromContentRange, userId, eventId, 
   if (res.status >= 400) throw new Error(`award_rating_tabs_with_cap: ${(res.body && res.body.message) || res.status}`);
   const awardedAmount = typeof res.body === 'number' ? res.body : 0;
 
-  const streaks = await refreshUserTabsProfileAfterRatingAward(awardedAmount);
+  let streaks = { current_streak_weeks: 0, longest_streak_weeks: 0 };
+  try {
+    streaks = await refreshUserTabsProfileAfterRatingAward(awardedAmount);
+  } catch (refreshErr) {
+    console.error('refreshUserTabsProfileAfterRatingAward failed:', {
+      userId,
+      error: refreshErr.message || refreshErr,
+    });
+  }
   return { amount: awardedAmount, ...streaks };
 }
 
