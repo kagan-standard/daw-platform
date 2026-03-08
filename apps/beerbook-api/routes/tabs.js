@@ -943,6 +943,8 @@ module.exports = function tabsRoutes(opts) {
             title: 'Seeder status granted',
             message: 'Welcome to the founding crew! You now have a permanent 1.5x seeder multiplier.',
             metadata: { granted_by: req.claims.sub },
+            target_type: 'tabs_profile',
+            target_id: userId,
           }),
         });
       }
@@ -978,6 +980,8 @@ module.exports = function tabsRoutes(opts) {
           title: 'Tier updated',
           message: `Your tier is now ${tier.replace('_', ' ')}.`,
           metadata: { admin_user_id: req.claims.sub, tier },
+          target_type: 'tabs_profile',
+          target_id: userId,
         }),
       });
       const row = Array.isArray(out.body) ? out.body[0] : out.body;
@@ -1094,6 +1098,8 @@ module.exports = function tabsRoutes(opts) {
             review_notes: reviewNotes,
             status,
           },
+          target_type: 'beer',
+          target_id: String(submission.id),
         }),
       });
 

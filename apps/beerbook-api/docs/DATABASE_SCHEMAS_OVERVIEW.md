@@ -132,8 +132,9 @@ This file outlines the current BeerBook database schema state after applying the
 
 ### `tab_notifications`
 - **Primary key:** `id` (text, uuid string)
-- **Columns:** `user_id`, `notification_type`, `title`, `message`, `metadata`, `is_read`, `created_at`
+- **Columns:** `user_id`, `notification_type`, `title`, `message`, `metadata`, `is_read`, `created_at`, `week_start` (Phase 2.10), `target_type`, `target_id` (Phase 3.4)
 - **Relationships:** `user_id -> profiles.id` (cascade delete)
+- **Phase 3.4 action contract:** `target_type` is one of `beer`, `user`, `crew`, `achievement`, `tabs_profile` (or NULL for legacy/read-only). `target_id` is the destination entity id for navigation on notification press.
 
 ## Achievements and Ledger Tables
 

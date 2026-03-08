@@ -2356,26 +2356,19 @@ Read source is `tabs_ledger`; rows are mapped into a legacy transaction response
       "message": "string",
       "metadata": {},
       "is_read": false,
-      "created_at": "ISO8601"
+      "created_at": "ISO8601",
+      "target_type": "beer|user|crew|achievement|tabs_profile|null",
+      "target_id": "string|null"
     }
   ],
   "pagination": { "limit": 50, "offset": 0, "total": 30 },
   "metadata": { "unread_count": 5 },
-  "notifications": [
-    {
-      "id": "string",
-      "user_id": "string",
-      "notification_type": "string",
-      "title": "string",
-      "message": "string",
-      "metadata": {},
-      "is_read": false,
-      "created_at": "ISO8601"
-    }
-  ],
+  "notifications": [ "… same shape as data …" ],
   "unread_count": 5
 }
 ```
+
+**Notification action contract (Phase 3.4):** Each notification may include `target_type` and `target_id`. When present, the client should use them to navigate on press (e.g. `tabs_profile` + user id → tabs profile screen; `beer` + submission id → submission/beer detail). Legacy notifications have `target_type`/`target_id` null; treat as mark-read-only.
 
 Mobile aliases: `notifications` mirrors `data`, and `unread_count` mirrors `metadata.unread_count`.
 
@@ -2400,7 +2393,9 @@ Mobile aliases: `notifications` mirrors `data`, and `unread_count` mirrors `meta
     "message": "string",
     "metadata": {},
     "is_read": true,
-    "created_at": "ISO8601"
+    "created_at": "ISO8601",
+    "target_type": "beer|user|crew|achievement|tabs_profile|null",
+    "target_id": "string|null"
   }
 }
 ```

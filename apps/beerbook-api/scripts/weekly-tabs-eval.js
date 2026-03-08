@@ -85,6 +85,8 @@ async function sendNotification(userId, type, title, message, weekStart) {
     p_title: title,
     p_message: message,
     p_week_start: weekStart,
+    p_target_type: 'tabs_profile',
+    p_target_id: userId,
   });
 }
 
