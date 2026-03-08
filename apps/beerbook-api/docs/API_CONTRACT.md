@@ -1,9 +1,8 @@
 # BeerBook API Contract (Backend Source of Truth)
 
-Generated: 2026-03-07
+Generated: 2026-03-08
 Source: `daw-platform/apps/beerbook-api`
-Source commit: `e8bb7fc88c42905e9f57ad8f0a18800095e3af92` (`2026-03-07T00:04:53-05:00`)
-Verification: Endpoint parity checked against `server.js` + `routes/*.js` (`98 implemented / 98 documented`)
+Verification: Endpoint parity checked against `server.js` + `routes/*.js` (99 implemented / 99 documented)
 Process-event source: `lib/processEvent.js` + `lib/processEventEngine.js` + `routes/internal.js`
 
 ---
@@ -38,6 +37,7 @@ Process-event source: `lib/processEvent.js` + `lib/processEventEngine.js` + `rou
 - [Endpoints: Tracking](#tracking)
 - [Endpoints: Admin](#admin)
 - [Endpoints: Internal](#internal)
+- [Public Pages (Share URL)](#public-pages-share-url)
 - [Side Effects Matrix](#side-effects-matrix)
 - [Known Inconsistencies & Gotchas](#known-inconsistencies--gotchas)
 
@@ -184,6 +184,7 @@ Most list endpoints use:
 | `GET /api/exchange/rates` | `[ ... ]` | Flat array, no wrapper at all |
 | `GET /api/exchange/portfolio/:user_id` | `[ ... ]` | Flat array, no wrapper at all |
 | `GET /api/ratings/:id/comments` | `{ data: [...] }` | Accepts limit/offset but no pagination object in response |
+| `GET /api/breweries/map`, `GET /api/map/breweries` | `{ data: [...], pagination: { limit, offset, total }, truncated }` | Has pagination + `truncated` boolean |
 | `GET /api/leaderboard` | `{ period, crew_id, top_reviewers, top_beers, top_yg_values, most_venues }` | Custom shape |
 | `GET /api/highlights/beer-of-the-week` | `{ beer: ... }` | Single object wrapper |
 | `GET /api/activity` | `{ data: [...], pagination: { limit, offset, total } }` | Merged multi-type activity feed |
@@ -507,12 +508,14 @@ On upstream error: returns `{ "data": [] }` (does NOT propagate errors).
       "website_url": "string",
       "phone": "string"
     }
-  ]
+  ],
+  "pagination": { "limit": 500, "offset": 0, "total": 42 },
+  "truncated": false
 }
 ```
 
 Both routes are aliases and return the same response shape.
-Max 500 breweries. Sorted by distance to center when `bounds` is provided.
+Max 500 breweries. `truncated` is `true` when total exceeds limit. Sorted by distance to center when `bounds` is provided.
 
 **Error Responses:**
 - 502 or upstream body
@@ -3585,7 +3588,7 @@ All admin routes require `authMiddleware` + `adminMiddleware`.
 
 #### POST /internal/process-event
 
-- **Auth:** Bearer JWT + optional `x-internal-secret` header (when `INTERNAL_PROCESS_EVENT_SECRET` is set)
+- **Auth:** Bearer JWT (required) + `x-internal-secret` header (required when `INTERNAL_PROCESS_EVENT_SECRET` is set; must match env value)
 - **File:** `routes/internal.js`
 
 **Request Body:**
@@ -3627,7 +3630,8 @@ All admin routes require `authMiddleware` + `adminMiddleware`.
 - 400: `{ "error": "payload.target_user_id (Keycloak sub of receiver) is required for cheers_received" }`
 - 401: `{ "error": "Missing or invalid Authorization header" }`
 - 401: `{ "error": "Unauthorized" }`
-- 500: `{ "error": "string" }`
+- 403: `{ "error": "Invalid or missing internal secret" }` (when `x-internal-secret` does not match `INTERNAL_PROCESS_EVENT_SECRET`)
+- 500: `{ "error": "internal_error", "correlation_id": "uuid" }` or `{ "error": "string" }`
 
 **Side Effects:** Inserts into `tabs_ledger`, `user_achievements`, `user_cosmetics`. Updates `profiles.tabs_balance` via DB trigger.
 
@@ -3638,6 +3642,30 @@ All admin routes require `authMiddleware` + `adminMiddleware`.
 - `POST /rpc/refresh_rating_award_profile_cache`
 - SQL function: `public.refresh_rating_award_profile_cache(p_user_id text, p_tabs_delta int)`
 - Behavior: updates `user_tabs_profile` cache fields (`ratings_this_week`, `current_streak_weeks`, `longest_streak_weeks`, `last_active_week`, `weeks_inactive`, `lifetime_tabs_earned`) and returns streak values used in API responses.
+
+---
+
+### Public Pages (Share URL)
+
+#### GET /review/:ratingId
+
+- **Auth:** none
+- **File:** `server.js`
+- **Content-Type:** `text/html` (not JSON)
+
+**URL Params:** `ratingId` — rating UUID
+
+**Purpose:** Shareable review landing page with Open Graph meta and app-link tags for deep linking. Rate-limited with same window as `/api`.
+
+**Success Response (200):** HTML document with:
+- `<title>` and `og:title` / `og:description` / `og:image` (when photo present)
+- `al:ios:url`, `al:android:url`, `al:web:url` for app/scheme deep links
+- Inline styles and simple layout (beer name, stars, reviewer, CTA)
+
+**Error Responses:**
+- 400: HTML "Review Not Found" page (missing `ratingId`)
+- 404: HTML "Review Not Found" page (rating not found)
+- 502: HTML "Review Not Found" page (upstream error)
 
 ---
 
