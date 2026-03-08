@@ -2,10 +2,54 @@ const express = require('express');
 
 const VALID_TARGET_TYPES = new Set(['brewery', 'venue', 'beer', 'external']);
 
+const TRACKING_RETRIES = 3;
+const TRACKING_BACKOFF_MS = [100, 300, 900];
+
 function firstForwardedIp(headerValue) {
   if (!headerValue) return null;
   const parts = String(headerValue).split(',').map((v) => v.trim()).filter(Boolean);
   return parts[0] || null;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Phase 4.2 (BE-G-06): Write tracking event with retries; on final failure
+ * record to tracking_failures for dead-letter visibility and failure metrics.
+ * Response is still 202 + tracked: true (fire-and-forget from request perspective).
+ */
+async function trackingWriteWithRetry(rest, path, record, eventType) {
+  const headers = { 'Content-Type': 'application/json' };
+  const body = JSON.stringify(record);
+  let lastError;
+  for (let attempt = 0; attempt < TRACKING_RETRIES; attempt++) {
+    try {
+      const result = await rest('POST', path, { headers, body });
+      if (result.status < 400) return;
+      lastError = new Error(`HTTP ${result.status}: ${JSON.stringify(result.body)}`);
+    } catch (err) {
+      lastError = err;
+    }
+    if (attempt < TRACKING_RETRIES - 1) {
+      await sleep(TRACKING_BACKOFF_MS[attempt] ?? 500);
+    }
+  }
+  const errorMessage = lastError?.message ?? String(lastError);
+  console.error(`Tracking write failed after ${TRACKING_RETRIES} attempts (${eventType}):`, errorMessage);
+  try {
+    await rest('POST', '/tracking_failures', {
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        event_type: eventType,
+        payload: record,
+        error_message: errorMessage,
+      }),
+    });
+  } catch (dlqErr) {
+    console.error('Failed to write tracking_failures (dead-letter):', dlqErr);
+  }
 }
 
 module.exports = function trackingRoutes(opts) {
@@ -45,12 +89,7 @@ module.exports = function trackingRoutes(opts) {
       user_agent: req.headers['user-agent'] || null,
     };
 
-    rest('POST', '/referral_clicks', {
-      body: JSON.stringify(record),
-      headers: { 'Content-Type': 'application/json' },
-    }).catch((err) => {
-      console.error('Referral click tracking failed:', err);
-    });
+    trackingWriteWithRetry(rest, '/referral_clicks', record, 'click').catch(() => {});
 
     return res.status(202).json({ tracked: true });
   });
@@ -71,12 +110,7 @@ module.exports = function trackingRoutes(opts) {
       user_agent: req.headers['user-agent'] || null,
     };
 
-    rest('POST', '/page_views', {
-      body: JSON.stringify(record),
-      headers: { 'Content-Type': 'application/json' },
-    }).catch((err) => {
-      console.error('Page view tracking failed:', err);
-    });
+    trackingWriteWithRetry(rest, '/page_views', record, 'pageview').catch(() => {});
 
     return res.status(202).json({ tracked: true });
   });
