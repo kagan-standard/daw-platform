@@ -64,6 +64,7 @@ module.exports = function (opts) {
   });
 
   // GET /api/follows/:userId/followers
+  // BE-D-08: Unauthenticated by design (public social visibility). Verify product privacy policy if requirements tighten.
   router.get('/follows/:userId/followers', async (req, res, next) => {
     try {
       const { limit, offset } = parseLimitOffset(req);
@@ -87,6 +88,7 @@ module.exports = function (opts) {
   });
 
   // GET /api/follows/:userId/following
+  // BE-D-08: Unauthenticated by design (public social visibility). Verify product privacy policy if requirements tighten.
   router.get('/follows/:userId/following', async (req, res, next) => {
     try {
       const { limit, offset } = parseLimitOffset(req);

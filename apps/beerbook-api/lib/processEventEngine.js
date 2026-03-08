@@ -149,7 +149,7 @@ async function grantAchievementCosmetics(rest, userId, achievementKey) {
   for (const row of rows) {
     const cosmeticId = row && row.id ? String(row.id) : '';
     if (!cosmeticId) continue;
-    await rest('POST', '/user_cosmetics?on_conflict=user_id,cosmetic_id', {
+    const upsertRes = await rest('POST', '/user_cosmetics?on_conflict=user_id,cosmetic_id', {
       headers: { Prefer: 'resolution=ignore-duplicates' },
       body: JSON.stringify({
         user_id: userId,
@@ -157,6 +157,9 @@ async function grantAchievementCosmetics(rest, userId, achievementKey) {
         acquired_via: 'achievement',
       }),
     });
+    if (upsertRes.status >= 400) {
+      console.error('[grantAchievementCosmetics] user_cosmetics upsert failed', { userId, cosmeticId, status: upsertRes.status });
+    }
   }
 }
 

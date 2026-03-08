@@ -44,7 +44,7 @@
 
 ## Cross-Pass Watch Items
 - **BE-B-04 (Medium, Pass B, Possible):** Weekly rating-award cap uses read-then-insert flow and may over-credit under high concurrency unless DB-level atomic enforcement exists.
-- **BE-C-05 (Medium, Pass C, Possible):** Activity/stats fan-out reads and in-memory joins/sorts are likely to degrade at scale unless replaced by DB-side aggregate/feed query primitives.
+- **BE-C-05 (Medium, Pass C, Possible):** Activity/stats fan-out reads and in-memory joins/sorts are likely to degrade at scale unless replaced by DB-side aggregate/feed query primitives. *Phase 4.7: Scale note acknowledged; follow-up in Phase 4.1 (DB-side aggregation) addresses related endpoints; activity/stats feed remains a candidate for future DB-side aggregate RPC.*
 - **BE-D-07 (Medium, Pass D, Possible):** Followers/following enrichment computes `rating_count` from bounded in-memory rating scans (`limit=5000`), risking undercount and latency growth for high-volume users.
 - **BE-D-08 (Low, Pass D, Possible):** Followers/following list endpoints are unauthenticated by design; verify product privacy policy before social visibility requirements tighten.
 - **BE-F-06 (Medium, Pass F, Possible):** Uploads are served directly from static storage without explicit hardened file-serving controls; runtime proxy/header posture should be validated.

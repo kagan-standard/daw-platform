@@ -336,12 +336,15 @@ app.use(express.json());
 // Serve static assets from /public at the root path (e.g., /images/...)
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Phase 1.4: serve uploaded images with security headers.
+// Phase 1.4 + 4.7 BE-F-06: serve uploaded images with security headers.
 // X-Content-Type-Options: nosniff prevents browsers from MIME-sniffing.
 // Non-image files get Content-Disposition: attachment to force download.
+// Hardened file-serving: Cache-Control, X-Frame-Options to reduce exposure.
 const UPLOAD_IMAGE_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/heic']);
 app.use('/uploads', (req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Cache-Control', 'private, max-age=86400');
   const ext = path.extname(req.path).toLowerCase();
   const mimeMap = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.heic': 'image/heic' };
   const inferredMime = mimeMap[ext];

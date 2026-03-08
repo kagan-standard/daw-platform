@@ -200,7 +200,7 @@ async function grantAchievementCosmetics(
   for (const row of rows) {
     const cosmeticId = row?.id;
     if (!cosmeticId) continue;
-    await admin.from("user_cosmetics").upsert(
+    const { error } = await admin.from("user_cosmetics").upsert(
       {
         user_id: userId,
         cosmetic_id: cosmeticId,
@@ -211,6 +211,9 @@ async function grantAchievementCosmetics(
         ignoreDuplicates: true,
       }
     );
+    if (error) {
+      console.error("[grantAchievementCosmetics] user_cosmetics upsert failed", { userId, cosmeticId, error: error.message });
+    }
   }
 }
 
