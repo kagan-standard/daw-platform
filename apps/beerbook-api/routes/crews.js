@@ -105,6 +105,31 @@ module.exports = function (opts) {
     }
   });
 
+  // GET /api/crews/:id/challenge — current week's challenge + progress (Phase 2 backend plan)
+  router.get('/crews/:id/challenge', authMiddleware, async (req, res, next) => {
+    try {
+      const me = req.claims.sub;
+      const crewId = String(req.params.id || '').trim();
+      const membership = await requireCrewMembership(rest, me, crewId);
+      if (!membership) return res.status(403).json({ error: 'Crew access denied' });
+
+      const rpcRes = await rest('POST', '/rpc/get_crew_weekly_challenge', {
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ p_crew_id: crewId }),
+      });
+      if (rpcRes.status >= 400) return res.status(rpcRes.status).json(rpcRes.body || { error: 'Upstream error' });
+
+      const raw = rpcRes.body;
+      const payload = Array.isArray(raw) && raw[0] != null ? raw[0] : (raw && typeof raw === 'object' ? raw : { challenge: null, progress: null });
+      res.json({
+        challenge: payload.challenge || null,
+        progress: payload.progress || null,
+      });
+    } catch (e) {
+      next(e);
+    }
+  });
+
   // GET /api/crews/:id/milestones — paginated crew milestone timeline (Phase 2 backend plan)
   router.get('/crews/:id/milestones', authMiddleware, async (req, res, next) => {
     try {
@@ -268,7 +293,7 @@ module.exports = function (opts) {
           ? rest('GET', `/profiles?id=in.(${inClause})&select=id,display_name,avatar_url`)
           : Promise.resolve({ status: 200, body: [] }),
         userIds.length
-          ? rest('GET', `/ratings?user_id=in.(${inClause})&select=id,user_id,beer_name,style,rating`)
+          ? rest('GET', `/ratings?user_id=in.(${inClause})&select=id,user_id,beer_name,style,rating,venue_id`)
           : Promise.resolve({ status: 200, body: [] }),
       ]);
       const profiles = Array.isArray(profilesRes.body) ? profilesRes.body : [];
@@ -280,6 +305,7 @@ module.exports = function (opts) {
 
       const styleCounts = {};
       const beerCounts = {};
+      const venueIds = new Set();
       let totalRatings = 0;
       let ratingSum = 0;
       ratings.forEach((r) => {
@@ -287,9 +313,38 @@ module.exports = function (opts) {
         ratingSum += Number(r.rating) || 0;
         if (r.style) styleCounts[r.style] = (styleCounts[r.style] || 0) + 1;
         if (r.beer_name) beerCounts[r.beer_name] = (beerCounts[r.beer_name] || 0) + 1;
+        if (r.venue_id) venueIds.add(r.venue_id);
       });
       const topStyle = Object.entries(styleCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
       const topBeer = Object.entries(beerCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+
+      let membersOnStreakCount = 0;
+      if (userIds.length) {
+        const streakRes = await rest('GET', `/user_tabs_profile?user_id=in.(${inClause})&select=user_id,current_streak_weeks`);
+        if (streakRes.status < 400 && Array.isArray(streakRes.body)) {
+          membersOnStreakCount = streakRes.body.filter((row) => (Number(row.current_streak_weeks) || 0) > 0).length;
+        }
+      }
+
+      let weeklyChallenge = null;
+      try {
+        const challengeRpcRes = await rest('POST', '/rpc/get_crew_weekly_challenge', {
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ p_crew_id: crewId }),
+        });
+        if (challengeRpcRes.status < 400 && challengeRpcRes.body) {
+          const raw = challengeRpcRes.body;
+          const payload = Array.isArray(raw) && raw[0] != null ? raw[0] : (raw && typeof raw === 'object' ? raw : null);
+          if (payload && (payload.challenge || payload.progress)) {
+            weeklyChallenge = {
+              challenge: payload.challenge || null,
+              progress: payload.progress || null,
+            };
+          }
+        }
+      } catch (_) {
+        // non-fatal; leave weekly_challenge null
+      }
 
       const detailMembers = members.map((m) => {
         const profile = profileMap[m.user_id] || { id: m.user_id, display_name: 'Beer Lover', avatar_url: null };
@@ -314,8 +369,12 @@ module.exports = function (opts) {
           total_ratings: totalRatings,
           avg_rating: totalRatings ? Math.round((ratingSum / totalRatings) * 100) / 100 : 0,
           most_popular_style: topStyle,
+          favorite_style_name: topStyle,
           top_beer: topBeer,
+          venues_visited_count: venueIds.size,
+          members_on_streak_count: membersOnStreakCount,
         },
+        weekly_challenge: weeklyChallenge,
       });
     } catch (e) {
       next(e);

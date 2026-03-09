@@ -143,6 +143,101 @@ test('GET /api/crews/:id/milestones returns 403 when not a member', async () => 
   }
 });
 
+// --- Weekly challenge contract (Phase 2 backend plan) ---
+
+test('GET /api/crews/:id/challenge returns contract shape (challenge + progress)', async () => {
+  const crewId = 'crew-chal';
+  const challengeId = 'ch-uuid-1';
+  const weekStart = '2025-03-10T00:00:00.000Z';
+  const weekEnd = '2025-03-16T23:59:59.999Z';
+  const app = createApi(createRestMock({
+    [`GET /crew_members?crew_id=eq.${crewId}&user_id=eq.user-123&limit=1`]: {
+      status: 200,
+      body: [{ crew_id: crewId, user_id: 'user-123', role: 'member' }],
+    },
+    'POST /rpc/get_crew_weekly_challenge': {
+      status: 200,
+      body: {
+        challenge: {
+          id: challengeId,
+          title: 'Lager Lockdown',
+          description: 'The crew rates 10 lagers this week',
+          target_style: 'Lager',
+          target_count: 10,
+          reward_label: 'Unlock Lager Lords badge',
+          reward_badge_id: null,
+          week_start: weekStart,
+          week_end: weekEnd,
+        },
+        progress: {
+          current_count: 6,
+          target_count: 10,
+          contributing_member_count: 4,
+        },
+      },
+    },
+  }));
+
+  const server = app.listen(0);
+  try {
+    const { status, body } = await requestJson(server, `/api/crews/${crewId}/challenge`);
+    assert.equal(status, 200);
+    assert.ok(body && typeof body === 'object');
+    assert.ok(body.challenge && typeof body.challenge === 'object');
+    assert.equal(body.challenge.id, challengeId);
+    assert.equal(body.challenge.title, 'Lager Lockdown');
+    assert.equal(body.challenge.target_style, 'Lager');
+    assert.equal(body.challenge.target_count, 10);
+    assert.equal(body.challenge.reward_label, 'Unlock Lager Lords badge');
+    assert.equal(body.challenge.week_start, weekStart);
+    assert.equal(body.challenge.week_end, weekEnd);
+    assert.ok(body.progress && typeof body.progress === 'object');
+    assert.equal(body.progress.current_count, 6);
+    assert.equal(body.progress.target_count, 10);
+    assert.equal(body.progress.contributing_member_count, 4);
+  } finally {
+    server.close();
+  }
+});
+
+test('GET /api/crews/:id/challenge returns null challenge when no active challenge', async () => {
+  const crewId = 'crew-no-chal';
+  const app = createApi(createRestMock({
+    [`GET /crew_members?crew_id=eq.${crewId}&user_id=eq.user-123&limit=1`]: {
+      status: 200,
+      body: [{ crew_id: crewId, user_id: 'user-123', role: 'member' }],
+    },
+    'POST /rpc/get_crew_weekly_challenge': {
+      status: 200,
+      body: { challenge: null, progress: null },
+    },
+  }));
+
+  const server = app.listen(0);
+  try {
+    const { status, body } = await requestJson(server, `/api/crews/${crewId}/challenge`);
+    assert.equal(status, 200);
+    assert.equal(body.challenge, null);
+    assert.equal(body.progress, null);
+  } finally {
+    server.close();
+  }
+});
+
+test('GET /api/crews/:id/challenge returns 403 when not a member', async () => {
+  const crewId = 'crew-no';
+  const app = createApi(createRestMock({
+    [`GET /crew_members?crew_id=eq.${crewId}&user_id=eq.user-123&limit=1`]: { status: 200, body: [] },
+  }));
+  const server = app.listen(0);
+  try {
+    const { status } = await requestJson(server, `/api/crews/${crewId}/challenge`);
+    assert.equal(status, 403);
+  } finally {
+    server.close();
+  }
+});
+
 // --- Phase 4: Trending + style-counts contract tests ---
 
 test('GET /api/crews/:id/trending returns contract shape (data + pagination)', async () => {
