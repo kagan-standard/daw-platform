@@ -77,7 +77,6 @@ services:
     volumes:
       - uploads_data:/data/uploads
     environment:
-      INTERNAL_PROCESS_EVENT_SECRET: ${INTERNAL_PROCESS_EVENT_SECRET}
       KEYCLOAK_ISSUER: https://auth.drinksafterwork.net/realms/daw
       KEYCLOAK_JWKS_URI: https://auth.drinksafterwork.net/realms/daw/protocol/openid-connect/certs
       KEYCLOAK_URL: https://auth.drinksafterwork.net
