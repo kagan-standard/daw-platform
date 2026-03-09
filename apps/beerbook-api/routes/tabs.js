@@ -394,6 +394,26 @@ module.exports = function tabsRoutes(opts) {
       const userId = req?.claims?.sub ? String(req.claims.sub).trim() : '';
       const achievementKeys = [...new Set(cosmetics.map((item) => item?.achievement_key).filter(Boolean))];
 
+      let ownedCosmeticIds = new Set();
+      let equippedBorderId = null;
+      let equippedTitleId = null;
+      if (userId) {
+        const [userCosmeticsOut, profileOut] = await Promise.all([
+          rest('GET', `/user_cosmetics?user_id=eq.${encodeURIComponent(userId)}&select=cosmetic_id&limit=5000`),
+          rest('GET', `/profiles?id=eq.${encodeURIComponent(userId)}&select=equipped_border_id,equipped_title_id&limit=1`),
+        ]);
+        if (userCosmeticsOut.status === 200 && Array.isArray(userCosmeticsOut.body)) {
+          userCosmeticsOut.body.forEach((row) => {
+            if (row.cosmetic_id) ownedCosmeticIds.add(row.cosmetic_id);
+          });
+        }
+        if (profileOut.status === 200 && Array.isArray(profileOut.body) && profileOut.body[0]) {
+          const p = profileOut.body[0];
+          equippedBorderId = p.equipped_border_id ?? null;
+          equippedTitleId = p.equipped_title_id ?? null;
+        }
+      }
+
       let achievementByKey = Object.create(null);
       let progressByAchievementId = Object.create(null);
 
@@ -429,11 +449,15 @@ module.exports = function tabsRoutes(opts) {
 
       const data = cosmetics.map((cosmetic) => {
         const achievement = cosmetic.achievement_key ? achievementByKey[cosmetic.achievement_key] : null;
+        const is_owned = userId ? ownedCosmeticIds.has(cosmetic.id) : false;
+        const is_equipped = userId && (cosmetic.id === equippedBorderId || cosmetic.id === equippedTitleId);
         return {
           ...cosmetic,
           achievement_hidden: !!achievement?.is_hidden,
           achievement_progress_current: userId && achievement ? (progressByAchievementId[achievement.id] ?? null) : null,
           achievement_progress_target: achievement ? getAchievementProgressTarget(achievement.rules) : null,
+          is_owned,
+          is_equipped: !!is_equipped,
         };
       });
 
@@ -491,6 +515,7 @@ module.exports = function tabsRoutes(opts) {
             title_text: cosmetic.title_text ?? null,
             acquired_via: row.acquired_via,
             acquired_at: row.acquired_at,
+            is_owned: true,
             is_equipped: cosmetic.id === equippedBorderId || cosmetic.id === equippedTitleId,
           };
         })
