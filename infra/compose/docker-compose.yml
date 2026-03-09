@@ -79,6 +79,10 @@ services:
     environment:
       KEYCLOAK_ISSUER: https://auth.drinksafterwork.net/realms/daw
       KEYCLOAK_JWKS_URI: https://auth.drinksafterwork.net/realms/daw/protocol/openid-connect/certs
+      KEYCLOAK_URL: https://auth.drinksafterwork.net
+      KEYCLOAK_ADMIN_CLIENT_ID: beerbook-service
+      KEYCLOAK_ADMIN_CLIENT_SECRET: ${KEYCLOAK_ADMIN_CLIENT_SECRET}
+      KEYCLOAK_ADMIN_REALM: daw
       SUPABASE_REST_URL: http://supabase-rest:3000
       SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
       PORT: "3001"
