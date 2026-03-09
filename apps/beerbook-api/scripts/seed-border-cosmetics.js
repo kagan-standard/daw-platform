@@ -201,7 +201,7 @@ function buildBorders() {
 }
 
 async function upsertCosmetics(rows) {
-  const url = `${SUPABASE_URL}/rest/v1/cosmetics?on_conflict=key`;
+  const url = `${SUPABASE_URL}/cosmetics?on_conflict=key`;
   const res = await fetch(url, {
     method: 'POST',
     headers: {
