@@ -1,7 +1,6 @@
 # Database Schemas Overview
 
-Generated: 2026-03-07  
-Source commit: `e8bb7fc88c42905e9f57ad8f0a18800095e3af92` (`2026-03-07T00:04:53-05:00`)  
+Generated: 2026-03-09  
 Scope: `apps/beerbook-api/supabase/migrations`
 
 This file outlines the current BeerBook database schema state after applying the BeerBook API Supabase migrations in order.
@@ -15,6 +14,8 @@ This file outlines the current BeerBook database schema state after applying the
 - `apps/beerbook-api/supabase/migrations/20260306000000_update_ratings_yg_value_check.sql`
 - `apps/beerbook-api/supabase/migrations/20260306_ledger_migration_reset.sql`
 - `apps/beerbook-api/supabase/migrations/20260306003000_refresh_rating_award_profile_cache.sql`
+- `apps/beerbook-api/supabase/migrations/20260313000000_crew_milestones.sql`
+- `apps/beerbook-api/supabase/migrations/20260314000000_weekly_challenges.sql`
 
 ## Schemas
 
@@ -192,6 +193,20 @@ This file outlines the current BeerBook database schema state after applying the
 - **Relationships:** `crew_id -> crews.id` (cascade delete)
 - **Constraints:** `role` in (`owner`, `member`)
 
+### `crew_milestones`
+- **Primary key:** `id` (uuid)
+- **Columns:** `crew_id`, `type`, `occurred_at`, `user_id`, `data` (jsonb), `message`
+- **Relationships:** `crew_id -> crews.id` (cascade delete)
+- **Constraints:** `type` in (`crew_total_ratings`, `first_venue_visit`, `member_streak`, `leaderboard_rank`)
+- **Indexes:** `(crew_id, occurred_at DESC)`; unique partial indexes for idempotency per type (e.g. one milestone per crew/threshold for `crew_total_ratings`).
+- **Usage:** Timeline of crew events; read via `GET /api/crews/:id/milestones`; written by backend when ratings/streaks/leaderboard hit thresholds.
+
+### `weekly_challenges`
+- **Primary key:** `id` (uuid)
+- **Columns:** `week_start`, `week_end`, `title`, `description`, `target_style`, `target_count`, `reward_label`, `reward_badge_id`, `created_at`
+- **Constraints:** `week_end > week_start`; unique on `week_start` (one challenge per week).
+- **Usage:** One active challenge per week (global); progress computed per crew via `get_crew_weekly_challenge(p_crew_id, p_week_start)`.
+
 ## Enums
 
 - `user_tier`: `taster`, `regular`, `local`, `patron`, `house_account`, `cellar_reserve`
@@ -215,4 +230,7 @@ This file outlines the current BeerBook database schema state after applying the
 - `refresh_rating_award_profile_cache(p_user_id text, p_tabs_delta int)` for real-time `user_tabs_profile` cache updates after rating awards
 - `purchase_cosmetic(p_user_id text, p_cosmetic_key text)` RPC for atomic cosmetic purchase flow (writes `tabs_ledger` spend + `user_cosmetics`)
 - `increment_comment_count(rating_id_input text)` and `decrement_comment_count(rating_id_input text)`
+- `get_crew_weekly_challenge(p_crew_id text, p_week_start timestamptz DEFAULT NULL)` — returns current week's challenge + progress for a crew (week = Monday 00:00 UTC to Sunday 23:59.999 UTC)
+- `crew_rating_counts_for_user(p_user_id text)` — returns `(crew_id, total_ratings)` for every crew the user belongs to (used when emitting `crew_total_ratings` milestones)
+- `leaderboard_aggregate(p_period, p_crew_id, p_limit, p_max_ratings)` — DB-side leaderboard aggregation; supports optional crew scoping
 - Search/utility functions: `search_beer_catalog`, `search_breweries`, `venues_within_radius`

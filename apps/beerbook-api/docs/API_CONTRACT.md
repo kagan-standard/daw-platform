@@ -1,8 +1,8 @@
 # BeerBook API Contract (Backend Source of Truth)
 
-Generated: 2026-03-08
+Generated: 2026-03-09
 Source: `daw-platform/apps/beerbook-api`
-Verification: Endpoint parity checked against `server.js` + `routes/*.js` (99 implemented / 99 documented)
+Verification: Endpoint parity checked against `server.js` + `routes/*.js` (103 implemented / 103 documented)
 Process-event source: `lib/processEvent.js` + `lib/processEventEngine.js` + `routes/internal.js`
 
 ---
@@ -173,6 +173,8 @@ Most list endpoints use:
 - `GET /api/follows/:userId/following` (limit max 100)
 - `GET /api/admin/users` (limit max 200)
 - `GET /api/admin/referrals` (limit max 200)
+- `GET /api/crews/:id/milestones` (limit max 100)
+- `GET /api/crews/:id/trending` (limit max 50; pagination includes `days`)
 
 ### Endpoints NOT Following Standard Pattern
 
@@ -185,7 +187,8 @@ Most list endpoints use:
 | `GET /api/exchange/portfolio/:user_id` | `[ ... ]` | Flat array, no wrapper at all |
 | `GET /api/ratings/:id/comments` | `{ data: [...] }` | Accepts limit/offset but no pagination object in response |
 | `GET /api/breweries/map`, `GET /api/map/breweries` | `{ data: [...], pagination: { limit, offset, total }, truncated }` | Has pagination + `truncated` boolean |
-| `GET /api/leaderboard` | `{ period, crew_id, top_reviewers, top_beers, top_yg_values, most_venues }` | Custom shape |
+| `GET /api/leaderboard` | `{ period, crew_id, top_reviewers, top_beers, top_yg_values, most_venues, truncated, pagination }` | Custom shape; optional crew scoping |
+| `GET /api/crews/:id/style-counts` | `{ "IPA": n, "Lager": n, ... }` | Plain object (style → count) |
 | `GET /api/highlights/beer-of-the-week` | `{ beer: ... }` | Single object wrapper |
 | `GET /api/activity` | `{ data: [...], pagination: { limit, offset, total } }` | Merged multi-type activity feed |
 | `GET /api/map` | `{ data: [...] }` | No pagination |
@@ -2110,7 +2113,7 @@ Both methods are aliases and return the same response shape.
 | Param | Type | Default | Validation |
 |-------|------|---------|------------|
 | `period` | string | `"alltime"` | One of: `weekly`, `monthly`, `alltime` |
-| `crew_id` | string | — | Optional |
+| `crew_id` | string | — | Optional; when present, leaderboard is scoped to that crew |
 
 **Success Response (200):** Custom shape (NOT standard envelope):
 
@@ -2134,11 +2137,13 @@ Both methods are aliases and return the same response shape.
   ],
   "most_venues": [
     { "venue_id": "string", "venue_name": "string", "count": 30 }
-  ]
+  ],
+  "truncated": false,
+  "pagination": { "limit": 10 }
 }
 ```
 
-`display_name` and `avatar_url` on `top_reviewers` come from profile data when available.
+`display_name` and `avatar_url` on `top_reviewers` come from profile data when available. `truncated` is `true` when aggregation hit the internal max-ratings cap. Response includes `pagination.limit` (top-N per category).
 
 ---
 
@@ -2270,6 +2275,7 @@ Both routes are identical.
 | `limit` | number | 50 | 200 |
 | `offset` | number | 0 | — |
 | `period` | string | `alltime` | `weekly \| monthly \| alltime` |
+| `crew_id` | string | — | optional; when present, results are restricted to users who are members of that crew |
 
 **Success Response (200):**
 
@@ -2302,7 +2308,7 @@ Both routes are identical.
 - `monthly`: current calendar month
 - `alltime`: no time filter
 
-Ranking and sort order remain based on `lifetime_tabs_earned desc`.
+Ranking and sort order remain based on `lifetime_tabs_earned desc`. When `crew_id` is provided, only crew members appear and `pagination.total` reflects the crew size (users with a tabs profile).
 
 ---
 
@@ -2947,14 +2953,158 @@ This is a toggle endpoint.
     "total_ratings": 200,
     "avg_rating": 4.1,
     "most_popular_style": "IPA",
-    "top_beer": "Beer Name"
+    "favorite_style_name": "IPA",
+    "top_beer": "Beer Name",
+    "venues_visited_count": 12,
+    "members_on_streak_count": 3
+  },
+  "weekly_challenge": {
+    "challenge": { "id": "uuid", "title": "string", "description": "string", "target_style": "string | null", "target_count": 10, "reward_label": "string", "reward_badge_id": "uuid | null", "week_start": "ISO8601", "week_end": "ISO8601" } | null,
+    "progress": { "current_count": 6, "target_count": 10, "contributing_member_count": 4 } | null
   }
 }
 ```
 
+`weekly_challenge` is populated when the current week has an active challenge; otherwise `challenge` and `progress` may be null.
+
 **Error Responses:**
 - 403: `{ "error": "Crew access denied" }`
 - 404: `{ "error": "Crew not found" }`
+
+---
+
+#### GET /api/crews/:id/challenge
+
+- **Auth:** `authMiddleware` (required)
+- **File:** `routes/crews.js`
+
+**URL Params:** `id` — crew UUID
+
+**Success Response (200):**
+
+```json
+{
+  "challenge": {
+    "id": "uuid",
+    "title": "string",
+    "description": "string",
+    "target_style": "string | null",
+    "target_count": 10,
+    "reward_label": "string",
+    "reward_badge_id": "uuid | null",
+    "week_start": "ISO8601",
+    "week_end": "ISO8601"
+  },
+  "progress": {
+    "current_count": 6,
+    "target_count": 10,
+    "contributing_member_count": 4
+  }
+}
+```
+
+When no active challenge for the current week: `challenge` and `progress` are null.
+
+**Error Responses:**
+- 403: `{ "error": "Crew access denied" }`
+- 502: upstream body or `{ "error": "Upstream error" }`
+
+---
+
+#### GET /api/crews/:id/milestones
+
+- **Auth:** `authMiddleware` (required)
+- **File:** `routes/crews.js`
+
+**URL Params:** `id` — crew UUID
+
+**Query Params:** `limit` (default 20, max 100), `offset` (default 0)
+
+**Success Response (200):**
+
+```json
+{
+  "data": [
+    {
+      "id": "uuid",
+      "type": "crew_total_ratings | first_venue_visit | member_streak | leaderboard_rank",
+      "occurred_at": "ISO8601",
+      "user_id": "string | undefined",
+      "user_display_name": "string | null",
+      "data": { "total_ratings": 75, "threshold": 75 } | { "venue_id": "uuid", "venue_name": "string" } | { "streak_weeks": 5 } | { "rank": 1, "leaderboard_type": "string" } | undefined,
+      "message": "string | undefined"
+    }
+  ],
+  "pagination": { "limit": 20, "offset": 0, "total": 42 }
+}
+```
+
+Sorted by `occurred_at` desc.
+
+**Error Responses:**
+- 403: `{ "error": "Crew access denied" }`
+- 502: upstream body or `{ "error": "Upstream error" }`
+
+---
+
+#### GET /api/crews/:id/trending
+
+- **Auth:** `authMiddleware` (required)
+- **File:** `routes/crews.js`
+
+**URL Params:** `id` — crew UUID
+
+**Query Params:** `days` (default 7, clamped 1–90), `limit` (default 10, clamped 1–50)
+
+**Success Response (200):**
+
+```json
+{
+  "data": [
+    {
+      "beer_id": "uuid | null",
+      "beer_name": "string | null",
+      "style": "string | null",
+      "brewery": "string | null",
+      "rating_count": 8,
+      "avg_rating": 4.25
+    }
+  ],
+  "pagination": { "limit": 10, "total": 25, "days": 7 }
+}
+```
+
+Beers ranked by rating count within the crew over the given `days`. Empty crew returns `{ data: [], pagination: { limit, total: 0 } }`.
+
+**Error Responses:**
+- 403: `{ "error": "Crew access denied" }`
+- 502: upstream body or `{ "error": "Upstream error" }`
+
+---
+
+#### GET /api/crews/:id/style-counts
+
+- **Auth:** `authMiddleware` (required)
+- **File:** `routes/crews.js`
+
+**URL Params:** `id` — crew UUID
+
+**Success Response (200):** Plain object (style name → count), e.g.:
+
+```json
+{
+  "IPA": 45,
+  "Lager": 12,
+  "Stout": 8,
+  "Unknown": 3
+}
+```
+
+Empty crew returns `{}`.
+
+**Error Responses:**
+- 403: `{ "error": "Crew access denied" }`
+- 502: upstream body or `{ "error": "Upstream error" }`
 
 ---
 

@@ -678,11 +678,30 @@ module.exports = function tabsRoutes(opts) {
       const periodRaw = String(req.query.period || 'alltime').trim().toLowerCase();
       const period = ['weekly', 'monthly', 'alltime'].includes(periodRaw) ? periodRaw : 'alltime';
       const periodStart = getPeriodStartUtc(period);
-      const out = await rest(
-        'GET',
-        `/tabs_leaderboard?order=lifetime_tabs_earned.desc&limit=${limit}&offset=${offset}`,
-        { headers: { Prefer: 'count=exact' } }
-      );
+      const crewId = String(req.query.crew_id || '').trim() || null;
+
+      let leaderboardPath = `/tabs_leaderboard?order=lifetime_tabs_earned.desc&limit=${limit}&offset=${offset}`;
+      if (crewId) {
+        const membersRes = await rest(
+          'GET',
+          `/crew_members?crew_id=eq.${encodeURIComponent(crewId)}&select=user_id`
+        );
+        if (membersRes.status >= 400) {
+          return res.status(membersRes.status).json(membersRes.body || { error: 'Upstream error' });
+        }
+        const members = Array.isArray(membersRes.body) ? membersRes.body : [];
+        const memberIds = [...new Set(members.map((m) => String(m?.user_id || '').trim()).filter(Boolean))];
+        if (memberIds.length === 0) {
+          return res.json({
+            data: [],
+            pagination: { limit, offset, total: 0 },
+          });
+        }
+        const userInClause = memberIds.map((id) => encodeURIComponent(id)).join(',');
+        leaderboardPath = `/tabs_leaderboard?user_id=in.(${userInClause})&order=lifetime_tabs_earned.desc&limit=${limit}&offset=${offset}`;
+      }
+
+      const out = await rest('GET', leaderboardPath, { headers: { Prefer: 'count=exact' } });
       if (out.status >= 400) return res.status(out.status).json(out.body || { error: 'Upstream error' });
       const rows = Array.isArray(out.body) ? out.body : [];
       const userIds = [...new Set(rows.map((row) => String(row?.user_id || '').trim()).filter(Boolean))];

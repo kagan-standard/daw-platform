@@ -1,7 +1,6 @@
 # API Contract Schema Audit
 
-Generated: 2026-03-07  
-Source commit: `e8bb7fc88c42905e9f57ad8f0a18800095e3af92` (`2026-03-07T00:04:53-05:00`)  
+Generated: 2026-03-09  
 Scope: `apps/beerbook-api`  
 Baseline doc: `docs/API_CONTRACT.md`
 
@@ -10,9 +9,9 @@ Baseline doc: `docs/API_CONTRACT.md`
 ## What Was Audited
 
 - Endpoint coverage parity from runtime sources:
-  - `server.js`: 23 handlers
-  - `routes/*.js`: 75 handlers
-  - Total: `98 implemented` (parity target for contract coverage)
+  - `server.js`: inlined API handlers (health, catalog, breweries, ratings, profile, stats, review share)
+  - `routes/*.js`: activity, beers, crews, deals, exchange, follows, highlights, internal, leaderboard, map, tabs, tracking, upload, venues, admin
+  - Total: `103 implemented` (parity target for contract coverage)
 - Route behavior and response/error shapes were re-checked against:
   - `server.js`
   - `routes/*.js`
@@ -20,7 +19,15 @@ Baseline doc: `docs/API_CONTRACT.md`
   - `lib/processEventEngine.js`
   - `lib/achievementProgress.js`
 - Schema/runtime alignment was re-checked against migrations:
-  - `supabase/migrations/*.sql` (including ledger reset + rating award profile cache refresh function)
+  - `supabase/migrations/*.sql` (including crew milestones, weekly challenges, ledger, profile cache RPCs)
+
+---
+
+## Verified New / Updated Endpoints (2026-03-09)
+
+- **Crews:** `GET /api/crews/:id/challenge`, `GET /api/crews/:id/milestones`, `GET /api/crews/:id/trending`, `GET /api/crews/:id/style-counts` — implemented in `routes/crews.js`; require crew membership (403 if not member). Documented in `API_CONTRACT.md` under Crews.
+- **Crew detail:** `GET /api/crews/:id` now returns `stats` (including `venues_visited_count`, `members_on_streak_count`, `favorite_style_name`) and `weekly_challenge: { challenge, progress }`.
+- **Leaderboard:** `GET /api/leaderboard` accepts optional `crew_id`; response includes `truncated` and `pagination`; DB aggregation via `leaderboard_aggregate` RPC.
 
 ---
 
@@ -115,4 +122,4 @@ No medium-priority drift found in this pass after regeneration.
 
 ## Result
 
-`API_CONTRACT.md`, `DATABASE_SCHEMAS_OVERVIEW.md`, and this audit are now aligned to the post-migration single-ledger architecture and current route/schema behavior.
+`API_CONTRACT.md`, `DATABASE_SCHEMAS_OVERVIEW.md`, and this audit are aligned to the current API (including crew challenge, milestones, trending, style-counts, leaderboard crew scoping) and to migrations through `crew_milestones` and `weekly_challenges`.
