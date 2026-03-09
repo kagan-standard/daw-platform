@@ -6,3 +6,7 @@ data/*.txt
 # Pipeline output (generated CSVs)
 data/output/
 data/output/*.csv
+
+# Environment secrets (never commit)
+infra/compose/.env
+infra/compose/.env.bak.*
