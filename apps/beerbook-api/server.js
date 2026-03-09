@@ -16,7 +16,7 @@ const {
 } = require('./lib/tabs');
 const { invokeProcessEvent } = require('./lib/processEvent');
 const { requireCrewMembership } = require('./lib/crewAuth');
-const { getAdminToken, createUser, getTokensForUser } = require('./lib/keycloakAdmin');
+const { getAdminToken, createUser, getTokensForUser, refreshTokens, sendVerificationEmail } = require('./lib/keycloakAdmin');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -673,14 +673,22 @@ app.post('/api/auth/register', registerLimiter, async (req, res) => {
       console.error('Profile creation failed (non-fatal):', profileErr.message);
     }
 
+    // Trigger verification email
+    try {
+      await sendVerificationEmail(adminToken, createResult.userId);
+    } catch (emailErr) {
+      console.error('Verification email failed (non-fatal):', emailErr.message);
+    }
+
     const tokens = await getTokensForUser(trimmedUsername, password);
-    if (!tokens) {
+    if (!tokens || tokens.error) {
       return res.status(201).json({
         success: true,
         user_id: createResult.userId,
         display_name: effectiveDisplayName,
         auto_login: false,
-        message: 'Account created. Please sign in.',
+        email_verification_required: true,
+        message: 'Account created. Please check your email to verify your account.',
       });
     }
 
@@ -698,6 +706,87 @@ app.post('/api/auth/register', registerLimiter, async (req, res) => {
     return res.status(500).json({
       error: 'server_error',
       message: 'Registration failed. Please try again later.',
+    });
+  }
+});
+
+// ---------- POST /api/auth/login — public, ROPC login ----------
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: { error: 'rate_limited', message: 'Too many login attempts. Please try again later.' },
+});
+
+app.post('/api/auth/login', loginLimiter, async (req, res) => {
+  try {
+    const { username, password } = req.body;
+
+    if (!username || !password) {
+      return res.status(400).json({
+        error: 'validation_failed',
+        message: 'Username and password are required',
+      });
+    }
+
+    const result = await getTokensForUser(username.trim(), password);
+
+    if (result.error) {
+      const statusMap = {
+        invalid_credentials: 401,
+        email_not_verified: 403,
+        account_disabled: 403,
+      };
+      return res.status(statusMap[result.error] || 500).json({
+        error: result.error,
+        message: result.message,
+      });
+    }
+
+    return res.json({
+      access_token: result.access_token,
+      refresh_token: result.refresh_token,
+      expires_in: result.expires_in,
+    });
+  } catch (err) {
+    console.error('Login error:', err);
+    return res.status(500).json({
+      error: 'server_error',
+      message: 'Login failed. Please try again later.',
+    });
+  }
+});
+
+// ---------- POST /api/auth/refresh — public, refresh token grant ----------
+app.post('/api/auth/refresh', async (req, res) => {
+  try {
+    const { refresh_token } = req.body;
+
+    if (!refresh_token) {
+      return res.status(400).json({
+        error: 'validation_failed',
+        message: 'refresh_token is required',
+      });
+    }
+
+    const result = await refreshTokens(refresh_token);
+
+    if (result.error) {
+      return res.status(401).json({
+        error: result.error,
+        message: result.message,
+      });
+    }
+
+    return res.json({
+      access_token: result.access_token,
+      refresh_token: result.refresh_token,
+      expires_in: result.expires_in,
+    });
+  } catch (err) {
+    console.error('Token refresh error:', err);
+    return res.status(500).json({
+      error: 'server_error',
+      message: 'Token refresh failed. Please try again later.',
     });
   }
 });

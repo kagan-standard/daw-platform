@@ -74,8 +74,10 @@ async function createUser(adminToken, { email, username, password, display_name 
   return { success: true, userId };
 }
 
+const MOBILE_CLIENT_ID = process.env.KEYCLOAK_MOBILE_CLIENT_ID || 'beerbook-service';
+
 /**
- * ROPC token grant — auto-login after registration.
+ * ROPC token grant. Returns token object on success or { error, message } on failure.
  */
 async function getTokensForUser(username, password) {
   const tokenUrl = `${KEYCLOAK_URL}/realms/${USER_REALM}/protocol/openid-connect/token`;
@@ -84,7 +86,7 @@ async function getTokensForUser(username, password) {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
       grant_type: 'password',
-      client_id: 'beerbook-mobile',
+      client_id: MOBILE_CLIENT_ID,
       username,
       password,
       scope: 'openid profile email',
@@ -92,11 +94,66 @@ async function getTokensForUser(username, password) {
   });
 
   if (!res.ok) {
-    console.error('ROPC token grant failed:', res.status);
-    return null;
+    const body = await res.json().catch(() => ({}));
+    const desc = (body.error_description || '').toLowerCase();
+    const errCode = body.error || '';
+
+    if (desc.includes('invalid user credentials') || desc.includes('invalid username or password')) {
+      return { error: 'invalid_credentials', message: 'Invalid username or password' };
+    }
+    if (desc.includes('not fully set up') || desc.includes('verify your email') || desc.includes('required action')) {
+      return { error: 'email_not_verified', message: 'Please verify your email before signing in.' };
+    }
+    if (desc.includes('account disabled') || desc.includes('account is disabled')) {
+      return { error: 'account_disabled', message: 'This account has been disabled.' };
+    }
+
+    console.error('ROPC token grant failed:', res.status, body);
+    return { error: 'login_failed', message: 'Login failed. Please try again later.' };
   }
 
   return await res.json();
 }
 
-module.exports = { getAdminToken, createUser, getTokensForUser };
+/**
+ * Refresh token grant. Returns new token object or { error, message }.
+ */
+async function refreshTokens(refreshToken) {
+  const tokenUrl = `${KEYCLOAK_URL}/realms/${USER_REALM}/protocol/openid-connect/token`;
+  const res = await fetch(tokenUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      client_id: MOBILE_CLIENT_ID,
+      refresh_token: refreshToken,
+    }),
+  });
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    console.error('Token refresh failed:', res.status, body);
+    return { error: 'refresh_failed', message: 'Session expired. Please sign in again.' };
+  }
+
+  return await res.json();
+}
+
+/**
+ * Trigger Keycloak verification email for a user. Requires admin token.
+ */
+async function sendVerificationEmail(adminToken, userId) {
+  const url = `${KEYCLOAK_URL}/admin/realms/${USER_REALM}/users/${userId}/send-verify-email`;
+  const res = await fetch(url, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${adminToken}` },
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    console.error('Send verification email failed:', res.status, body);
+    return false;
+  }
+  return true;
+}
+
+module.exports = { getAdminToken, createUser, getTokensForUser, refreshTokens, sendVerificationEmail };
