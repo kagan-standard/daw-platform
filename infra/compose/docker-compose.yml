@@ -82,6 +82,7 @@ services:
       KEYCLOAK_URL: https://auth.drinksafterwork.net
       KEYCLOAK_ADMIN_CLIENT_ID: beerbook-service
       KEYCLOAK_ADMIN_CLIENT_SECRET: ${KEYCLOAK_ADMIN_CLIENT_SECRET}
+      KEYCLOAK_MOBILE_CLIENT_ID: beerbook-mobile
       KEYCLOAK_ADMIN_REALM: daw
       SUPABASE_REST_URL: http://supabase-rest:3000
       SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
