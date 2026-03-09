@@ -13,15 +13,27 @@
  * Usage:
  *   node scripts/check-and-backfill-achievement-cosmetics.js [--backfill]
  *
- * Env: SUPABASE_URL, SUPABASE_SERVICE_KEY
+ * Env: SUPABASE_URL or SUPABASE_REST_URL, SUPABASE_SERVICE_KEY or SUPABASE_SERVICE_ROLE_KEY
+ *      (optional: create .env or export before running)
  */
 
-const SUPABASE_URL = String(process.env.SUPABASE_URL || '').replace(/\/$/, '');
-const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
+try {
+  require('dotenv').config();
+} catch (_) {
+  /* dotenv not installed */
+}
+
+const SUPABASE_URL = String(
+  process.env.SUPABASE_URL || process.env.SUPABASE_REST_URL || ''
+).replace(/\/$/, '');
+const SUPABASE_SERVICE_KEY =
+  process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
 const RUN_BACKFILL = process.argv.includes('--backfill');
 
 if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
-  console.error('SUPABASE_URL and SUPABASE_SERVICE_KEY are required');
+  console.error(
+    'SUPABASE_URL (or SUPABASE_REST_URL) and SUPABASE_SERVICE_KEY (or SUPABASE_SERVICE_ROLE_KEY) are required.'
+  );
   process.exit(1);
 }
 

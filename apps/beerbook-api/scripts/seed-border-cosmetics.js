@@ -7,21 +7,37 @@
  * Usage:
  *   node scripts/seed-border-cosmetics.js
  *
- * Required env:
- *   SUPABASE_URL
- *   SUPABASE_SERVICE_KEY
+ * Required env (set in shell or .env):
+ *   SUPABASE_URL or SUPABASE_REST_URL   (e.g. https://xxx.supabase.co or http://supabase-rest:3000)
+ *   SUPABASE_SERVICE_KEY or SUPABASE_SERVICE_ROLE_KEY
+ *
+ * Example:
+ *   SUPABASE_URL=https://xxx.supabase.co SUPABASE_SERVICE_KEY=eyJ... node scripts/seed-border-cosmetics.js
  */
 
-const SUPABASE_URL = String(process.env.SUPABASE_URL || '').replace(/\/$/, '');
-const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
+try {
+  require('dotenv').config();
+} catch (_) {
+  /* dotenv not installed; rely on process.env */
+}
+
+const SUPABASE_URL = String(
+  process.env.SUPABASE_URL || process.env.SUPABASE_REST_URL || ''
+).replace(/\/$/, '');
+const SUPABASE_SERVICE_KEY =
+  process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 if (!SUPABASE_URL) {
-  console.error('SUPABASE_URL is required');
+  console.error(
+    'SUPABASE_URL or SUPABASE_REST_URL is required. Set it in the environment or in a .env file.'
+  );
   process.exit(1);
 }
 
 if (!SUPABASE_SERVICE_KEY) {
-  console.error('SUPABASE_SERVICE_KEY is required');
+  console.error(
+    'SUPABASE_SERVICE_KEY or SUPABASE_SERVICE_ROLE_KEY is required. Set it in the environment or in a .env file.'
+  );
   process.exit(1);
 }
 
