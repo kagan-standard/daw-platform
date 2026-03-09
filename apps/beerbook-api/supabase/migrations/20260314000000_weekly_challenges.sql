@@ -109,5 +109,6 @@ COMMENT ON FUNCTION public.get_crew_weekly_challenge IS
 -- RLS: API uses service_role; no anon/authenticated direct access to weekly_challenges
 ALTER TABLE public.weekly_challenges ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS weekly_challenges_service_role ON public.weekly_challenges;
 CREATE POLICY weekly_challenges_service_role ON public.weekly_challenges
   FOR ALL TO service_role USING (true) WITH CHECK (true);
