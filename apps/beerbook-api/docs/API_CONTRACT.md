@@ -2604,6 +2604,8 @@ Legacy achievement rule keys such as `review_min_len`, `stars_gte`/`stars_lte`, 
 - **Auth:** `softAuthMiddleware` (optional)
 - **File:** `routes/tabs.js`
 
+**Response envelope:** The list is always under the top-level key `data` (array). Frontends should read `response.data` for the catalog.
+
 **Success Response (200):**
 
 ```json
@@ -2627,11 +2629,16 @@ Legacy achievement rule keys such as `review_min_len`, `stars_gte`/`stars_lte`, 
       "tab_price": 0,
       "active": true,
       "sort_order": 0,
-      "created_at": "ISO8601"
+      "created_at": "ISO8601",
+      "is_owned": false,
+      "is_equipped": false
     }
   ]
 }
 ```
+
+- **`is_owned`:** When the request is authenticated, `true` if the user has this cosmetic in `user_cosmetics`; otherwise `false`. When unauthenticated, always `false`.
+- **`is_equipped`:** When authenticated, `true` if this cosmetic is the user's equipped border or title; otherwise `false`.
 
 Additional cosmetic achievement fields:
 
@@ -2650,6 +2657,8 @@ Additional cosmetic achievement fields:
 
 **URL Params:** `id` — user ID
 
+**Response envelope:** The list is always under the top-level key `data` (array). Frontends should read `response.data` for the user's inventory. Every item in this list is owned by the user; each item includes `is_owned: true`.
+
 **Success Response (200):**
 
 ```json
@@ -2667,6 +2676,7 @@ Additional cosmetic achievement fields:
       "title_text": "string | null",
       "acquired_via": "string",
       "acquired_at": "ISO8601",
+      "is_owned": true,
       "is_equipped": true
     }
   ]
@@ -2675,6 +2685,12 @@ Additional cosmetic achievement fields:
 
 **Error Responses:**
 - 400: `{ "error": "Missing user id" }`
+
+**Cosmetics frontend integration (inventory and catalog):**
+- Both endpoints return the list under **`data`** only: `{ "data": [ ... ] }`. Do not expect `user_cosmetics`, `inventory`, or `result`.
+- Fields use **snake_case**: `is_owned`, `is_equipped`, `acquired_via`, `acquired_at`.
+- Inventory: every element has `is_owned: true`; filter or count by `item.is_owned` to include all.
+- Catalog: when authenticated, each item has `is_owned` and `is_equipped` set from `user_cosmetics` and profile. If the app shows "0 owned", ensure the catalog parser reads `response.data` and that owned count uses `item.is_owned === true`.
 
 ---
 
