@@ -92,6 +92,7 @@ services:
       TOKEN_CLOCK_SKEW_SECONDS: "30"
       UPLOAD_DIR: "/data/uploads"
       ADMIN_USER_ID: ${ADMIN_USER_ID}
+      INTERNAL_PROCESS_EVENT_SECRET: ${INTERNAL_PROCESS_EVENT_SECRET}
     depends_on:
       supabase-rest: { condition: service_started }
     networks:
