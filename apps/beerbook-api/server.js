@@ -16,6 +16,7 @@ const {
 } = require('./lib/tabs');
 const { invokeProcessEvent } = require('./lib/processEvent');
 const { requireCrewMembership } = require('./lib/crewAuth');
+const { emitMilestonesAfterRating } = require('./lib/crewMilestones');
 const { getAdminToken, createUser, getTokensForUser, refreshTokens, sendVerificationEmail } = require('./lib/keycloakAdmin');
 
 const app = express();
@@ -1656,6 +1657,15 @@ app.post('/api/ratings', authMiddleware, async (req, res) => {
       error: err.message || err,
     });
   }
+
+  // Phase 2: crew milestones (crew_total_ratings, first_venue_visit, member_streak)
+  emitMilestonesAfterRating(rest, {
+    userId: sub,
+    userDisplayName: profile?.display_name || preferred_username,
+    venueId: ratingRow.venue_id ?? null,
+    venueName: ratingRow.location_name || null,
+    currentStreakWeeks: currentStreakWeeks ?? null,
+  }).catch((err) => console.error('emitMilestonesAfterRating:', err?.message || err));
 
   res.status(201).json({
     data: row || record,

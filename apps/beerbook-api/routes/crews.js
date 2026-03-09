@@ -37,7 +37,7 @@ function parseRpcError(body) {
 }
 
 module.exports = function (opts) {
-  const { rest, authMiddleware } = opts;
+  const { rest, authMiddleware, totalFromContentRange } = opts;
   const router = express.Router();
 
   // POST /api/crews
@@ -100,6 +100,145 @@ module.exports = function (opts) {
         member_user_ids: byCrew[c.id] || [],
       }));
       res.json({ data });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // GET /api/crews/:id/milestones — paginated crew milestone timeline (Phase 2 backend plan)
+  router.get('/crews/:id/milestones', authMiddleware, async (req, res, next) => {
+    try {
+      const me = req.claims.sub;
+      const crewId = String(req.params.id || '').trim();
+      const membership = await requireCrewMembership(rest, me, crewId);
+      if (!membership) return res.status(403).json({ error: 'Crew access denied' });
+
+      const limit = Math.min(Math.max(1, parseInt(req.query.limit, 10) || 20), 100);
+      const offset = Math.max(0, parseInt(req.query.offset, 10) || 0);
+
+      const path = `/crew_milestones?crew_id=eq.${encodeURIComponent(crewId)}&order=occurred_at.desc&limit=${limit}&offset=${offset}`;
+      const [listRes, countRes] = await Promise.all([
+        rest('GET', path),
+        rest('GET', `/crew_milestones?crew_id=eq.${encodeURIComponent(crewId)}&select=id&limit=0`, { headers: { Prefer: 'count=exact' } }),
+      ]);
+      if (listRes.status >= 400) return res.status(listRes.status).json(listRes.body || { error: 'Upstream error' });
+
+      const rows = Array.isArray(listRes.body) ? listRes.body : [];
+      const total = totalFromContentRange(countRes.headers && countRes.headers['content-range']) ?? rows.length;
+      const userIds = [...new Set(rows.map((m) => m.user_id).filter(Boolean))];
+      const inClause = userIds.length ? buildInClause(userIds) : '';
+      const profilesRes = userIds.length
+        ? await rest('GET', `/profiles?id=in.(${inClause})&select=id,display_name&limit=1000`)
+        : { status: 200, body: [] };
+      const profiles = Array.isArray(profilesRes.body) ? profilesRes.body : [];
+      const profileMap = {};
+      profiles.forEach((p) => { profileMap[p.id] = p; });
+
+      const data = rows.map((m) => ({
+        id: m.id,
+        type: m.type,
+        occurred_at: m.occurred_at,
+        user_id: m.user_id ?? undefined,
+        user_display_name: m.user_id ? (profileMap[m.user_id]?.display_name ?? null) : undefined,
+        data: m.data ?? undefined,
+        message: m.message ?? undefined,
+      }));
+
+      res.json({
+        data,
+        pagination: { limit, offset, total },
+      });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // GET /api/crews/:id/trending — Discover: beers trending in crew (Phase 4 backend plan)
+  router.get('/crews/:id/trending', authMiddleware, async (req, res, next) => {
+    try {
+      const me = req.claims.sub;
+      const crewId = String(req.params.id || '').trim();
+      const membership = await requireCrewMembership(rest, me, crewId);
+      if (!membership) return res.status(403).json({ error: 'Crew access denied' });
+
+      const days = Math.min(Math.max(1, parseInt(req.query.days, 10) || 7), 90);
+      const limit = Math.min(Math.max(1, parseInt(req.query.limit, 10) || 10), 50);
+
+      const since = new Date();
+      since.setDate(since.getDate() - days);
+      const sinceIso = since.toISOString();
+
+      const membersRes = await rest('GET', `/crew_members?crew_id=eq.${encodeURIComponent(crewId)}&select=user_id`);
+      if (membersRes.status >= 400) return res.status(membersRes.status).json(membersRes.body || { error: 'Upstream error' });
+      const members = Array.isArray(membersRes.body) ? membersRes.body : [];
+      const userIds = members.map((m) => m.user_id).filter(Boolean);
+      if (!userIds.length) return res.json({ data: [], pagination: { limit, total: 0 } });
+
+      const inClause = buildInClause(userIds);
+      const path = `/ratings?user_id=in.(${inClause})&created_at=gte.${encodeURIComponent(sinceIso)}&select=beer_id,beer_name,style,brewery,rating&limit=10000`;
+      const ratingsRes = await rest('GET', path);
+      if (ratingsRes.status >= 400) return res.status(ratingsRes.status).json(ratingsRes.body || { error: 'Upstream error' });
+      const ratings = Array.isArray(ratingsRes.body) ? ratingsRes.body : [];
+
+      const byBeer = {};
+      ratings.forEach((r) => {
+        const key = r.beer_id || r.beer_name || '';
+        if (!key) return;
+        if (!byBeer[key]) {
+          byBeer[key] = { beer_id: r.beer_id ?? null, beer_name: r.beer_name || null, style: r.style ?? null, brewery: r.brewery ?? null, sum: 0, count: 0 };
+        }
+        byBeer[key].sum += Number(r.rating) || 0;
+        byBeer[key].count += 1;
+      });
+
+      const sorted = Object.entries(byBeer)
+        .map(([, v]) => ({
+          beer_id: v.beer_id,
+          beer_name: v.beer_name,
+          style: v.style,
+          brewery: v.brewery,
+          rating_count: v.count,
+          avg_rating: v.count ? Math.round((v.sum / v.count) * 100) / 100 : 0,
+        }))
+        .sort((a, b) => b.rating_count - a.rating_count);
+      const total = sorted.length;
+      const data = sorted.slice(0, limit);
+
+      res.json({
+        data,
+        pagination: { limit, total, days },
+      });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // GET /api/crews/:id/style-counts — Discover: count of crew-rated beers per style (Phase 4 backend plan)
+  router.get('/crews/:id/style-counts', authMiddleware, async (req, res, next) => {
+    try {
+      const me = req.claims.sub;
+      const crewId = String(req.params.id || '').trim();
+      const membership = await requireCrewMembership(rest, me, crewId);
+      if (!membership) return res.status(403).json({ error: 'Crew access denied' });
+
+      const membersRes = await rest('GET', `/crew_members?crew_id=eq.${encodeURIComponent(crewId)}&select=user_id`);
+      if (membersRes.status >= 400) return res.status(membersRes.status).json(membersRes.body || { error: 'Upstream error' });
+      const members = Array.isArray(membersRes.body) ? membersRes.body : [];
+      const userIds = members.map((m) => m.user_id).filter(Boolean);
+      if (!userIds.length) return res.json({});
+
+      const inClause = buildInClause(userIds);
+      const ratingsRes = await rest('GET', `/ratings?user_id=in.(${inClause})&select=style&limit=50000`);
+      if (ratingsRes.status >= 400) return res.status(ratingsRes.status).json(ratingsRes.body || { error: 'Upstream error' });
+      const ratings = Array.isArray(ratingsRes.body) ? ratingsRes.body : [];
+
+      const counts = {};
+      ratings.forEach((r) => {
+        const style = r.style && String(r.style).trim() ? String(r.style).trim() : 'Unknown';
+        counts[style] = (counts[style] || 0) + 1;
+      });
+
+      res.json(counts);
     } catch (e) {
       next(e);
     }
