@@ -27,12 +27,15 @@ COMMENT ON TABLE public.weekly_challenges IS
   'One challenge per week (UTC Monday–Sunday). Progress is computed per crew from ratings.';
 
 -- RPC: get current week's challenge + progress for a crew.
+-- p_crew_id is text to match public.crews(id) and crew_members(crew_id).
+-- Drop uuid overload if present (e.g. from earlier migration run) so only text signature exists.
+DROP FUNCTION IF EXISTS public.get_crew_weekly_challenge(uuid, timestamptz);
 -- Invariants (plan §3):
 --   Week: Monday 00:00 UTC – Sunday 23:59.999 UTC (ISO week); one canonical rule.
 --   Rating inclusion: created_at in [week_start, week_end]; crew members only; edited ratings count (created_at unchanged on update); deleted excluded; distinct beers by beer_id or (beer_name|brewery).
 -- Numerator: count of distinct beers (beer_id if set, else beer_name||brewery) of target_style in that window.
 -- Contributing: count of distinct user_id who submitted at least one such rating.
-CREATE OR REPLACE FUNCTION public.get_crew_weekly_challenge(p_crew_id uuid, p_week_start timestamptz DEFAULT NULL)
+CREATE OR REPLACE FUNCTION public.get_crew_weekly_challenge(p_crew_id text, p_week_start timestamptz DEFAULT NULL)
 RETURNS jsonb
 LANGUAGE plpgsql
 STABLE
@@ -98,7 +101,7 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.get_crew_weekly_challenge(uuid, timestamptz) TO service_role;
+GRANT EXECUTE ON FUNCTION public.get_crew_weekly_challenge(text, timestamptz) TO service_role;
 
 COMMENT ON FUNCTION public.get_crew_weekly_challenge IS
   'Returns current week challenge + progress for a crew. Week = Monday 00:00 UTC to Sunday 23:59.999 UTC.';

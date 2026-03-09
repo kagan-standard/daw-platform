@@ -1,13 +1,13 @@
 -- Phase 2 (Backend Weekly Challenges plan): Crew Milestones
 -- Table and idempotent emission for crew_total_ratings, first_venue_visit, member_streak, leaderboard_rank.
 
--- Table: crew_milestones
+-- Table: crew_milestones (crew_id/user_id match public.crews and crew_members: TEXT)
 CREATE TABLE IF NOT EXISTS public.crew_milestones (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  crew_id uuid NOT NULL REFERENCES public.crews(id) ON DELETE CASCADE,
+  crew_id text NOT NULL REFERENCES public.crews(id) ON DELETE CASCADE,
   type text NOT NULL,
   occurred_at timestamptz NOT NULL DEFAULT now(),
-  user_id uuid NULL,
+  user_id text NULL,
   data jsonb NULL,
   message text NULL,
   CONSTRAINT crew_milestones_type_check CHECK (type IN (
@@ -42,8 +42,9 @@ COMMENT ON TABLE public.crew_milestones IS
   'Crew milestone events for timeline (crew total ratings, first venue visit, member streak, leaderboard rank). Append-only; idempotent per unique indexes.';
 
 -- RPC: return crew ids and total rating counts for crews that contain p_user_id (for milestone emission)
-CREATE OR REPLACE FUNCTION public.crew_rating_counts_for_user(p_user_id uuid)
-RETURNS TABLE(crew_id uuid, total_ratings bigint)
+-- p_user_id and crew_id are text to match crew_members and crews schema.
+CREATE OR REPLACE FUNCTION public.crew_rating_counts_for_user(p_user_id text)
+RETURNS TABLE(crew_id text, total_ratings bigint)
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
@@ -55,7 +56,7 @@ AS $$
   GROUP BY cm.crew_id;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.crew_rating_counts_for_user(uuid) TO service_role;
+GRANT EXECUTE ON FUNCTION public.crew_rating_counts_for_user(text) TO service_role;
 
 COMMENT ON FUNCTION public.crew_rating_counts_for_user IS
   'Returns (crew_id, total_ratings) for every crew the user belongs to. Used when emitting crew_total_ratings milestones.';
