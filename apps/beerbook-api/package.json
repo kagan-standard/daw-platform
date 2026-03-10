@@ -11,6 +11,9 @@
     "ci:check-migrations": "node scripts/check-migration-safety.js"
   },
   "engines": { "node": ">=20" },
+  "overrides": {
+    "@tootallnate/once": ">=3.0.1"
+  },
   "dependencies": {
     "@google-cloud/vision": "^4.0.0",
     "express": "^4.21.0",
