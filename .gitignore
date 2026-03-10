@@ -1,3 +1,13 @@
+# Dependencies and build output (never commit)
+node_modules/
+.npm
+dist/
+build/
+*.log
+.env
+.env.local
+.env.*.local
+
 # Large data files (not committed, placed manually)
 # Source data in data/
 data/*.xlsx
