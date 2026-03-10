@@ -10,6 +10,7 @@ const express = require('express');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const { runModeration } = require('../lib/uploadModeration');
 
 const UPLOAD_DIR = process.env.UPLOAD_DIR || '/data/uploads';
 const MAX_SIZE = 10 * 1024 * 1024; // 10MB
@@ -140,6 +141,14 @@ module.exports = function (opts) {
       if (!verifyMagicBytes(selectedFile.path, mime)) {
         removeFile(selectedFile.path);
         return res.status(400).json({ error: 'File content does not match declared image type (magic-byte check failed).' });
+      }
+
+      const baseUrl = (process.env.API_BASE_URL || 'https://api.beerbook.drinksafterwork.net').replace(/\/$/, '');
+      const url = `${baseUrl}/uploads/${selectedFile.filename}`;
+      const rest = opts.rest;
+      const userId = req.claims?.sub;
+      if (rest && userId) {
+        setImmediate(() => runModeration(rest, userId, selectedFile.path, url));
       }
 
       uploadResponse(selectedFile, res);

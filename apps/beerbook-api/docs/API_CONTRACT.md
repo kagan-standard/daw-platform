@@ -679,14 +679,14 @@ When unauthenticated, `you_cheered` is always `false`.
 
 | Field | Type | Required | Validation |
 |-------|------|----------|------------|
-| `rating` | number | yes | 1–5 |
+| `yg_value` / `ygValue` | number | **yes** | Integer -6 to 7, zero not allowed (user-facing scale; internal star rating is derived, never exposed) |
 | `beer_name` / `beerName` | string | yes* | *Required unless `beer_id` resolves a name |
 | `brewery` | string | yes** | **Required for `is_new_beer` (min 2 chars) |
 | `style` | string | yes** | **Required for `is_new_beer` or when beer style is unknown |
 | `abv` | number | no** | **Required for `is_new_beer` (0–30) |
 | `beer_id` / `beerId` | string | no | Catalog beer UUID |
 | `is_new_beer` | boolean | no | Default `false` |
-| `yg_value` / `ygValue` | number | no | Integer 1–12 |
+| `rating` | number | no | **Do not send.** Internal 1–5 value is derived from `yg_value` for DB/legacy only. |
 | `latitude` / `lat` | number | no | Must provide both lat+lng or neither; valid numbers |
 | `longitude` / `lng` | number | no | Must provide both lat+lng or neither; valid numbers |
 | `location_name` / `locationName` | string | no | — |
@@ -784,16 +784,15 @@ Note: Accepts both `snake_case` and `camelCase` for most fields.
     "...all rating fields..."
   },
   "updated": true,
-  "previous_rating": 3,
-  "message": "Rating updated (previously 3 ★)"
+  "message": "Rating updated."
 }
 ```
 
 Note: Update response does NOT include `tabs_earned`, `tabs_breakdown`, `tier_multiplier`, `seeder_multiplier`, `new_beer_multiplier`, `is_new_beer`, `achievements_unlocked`, `current_streak_weeks`, or `longest_streak_weeks`. No tabs are awarded on update.
 
 **Error Responses:**
-- 400: `{ "error": "rating must be a number between 1 and 5" }`
-- 400: `{ "error": "yg_value must be an integer between 1 and 12" }`
+- 400: `{ "error": "yg_value is required (integer -6 to 7, zero not allowed)" }`
+- 400: `{ "error": "yg_value must be an integer from -6 to 7 (zero not allowed)" }`
 - 400: `{ "error": "latitude and longitude must be provided together" }`
 - 400: `{ "error": "latitude and longitude must be valid numbers" }`
 - 400: `{ "error": "price_cents must be a positive integer" }`
@@ -961,7 +960,7 @@ Note: Returns 200 with `{ success: true }`, NOT 204.
       "brewery": "string",
       "style": "string",
       "rating": 4,
-      "yg_value": 3.5,
+      "yg_value": 3,
       "created_at": "ISO8601",
       "cheers_count": 2,
       "you_cheered": true,
@@ -2175,6 +2174,8 @@ Both routes are identical.
 - 400: `{ "error": "No file uploaded (use field name \"file\" or \"photo\")" }`
 - 400: `{ "error": "Invalid file type. Only JPEG, PNG, WebP, and HEIC are allowed." }`
 - 413: `{ "error": "File too large. Maximum size is 10MB." }`
+
+**Async moderation:** Uploaded images may be moderated asynchronously (Google Cloud Vision Safe Search). If content is flagged, the file is removed, profile/rating photo references (`avatar_url`, `photo_url`) are cleared, and the user receives a tab notification with `notification_type: 'photo_removed'`.
 
 ---
 
