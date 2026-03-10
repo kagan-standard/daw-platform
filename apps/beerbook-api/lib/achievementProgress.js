@@ -40,8 +40,14 @@ function getTarget(rules, metric) {
 
   if (Number.isFinite(directTarget)) return directTarget;
 
-  if (metric === 'review_min_len' || metric === 'stars_gte' || metric === 'stars_lte' || metric === 'price') {
+  if (metric === 'review_min_len' || metric === 'stars_gte' || metric === 'stars_lte' || metric === 'yg_gte' || metric === 'yg_lte' || metric === 'yg_eq' || metric === 'price') {
     return 1;
+  }
+
+  if (metric === 'distribution_yg') {
+    const buckets = rules && Array.isArray(rules.buckets) ? rules.buckets : [];
+    const firstBucketGte = buckets.length > 0 ? numberOrNull(buckets[0].gte) : null;
+    return Number.isFinite(firstBucketGte) && firstBucketGte > 0 ? firstBucketGte : null;
   }
 
   return null;
@@ -97,6 +103,15 @@ function resolveMetricAndThreshold(subtype, rules) {
     if (Number.isFinite(numberOrNull(where.review_min_len))) {
       return { metric: 'review_min_len', threshold: numberOrNull(where.review_min_len) };
     }
+    if (Number.isFinite(numberOrNull(where.yg_gte))) {
+      return { metric: 'yg_gte', threshold: numberOrNull(where.yg_gte) };
+    }
+    if (Number.isFinite(numberOrNull(where.yg_lte))) {
+      return { metric: 'yg_lte', threshold: numberOrNull(where.yg_lte) };
+    }
+    if (Number.isFinite(numberOrNull(where.yg_eq))) {
+      return { metric: 'yg_eq', threshold: numberOrNull(where.yg_eq) };
+    }
     if (Number.isFinite(numberOrNull(where.stars_gte))) {
       return { metric: 'stars_gte', threshold: numberOrNull(where.stars_gte) };
     }
@@ -105,6 +120,16 @@ function resolveMetricAndThreshold(subtype, rules) {
     }
     if (where.price === true) {
       return { metric: 'price', threshold: null };
+    }
+  }
+
+  if (type === 'distribution' && entity === 'ratings' && Array.isArray(safeRules.buckets)) {
+    const buckets = safeRules.buckets;
+    const isYgDistribution = buckets.every(
+      (b) => b && (Number.isFinite(numberOrNull(b.yg_gte)) || Number.isFinite(numberOrNull(b.yg_lte)) || Number.isFinite(numberOrNull(b.yg_eq)))
+    );
+    if (isYgDistribution) {
+      return { metric: 'distribution_yg', threshold: null, buckets };
     }
   }
 
@@ -118,6 +143,9 @@ function resolveMetricAndThreshold(subtype, rules) {
     const op = String(safeRules.op || '').trim();
     const value = numberOrNull(safeRules.value);
     if (!Number.isFinite(value)) return null;
+    if ((field === 'yg' || field === 'yg_value') && op === '>=') return { metric: 'yg_gte', threshold: value };
+    if ((field === 'yg' || field === 'yg_value') && op === '<=') return { metric: 'yg_lte', threshold: value };
+    if ((field === 'yg' || field === 'yg_value') && (op === '=' || op === 'eq')) return { metric: 'yg_eq', threshold: value };
     if ((field === 'stars' || field === 'rating') && op === '>=') return { metric: 'stars_gte', threshold: value };
     if ((field === 'stars' || field === 'rating') && op === '<=') return { metric: 'stars_lte', threshold: value };
   }
@@ -187,7 +215,7 @@ async function calculateAchievementProgress({ rest, totalFromContentRange, user_
   const metricConfig = resolveMetricAndThreshold(subtype, rules);
   if (!metricConfig) return null;
 
-  const { metric, threshold } = metricConfig;
+  const { metric, threshold, buckets: resolvedBuckets } = metricConfig;
   const target = getTarget(rules, metric);
   if (!Number.isFinite(target) || target <= 0) return null;
 
@@ -216,6 +244,32 @@ async function calculateAchievementProgress({ rest, totalFromContentRange, user_
     progressCurrent = await countLedger(rest, totalFromContentRange, userId, 'cheers_given');
   } else if (metric === 'cheers_received') {
     progressCurrent = await countLedger(rest, totalFromContentRange, userId, 'cheers_received');
+  } else if (metric === 'yg_gte') {
+    if (!Number.isFinite(threshold)) return null;
+    progressCurrent = await countRatings(rest, totalFromContentRange, userId, `yg_value=gte.${encodeURIComponent(threshold)}`);
+  } else if (metric === 'yg_lte') {
+    if (!Number.isFinite(threshold)) return null;
+    progressCurrent = await countRatings(rest, totalFromContentRange, userId, `yg_value=lte.${encodeURIComponent(threshold)}`);
+  } else if (metric === 'yg_eq') {
+    if (!Number.isFinite(threshold)) return null;
+    progressCurrent = await countRatings(rest, totalFromContentRange, userId, `yg_value=eq.${encodeURIComponent(threshold)}`);
+  } else if (metric === 'distribution_yg') {
+    const dBuckets = resolvedBuckets || (rules && Array.isArray(rules.buckets) ? rules.buckets : []);
+    if (!dBuckets.length) return null;
+    const bucketCounts = [];
+    for (const bucket of dBuckets) {
+      const filters = [];
+      const ygGte = numberOrNull(bucket.yg_gte);
+      const ygLte = numberOrNull(bucket.yg_lte);
+      const ygEq = numberOrNull(bucket.yg_eq);
+      if (Number.isFinite(ygGte)) filters.push(`yg_value=gte.${encodeURIComponent(ygGte)}`);
+      if (Number.isFinite(ygLte)) filters.push(`yg_value=lte.${encodeURIComponent(ygLte)}`);
+      if (Number.isFinite(ygEq)) filters.push(`yg_value=eq.${encodeURIComponent(ygEq)}`);
+      if (!filters.length) return null;
+      const count = await countRatings(rest, totalFromContentRange, userId, filters.join('&'));
+      bucketCounts.push(count);
+    }
+    progressCurrent = Math.min(...bucketCounts);
   } else if (metric === 'streak_weeks') {
     progressCurrent = await getCurrentStreakWeeks(rest, userId);
   } else {

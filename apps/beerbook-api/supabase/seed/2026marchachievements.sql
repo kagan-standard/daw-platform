@@ -49,8 +49,8 @@ VALUES
 ('twentyfive_ratings', 'Known Face', 'Log 25 ratings.', 'starter', 'progress', 'rating_submitted', '{"type":"count","entity":"ratings","gte":25}', false, 'medium', 15, true, 1),
 ('fifty_ratings', 'House Account', 'Log 50 ratings.', 'starter', 'progress', 'rating_submitted', '{"type":"count","entity":"ratings","gte":50}', false, 'medium', 20, true, 1),
 ('first_new_beer', 'Trailblazer', 'Rate a beer that is new to you.', 'starter', 'special', 'rating_submitted', '{"type":"flag_true","field":"is_new_beer"}', false, 'easy', 5, true, 1),
-('first_five_star', 'Perfect Pour', 'Give your first 5-star rating.', 'starter', 'special', 'rating_submitted', '{"type":"comparison","field":"stars","op":">=","value":5}', false, 'easy', 5, true, 1),
-('first_one_star', 'Brutal Honesty', 'Give your first 1-star rating.', 'starter', 'special', 'rating_submitted', '{"type":"comparison","field":"stars","op":"<=","value":1}', false, 'easy', 3, true, 1)
+('first_five_star', 'Perfect Pour', 'Give your first top-tier YG rating (YG ≥ 5).', 'starter', 'special', 'rating_submitted', '{"type":"comparison","field":"yg_value","op":">=","value":5}', false, 'easy', 5, true, 1),
+('first_one_star', 'Brutal Honesty', 'Give your first low YG rating (YG ≤ -2).', 'starter', 'special', 'rating_submitted', '{"type":"comparison","field":"yg_value","op":"<=","value":-2}', false, 'easy', 3, true, 1)
 ON CONFLICT (key) DO UPDATE
 SET name=EXCLUDED.name,
     description=EXCLUDED.description,
@@ -79,9 +79,9 @@ VALUES
 ('three_in_a_day', 'Flight Board', 'Log 3 ratings in one day (reasonable).', 'ratings', 'special', 'rating_submitted', '{"type":"count_in_window","entity":"ratings","window":"day","gte":3}', false, 'easy', 8, true, 1),
 ('five_in_a_day', 'Tasting Day', 'Log 5 ratings in one day.', 'ratings', 'special', 'rating_submitted', '{"type":"count_in_window","entity":"ratings","window":"day","gte":5}', false, 'medium', 12, true, 1),
 ('consistent_rater_7', 'One a Day', 'Log at least 1 rating each day for 7 days.', 'ratings', 'streak', 'rating_submitted', '{"type":"daily_streak","entity":"ratings","days":7}', false, 'hard', 15, true, 1),
-('top_shelf_10', 'Top Shelf', 'Give 10 beers 4+ stars.', 'ratings', 'progress', 'rating_submitted', '{"type":"count_where","entity":"ratings","where":{"stars_gte":4},"gte":10}', false, 'medium', 10, true, 1),
-('harsh_10', 'No Free Passes', 'Give 10 beers 2 stars or less.', 'ratings', 'progress', 'rating_submitted', '{"type":"count_where","entity":"ratings","where":{"stars_lte":2},"gte":10}', false, 'medium', 8, true, 1),
-('balanced_palette', 'Balanced Palate', 'Have at least 10 ratings in each bucket: <=2, 3, >=4.', 'ratings', 'special', 'rating_submitted', '{"type":"distribution","entity":"ratings","buckets":[{"stars_lte":2,"gte":10},{"stars_eq":3,"gte":10},{"stars_gte":4,"gte":10}]}', false, 'hard', 20, true, 1),
+('top_shelf_10', 'Top Shelf', 'Give 10 beers a YG of 4 or higher.', 'ratings', 'progress', 'rating_submitted', '{"type":"count_where","entity":"ratings","where":{"yg_gte":4},"gte":10}', false, 'medium', 10, true, 1),
+('harsh_10', 'No Free Passes', 'Give 10 beers a YG of -1 or lower.', 'ratings', 'progress', 'rating_submitted', '{"type":"count_where","entity":"ratings","where":{"yg_lte":-1},"gte":10}', false, 'medium', 8, true, 1),
+('balanced_palette', 'Balanced Palate', 'Have at least 10 ratings in each YG bucket: low (≤-1), mid (1–2), high (≥3).', 'ratings', 'special', 'rating_submitted', '{"type":"distribution","entity":"ratings","buckets":[{"yg_lte":-1,"gte":10},{"yg_gte":1,"yg_lte":2,"gte":10},{"yg_gte":3,"gte":10}]}', false, 'hard', 20, true, 1),
 ('hundred_ratings', 'Archive Builder', 'Log 100 total ratings.', 'ratings', 'progress', 'rating_submitted', '{"type":"count","entity":"ratings","gte":100}', false, 'hard', 30, true, 1)
 ON CONFLICT (key) DO UPDATE
 SET name=EXCLUDED.name,
