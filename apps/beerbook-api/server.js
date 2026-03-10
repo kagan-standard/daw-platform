@@ -18,6 +18,7 @@ const { invokeProcessEvent } = require('./lib/processEvent');
 const { requireCrewMembership } = require('./lib/crewAuth');
 const { emitMilestonesAfterRating } = require('./lib/crewMilestones');
 const { getAdminToken, createUser, getTokensForUser, refreshTokens, sendVerificationEmail } = require('./lib/keycloakAdmin');
+const { validateYgValue, ygValueToStarRating } = require('./lib/ratingsValidation');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -1319,8 +1320,8 @@ function sanitizeRatingDbFields(input) {
   return out;
 }
 
-// POST /api/ratings — auth required
-// Phase 2.1: optional yg_value, lat/lng, location_name, venue_id, photo_url
+// POST /api/ratings — auth required. YG-only: yg_value required; star rating derived internally, never shown to users.
+// Phase 2.1: lat/lng, location_name, venue_id, photo_url
 app.post('/api/ratings', authMiddleware, async (req, res) => {
   const { sub, preferred_username } = req.claims;
   const {
@@ -1351,20 +1352,17 @@ app.post('/api/ratings', authMiddleware, async (req, res) => {
       * Math.sin(dLng / 2) * Math.sin(dLng / 2);
     return 6371000 * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
   };
-  const ratingRaw = b.rating;
-  const rating = Number(ratingRaw);
-  if (!Number.isFinite(rating) || rating < 1 || rating > 5) {
-    return res.status(400).json({ error: 'rating must be a number between 1 and 5' });
+  const ygValueRaw = b.yg_value ?? b.ygValue ?? null;
+  const ygResult = validateYgValue(ygValueRaw);
+  if (!ygResult.valid) {
+    return res.status(400).json({ error: ygResult.error });
   }
-  const ygValue = b.yg_value ?? b.ygValue ?? null;
-  // Keep this range in sync with DB constraint `ratings_yg_value_check`.
-  // Supabase migration: `supabase/migrations/20260316100000_ratings_yg_bidirectional_and_source.sql`.
-  if (ygValue != null) {
-    const yg = Number(ygValue);
-    if (!Number.isFinite(yg) || yg < -6 || yg > 6 || !Number.isInteger(yg)) {
-      return res.status(400).json({ error: 'yg_value must be an integer between -6 and 6' });
-    }
+  const ygValue = ygResult.value;
+  if (ygValue == null) {
+    return res.status(400).json({ error: 'yg_value is required (integer -6 to 7, zero not allowed)' });
   }
+  // Derive internal 1–5 star for DB/legacy only; never exposed to users.
+  const rating = ygValueToStarRating(ygValue);
   const lat = b.latitude ?? b.lat;
   const lng = b.longitude ?? b.lng;
   const latNum = lat != null ? Number(lat) : null;
@@ -1565,8 +1563,7 @@ app.post('/api/ratings', authMiddleware, async (req, res) => {
     return res.json({
       data: updatedRow || null,
       updated: true,
-      previous_rating: existing.rating ?? null,
-      message: `Rating updated (previously ${existing.rating} ★)`,
+      message: 'Rating updated.',
     });
   }
 

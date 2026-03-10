@@ -649,7 +649,7 @@ const App = {
         }
 
         // Clear validation glow on interaction
-        ['beer-name', 'beer-style', 'star-rating'].forEach(id => {
+        ['beer-name', 'beer-style', 'yg-value'].forEach(id => {
             const el = document.getElementById(id);
             if (!el) return;
             const event = el.tagName === 'SELECT' ? 'change' : 'input';
@@ -686,15 +686,16 @@ const App = {
             // --- Enhanced validation with inline message + scroll + glow ---
             const beerName = document.getElementById('beer-name').value.trim();
             const style = document.getElementById('beer-style').value;
-            const ratingVal = parseInt(document.getElementById('beer-rating').value);
             const brewery = document.getElementById('beer-brewery').value.trim();
             const abvRaw = document.getElementById('beer-abv').value;
             const abv = abvRaw !== '' ? Number(abvRaw) : null;
             const selectedBeerId = document.getElementById('rating-beer-id')?.value?.trim() || '';
+            const ygRaw = document.getElementById('yg-value')?.value;
+            const ygNum = parseInt(ygRaw, 10);
 
             const missing = [];
             if (!beerName) missing.push({ label: 'Beer Name', field: 'beer-name', parent: '.beer-autocomplete-wrap' });
-            if (!ratingVal) missing.push({ label: 'Star Rating', field: 'star-rating', parent: '.rating-stars-section' });
+            if (!Number.isFinite(ygNum) || ygNum < 1 || ygNum > 13) missing.push({ label: 'YG Value', field: 'yg-track', parent: '.yg-slider-group' });
             if (!this.isNewBeer && !selectedBeerId && !style) {
                 missing.push({ label: 'Select an existing beer, or add this as a new beer', field: 'beer-name', parent: '.beer-autocomplete-wrap' });
             }
@@ -771,8 +772,9 @@ const App = {
             // --- End enhanced validation ---
 
             const ygRaw = document.getElementById('yg-value')?.value;
-            const ygInt = Math.max(0, Math.min(12, Math.round(parseFloat(ygRaw) || 0)));
-            const ygVal = ygInt > 0 ? ygInt : null;
+            const ygSliderVal = Math.max(1, Math.min(13, Math.round(parseFloat(ygRaw) || 7)));
+            // Map frontend 1–13 to API -6..7 (no zero): 1→-6 .. 6→-1, 7→1 .. 13→7
+            const ygVal = ygSliderVal <= 6 ? ygSliderVal - 7 : ygSliderVal - 6;
             const lat = document.getElementById('rating-lat').value ? parseFloat(document.getElementById('rating-lat').value) : null;
             const lng = document.getElementById('rating-lng').value ? parseFloat(document.getElementById('rating-lng').value) : null;
             const locationName = document.getElementById('rating-location-name').value.trim() || null;
@@ -808,7 +810,6 @@ const App = {
                 brewery: document.getElementById('beer-brewery').value.trim(),
                 style: document.getElementById('beer-style').value,
                 abv: parseFloat(document.getElementById('beer-abv').value) || null,
-                rating: ratingVal,
                 is_new_beer: this.isNewBeer,
                 beer_id: beerIdVal || null,
                 flavors: {
@@ -833,7 +834,7 @@ const App = {
                 this.setLoadingText(e.target, 'Saving rating...');
                 const result = await DB.addRating(rating);
                 if (result && result.updated) {
-                    App.toast(`Rating updated! (previously ${result.previous_rating} ★)`, 'success');
+                    App.toast(result.message || 'Rating updated.', 'success');
                 } else {
                     const tabsEarned = Number(result?.tabsEarned ?? result?.tabs_earned ?? 0);
                     if (typeof TabBurst !== 'undefined' && tabsEarned > 0) {
@@ -1505,8 +1506,9 @@ const App = {
         const notes = document.getElementById('beer-notes');
         if (notes) notes.value = existing.notes || '';
         if (typeof App._ygSetValue === 'function') {
-            const yg = (existing.yg_value != null && Number(existing.yg_value) > 0) ? Number(existing.yg_value) : 0;
-            App._ygSetValue(yg);
+            const yg = existing.yg_value != null ? Number(existing.yg_value) : 1;
+            const sliderPos = yg <= -1 ? yg + 7 : yg + 6; // -6..-1→1..6, 1..7→7..13
+            App._ygSetValue(Math.max(1, Math.min(13, sliderPos)));
         }
         const serveType = (existing.serve_type || '').toString().toLowerCase();
         const serveTypeHidden = document.getElementById('rating-serve-type');
@@ -1717,43 +1719,45 @@ const App = {
         const ygGlasses = document.getElementById('yg-glasses');
         const ygClearBtn = document.getElementById('yg-clear');
         if (!ygValueInput || !ygTrack || !ygDisplay || !ygContext || !ygGlasses) return;
+        // Position 1–13 maps to YG -6..7 (no zero): 1→-6 .. 6→-1, 7→1 .. 13→7
+        const positionToYg = (pos) => (pos <= 6 ? pos - 7 : pos - 6);
         const hints = {
-            0: 'Tap a glass to rate in YGs',
-            1: 'Barely worth a YG 😬',
-            2: 'Equal to a couple YGs',
-            '3-4': 'Solid beer 👍',
-            '5-6': 'Above average 🍺',
-            '7-8': 'Premium territory 🔥',
-            '9-10': 'This beer is Elite 🏆',
-            '11-12': 'God tier. 🐐'
+            neg: 'Below par',
+            '-1': 'Worth about one YG',
+            '1-2': 'Solid beer 👍',
+            '3-4': 'Above average 🍺',
+            '5-6': 'Premium territory 🔥',
+            '7': 'God tier. 🐐'
         };
-        const getHint = (v) => {
-            if (v <= 0) return hints[0];
-            if (v === 1) return hints[1];
-            if (v === 2) return hints[2];
-            if (v <= 4) return hints['3-4'];
-            if (v <= 6) return hints['5-6'];
-            if (v <= 8) return hints['7-8'];
-            if (v <= 10) return hints['9-10'];
-            return hints['11-12'];
+        const getHint = (ygVal) => {
+            if (ygVal <= -2) return hints.neg;
+            if (ygVal === -1) return hints['-1'];
+            if (ygVal <= 2) return hints['1-2'];
+            if (ygVal <= 4) return hints['3-4'];
+            if (ygVal <= 6) return hints['5-6'];
+            return hints['7'];
         };
-        const updateDisplayFromValue = (v) => {
-            ygContext.textContent = getHint(v);
-            ygDisplay.textContent = v > 0 ? v + ' YG' : '';
+        const updateDisplayFromValue = (position) => {
+            const ygVal = positionToYg(position);
+            ygContext.textContent = getHint(ygVal);
+            ygDisplay.textContent = (ygVal > 0 ? '+' : '') + ygVal + ' YG';
         };
         let dragging = false;
         let hoverValue = null;
         const setValue = (val) => {
-            const prev = parseInt(ygValueInput.value, 10) || 0;
-            const v = Math.max(0, Math.min(12, Math.round(Number(val)) || 0));
+            const prev = parseInt(ygValueInput.value, 10) || 7;
+            const v = Math.max(1, Math.min(13, Math.round(Number(val)) || 7));
             ygValueInput.value = String(v);
+            ygValueInput.dispatchEvent(new Event('input', { bubbles: true }));
             ygTrack.setAttribute('aria-valuenow', String(v));
+            ygTrack.setAttribute('aria-valuemin', '1');
+            ygTrack.setAttribute('aria-valuemax', '13');
             updateDisplayFromValue(v);
             if (v !== prev) haptic('tap');
-            if (ygClearBtn) ygClearBtn.style.display = v > 0 ? 'inline-flex' : 'none';
+            if (ygClearBtn) ygClearBtn.style.display = v !== 7 ? 'inline-flex' : 'none';
             const glassEls = ygGlasses.querySelectorAll('.yg-glass');
             glassEls.forEach((el, i) => {
-                const revealed = i < v;
+                const revealed = (i + 1) <= v;
                 const wasRevealed = el.classList.contains('revealed');
                 el.classList.toggle('dimmed', !revealed);
                 el.classList.toggle('revealed', revealed);
@@ -1766,34 +1770,35 @@ const App = {
         const applyPreview = (n) => {
             const glassEls = ygGlasses.querySelectorAll('.yg-glass');
             glassEls.forEach((el, i) => {
-                el.classList.toggle('yg-glass-preview', i < n);
+                el.classList.toggle('yg-glass-preview', (i + 1) <= n);
             });
         };
         const clearPreview = () => {
             hoverValue = null;
             ygGlasses.querySelectorAll('.yg-glass').forEach((g) => g.classList.remove('yg-glass-preview'));
-            updateDisplayFromValue(parseInt(ygValueInput.value, 10) || 0);
+            updateDisplayFromValue(parseInt(ygValueInput.value, 10) || 7);
         };
         const getValueFromElement = (el) => {
             const glass = el?.closest?.('.yg-glass');
             if (!glass || !glass.dataset.value) return null;
             return parseInt(glass.dataset.value, 10);
         };
-        const ensureTwelveGlasses = () => {
-            if (ygGlasses.children.length === 12) return;
+        const ensureThirteenGlasses = () => {
+            if (ygGlasses.children.length === 13) return;
             ygGlasses.innerHTML = '';
-            for (let i = 1; i <= 12; i++) {
+            for (let i = 1; i <= 13; i++) {
                 const btn = document.createElement('button');
                 btn.type = 'button';
                 btn.className = 'yg-glass dimmed';
                 btn.textContent = '🍺';
                 btn.dataset.value = String(i);
-                btn.setAttribute('aria-label', `${i} YG`);
+                const yg = positionToYg(i);
+                btn.setAttribute('aria-label', (yg > 0 ? '+' : '') + yg + ' YG');
                 ygGlasses.appendChild(btn);
             }
         };
-        ensureTwelveGlasses();
-        setValue(ygValueInput.value || 0);
+        ensureThirteenGlasses();
+        setValue(ygValueInput.value || 7);
 
         ygGlasses.addEventListener('click', (e) => {
             const val = getValueFromElement(e.target);
@@ -1839,7 +1844,7 @@ const App = {
         ygGlasses.addEventListener('mouseleave', () => clearPreview());
 
         ygTrack.addEventListener('keydown', (e) => {
-            const v = parseInt(ygValueInput.value, 10) || 0;
+            const v = parseInt(ygValueInput.value, 10) || 7;
             if (e.key === 'ArrowRight' || e.key === 'ArrowUp') {
                 e.preventDefault();
                 setValue(v + 1);
@@ -1849,7 +1854,7 @@ const App = {
             }
         });
 
-        if (ygClearBtn) ygClearBtn.addEventListener('click', (e) => { e.preventDefault(); setValue(0); });
+        if (ygClearBtn) ygClearBtn.addEventListener('click', (e) => { e.preventDefault(); setValue(7); });
 
         App._ygSetValue = setValue;
     },
@@ -3826,7 +3831,7 @@ const App = {
             const el = document.getElementById(`val-${f}`);
             if (el) el.textContent = '0';
         });
-        if (typeof App._ygSetValue === 'function') App._ygSetValue(0);
+        if (typeof App._ygSetValue === 'function') App._ygSetValue(7);
         const beerIdInput = document.getElementById('rating-beer-id');
         if (beerIdInput) beerIdInput.value = '';
         this.clearLocation();

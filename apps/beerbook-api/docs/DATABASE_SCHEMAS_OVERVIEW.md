@@ -34,11 +34,12 @@ This file outlines the current BeerBook database schema state after applying the
 ### `ratings`
 - **Primary key:** `id` (text, uuid string)
 - **Core columns:** `user_id`, `user_name`, `beer_name`, `brewery`, `style`, `abv`, `rating`, flavor fields, `notes`, `created_at`, `yg_value`, location fields, `venue_id`, `photo_url`
-- **Added columns:** `beer_id`, `price_cents`, `serve_type`, `comment_count`
+- **Added columns:** `beer_id`, `price_cents`, `serve_type`, `comment_count`, `rating_source`
 - **Constraints:**
   - `rating` in range 1-5
   - flavor fields in range 0-5
-  - `yg_value` in range 1-12
+  - `yg_value` in range -6 to 6 (nullable)
+  - `rating_source` (`'user_submitted'` | `'import'`), default `'user_submitted'`
   - `serve_type` in (`draft`, `can`, `bottle`, `crowler`, `growler`, `nitro`)
 
 ### `rating_comments`
