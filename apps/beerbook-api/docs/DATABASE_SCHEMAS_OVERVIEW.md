@@ -11,7 +11,8 @@ This file outlines the current BeerBook database schema state after applying the
 - `apps/beerbook-api/supabase/migrations/20250301100000_add_rating_comments.sql`
 - `apps/beerbook-api/supabase/migrations/20250304000000_achievements_tabs_ledger.sql`
 - `apps/beerbook-api/supabase/migrations/20260305000000_add_cosmetics_system.sql`
-- `apps/beerbook-api/supabase/migrations/20260306000000_update_ratings_yg_value_check.sql`
+- `apps/beerbook-api/supabase/migrations/20260306000000_update_ratings_yg_value_check.sql` (superseded by 20260310100000 for yg range)
+- `apps/beerbook-api/supabase/migrations/20260310100000_ratings_yg_value_1_12.sql`
 - `apps/beerbook-api/supabase/migrations/20260306_ledger_migration_reset.sql`
 - `apps/beerbook-api/supabase/migrations/20260306003000_refresh_rating_award_profile_cache.sql`
 - `apps/beerbook-api/supabase/migrations/20260313000000_crew_milestones.sql`
@@ -37,7 +38,7 @@ This file outlines the current BeerBook database schema state after applying the
 - **Constraints:**
   - `rating` in range 1-5
   - flavor fields in range 0-5
-  - `yg_value` in range 0-12
+  - `yg_value` in range 1-12
   - `serve_type` in (`draft`, `can`, `bottle`, `crowler`, `growler`, `nitro`)
 
 ### `rating_comments`

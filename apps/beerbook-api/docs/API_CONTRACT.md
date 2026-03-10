@@ -686,7 +686,7 @@ When unauthenticated, `you_cheered` is always `false`.
 | `abv` | number | no** | **Required for `is_new_beer` (0–30) |
 | `beer_id` / `beerId` | string | no | Catalog beer UUID |
 | `is_new_beer` | boolean | no | Default `false` |
-| `yg_value` / `ygValue` | number | no | Integer 0–12 |
+| `yg_value` / `ygValue` | number | no | Integer 1–12 |
 | `latitude` / `lat` | number | no | Must provide both lat+lng or neither; valid numbers |
 | `longitude` / `lng` | number | no | Must provide both lat+lng or neither; valid numbers |
 | `location_name` / `locationName` | string | no | — |
@@ -793,7 +793,7 @@ Note: Update response does NOT include `tabs_earned`, `tabs_breakdown`, `tier_mu
 
 **Error Responses:**
 - 400: `{ "error": "rating must be a number between 1 and 5" }`
-- 400: `{ "error": "yg_value must be an integer between 0 and 12" }`
+- 400: `{ "error": "yg_value must be an integer between 1 and 12" }`
 - 400: `{ "error": "latitude and longitude must be provided together" }`
 - 400: `{ "error": "latitude and longitude must be valid numbers" }`
 - 400: `{ "error": "price_cents must be a positive integer" }`
