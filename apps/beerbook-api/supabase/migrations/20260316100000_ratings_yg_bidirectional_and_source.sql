@@ -18,7 +18,11 @@ ALTER TABLE ratings
 -- 4) Delete user-submitted (no-op on first run; establishes rule for future)
 DELETE FROM ratings WHERE rating_source = 'user_submitted';
 
--- 5) Convert import star (rating 1-5) -> YG (-6 to +6)
+-- 5) Drop old YG check (1-12) *before* updating to -6..+6 so UPDATE does not violate it
+ALTER TABLE ratings
+  DROP CONSTRAINT IF EXISTS ratings_yg_value_check;
+
+-- 6) Convert import star (rating 1-5) -> YG (-6 to +6)
 UPDATE ratings
 SET yg_value = (
   CASE
@@ -33,10 +37,6 @@ SET yg_value = (
   END
 )
 WHERE rating_source = 'import';
-
--- 6) Drop old YG check (1-12)
-ALTER TABLE ratings
-  DROP CONSTRAINT IF EXISTS ratings_yg_value_check;
 
 -- 7) Add new YG check: nullable or -6..+6
 ALTER TABLE ratings
