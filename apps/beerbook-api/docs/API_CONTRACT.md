@@ -2294,6 +2294,8 @@ Both routes are identical.
       "user_id": "string",
       "display_name": "string",
       "avatar_url": "string | null",
+      "equipped_border_asset_url": "string | null",
+      "equipped_border_fit": "object | null",
       "current_tier": "string",
       "is_seeder": false,
       "tab_balance": 0,
@@ -2310,6 +2312,8 @@ Both routes are identical.
   "pagination": { "limit": 50, "offset": 0, "total": 100 }
 }
 ```
+
+Profile/cosmetics fields (`avatar_url`, `equipped_border_asset_url`, `equipped_border_fit`) are included for both global and crew-filtered leaderboards. `equipped_border_fit` is the border cosmetic’s fit metadata when present.
 
 `period` only affects `rating_count`, `avg_rating`, and `total_cheers`:
 - `weekly`: current week starting Monday 00:00 UTC

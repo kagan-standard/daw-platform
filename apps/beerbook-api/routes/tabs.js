@@ -731,6 +731,36 @@ module.exports = function tabsRoutes(opts) {
       if (out.status >= 400) return res.status(out.status).json(out.body || { error: 'Upstream error' });
       const rows = Array.isArray(out.body) ? out.body : [];
       const userIds = [...new Set(rows.map((row) => String(row?.user_id || '').trim()).filter(Boolean))];
+      const profileCosmeticsByUser = Object.create(null);
+      if (userIds.length) {
+        const userInClauseProfiles = userIds.map((id) => encodeURIComponent(id)).join(',');
+        const profilesRes = await rest(
+          'GET',
+          `/profiles?id=in.(${userInClauseProfiles})&select=id,avatar_url,equipped_border_id&limit=5000`
+        );
+        const profiles = profilesRes.status < 400 && Array.isArray(profilesRes.body) ? profilesRes.body : [];
+        const borderIds = [...new Set(profiles.map((p) => p?.equipped_border_id).filter(Boolean))];
+        let borderById = Object.create(null);
+        if (borderIds.length) {
+          const borderInClause = borderIds.map((id) => encodeURIComponent(id)).join(',');
+          const cosmeticsRes = await rest(
+            'GET',
+            `/cosmetics?id=in.(${borderInClause})&select=id,asset_url,border_fit&limit=500`
+          );
+          const cosmetics = cosmeticsRes.status < 400 && Array.isArray(cosmeticsRes.body) ? cosmeticsRes.body : [];
+          borderById = Object.fromEntries(cosmetics.map((c) => [c.id, c]));
+        }
+        profiles.forEach((p) => {
+          const uid = String(p?.id || '').trim();
+          if (!uid) return;
+          const border = p.equipped_border_id ? borderById[p.equipped_border_id] : null;
+          profileCosmeticsByUser[uid] = {
+            avatar_url: p.avatar_url ?? null,
+            equipped_border_asset_url: border?.asset_url ?? null,
+            equipped_border_fit: border?.border_fit ?? null,
+          };
+        });
+      }
       const statsByUser = Object.create(null);
       userIds.forEach((id) => {
         statsByUser[id] = {
@@ -791,8 +821,12 @@ module.exports = function tabsRoutes(opts) {
         const userId = String(row?.user_id || '').trim();
         const stats = statsByUser[userId] || { rating_count: 0, avg_rating_sum: 0, total_cheers: 0 };
         const avg = stats.rating_count > 0 ? (stats.avg_rating_sum / stats.rating_count) : 0;
+        const cosmetics = profileCosmeticsByUser[userId];
         return {
           ...row,
+          avatar_url: cosmetics?.avatar_url ?? row.avatar_url ?? null,
+          equipped_border_asset_url: cosmetics?.equipped_border_asset_url ?? null,
+          equipped_border_fit: cosmetics?.equipped_border_fit ?? null,
           rating_count: stats.rating_count,
           avg_rating: Number(avg.toFixed(2)),
           total_cheers: stats.total_cheers,
