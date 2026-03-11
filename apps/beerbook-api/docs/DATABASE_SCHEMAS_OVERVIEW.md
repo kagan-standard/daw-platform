@@ -18,6 +18,7 @@ This file outlines the current BeerBook database schema state after applying the
 - `apps/beerbook-api/supabase/migrations/20260313000000_crew_milestones.sql`
 - `apps/beerbook-api/supabase/migrations/20260314000000_weekly_challenges.sql`
 - `apps/beerbook-api/supabase/migrations/20260320100000_admin_featured_beers.sql`
+- `apps/beerbook-api/supabase/migrations/20260321100000_cosmetics_border_fit.sql`
 
 ## Schemas
 
@@ -168,9 +169,10 @@ This file outlines the current BeerBook database schema state after applying the
 
 ### `cosmetics`
 - **Primary key:** `id` (uuid)
-- **Columns:** `key`, `type`, `name`, `description`, `rarity`, `asset_url`, `preview_asset_url`, `title_text`, `unlock_type`, `achievement_key`, `tab_price`, `active`, `sort_order`, `created_at`
+- **Columns:** `key`, `type`, `name`, `description`, `rarity`, `asset_url`, `preview_asset_url`, `title_text`, `unlock_type`, `achievement_key`, `tab_price`, `active`, `sort_order`, `border_fit` (jsonb, nullable), `created_at`
 - **Relationships:** `achievement_key -> achievements.key`
 - **Uniqueness:** `key`
+- **Note:** `border_fit` is optional per-border fit metadata (scale, rotationDeg, offsetX, offsetY, optional avatarScale); meaningful when `type = 'border'`. Validated in API.
 
 ### `user_cosmetics`
 - **Primary key:** `id` (uuid)

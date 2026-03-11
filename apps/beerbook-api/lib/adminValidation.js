@@ -422,6 +422,40 @@ async function validateCosmeticPatch(body) {
     data.sort_order = n;
   }
   if (body.active !== undefined) data.active = Boolean(body.active);
+
+  if (body.border_fit !== undefined) {
+    const bf = body.border_fit;
+    if (bf === null) {
+      data.border_fit = null;
+    } else if (typeof bf === 'object' && bf !== null) {
+      const scale = bf.scale;
+      const rotationDeg = bf.rotationDeg;
+      const offsetX = bf.offsetX;
+      const offsetY = bf.offsetY;
+      const avatarScale = bf.avatarScale;
+      if (
+        typeof scale !== 'number' || !Number.isFinite(scale) ||
+        typeof rotationDeg !== 'number' || !Number.isFinite(rotationDeg) ||
+        typeof offsetX !== 'number' || !Number.isFinite(offsetX) ||
+        typeof offsetY !== 'number' || !Number.isFinite(offsetY)
+      ) {
+        return { valid: false, error: 'border_fit must have finite numbers for scale, rotationDeg, offsetX, offsetY' };
+      }
+      if (scale <= 0 || scale > 5) return { valid: false, error: 'border_fit.scale must be in (0, 5]' };
+      if (rotationDeg < -360 || rotationDeg > 360) return { valid: false, error: 'border_fit.rotationDeg must be in [-360, 360]' };
+      const out = { scale, rotationDeg, offsetX, offsetY };
+      if (avatarScale !== undefined && avatarScale !== null) {
+        if (typeof avatarScale !== 'number' || !Number.isFinite(avatarScale)) {
+          return { valid: false, error: 'border_fit.avatarScale must be a finite number when provided' };
+        }
+        out.avatarScale = avatarScale;
+      }
+      data.border_fit = out;
+    } else {
+      return { valid: false, error: 'border_fit must be null or an object' };
+    }
+  }
+
   return { valid: true, data };
 }
 

@@ -217,6 +217,7 @@ async function attachEquippedCosmeticsToProfile(profile) {
     return {
       ...profile,
       equipped_border_asset_url: null,
+      equipped_border_fit: null,
       equipped_title_text: null,
     };
   }
@@ -226,11 +227,12 @@ async function attachEquippedCosmeticsToProfile(profile) {
     return {
       ...profile,
       equipped_border_asset_url: null,
+      equipped_border_fit: null,
       equipped_title_text: null,
     };
   }
 
-  const out = await rest('GET', `/cosmetics?id=in.(${idList})&select=id,asset_url,title_text,name&limit=10`);
+  const out = await rest('GET', `/cosmetics?id=in.(${idList})&select=id,asset_url,title_text,name,border_fit&limit=10`);
   const cosmetics = out.status < 400 && Array.isArray(out.body) ? out.body : [];
   const byId = Object.fromEntries(cosmetics.map((row) => [row.id, row]));
   const border = borderId ? byId[borderId] : null;
@@ -239,6 +241,7 @@ async function attachEquippedCosmeticsToProfile(profile) {
   return {
     ...profile,
     equipped_border_asset_url: border?.asset_url ?? null,
+    equipped_border_fit: border?.border_fit ?? null,
     equipped_title_text: title?.title_text || title?.name || null,
   };
 }

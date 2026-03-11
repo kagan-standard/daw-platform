@@ -110,6 +110,7 @@ module.exports = function (opts) {
       return {
         ...profile,
         equipped_border_asset_url: null,
+        equipped_border_fit: null,
         equipped_title_text: null,
       };
     }
@@ -118,12 +119,13 @@ module.exports = function (opts) {
       return {
         ...profile,
         equipped_border_asset_url: null,
+        equipped_border_fit: null,
         equipped_title_text: null,
       };
     }
     const cosmeticsOut = await rest(
       'GET',
-      `/cosmetics?id=in.(${idList})&select=id,asset_url,title_text,name&limit=10`
+      `/cosmetics?id=in.(${idList})&select=id,asset_url,title_text,name,border_fit&limit=10`
     );
     const cosmetics = cosmeticsOut.status < 400 && Array.isArray(cosmeticsOut.body) ? cosmeticsOut.body : [];
     const byId = Object.fromEntries(cosmetics.map((item) => [item.id, item]));
@@ -132,6 +134,7 @@ module.exports = function (opts) {
     return {
       ...profile,
       equipped_border_asset_url: border?.asset_url ?? null,
+      equipped_border_fit: border?.border_fit ?? null,
       equipped_title_text: title?.title_text || title?.name || null,
     };
   }

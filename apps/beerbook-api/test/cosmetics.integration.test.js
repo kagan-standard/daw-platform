@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const express = require('express');
 
 const tabsRoutes = require('../routes/tabs');
+const { validateCosmeticPatch } = require('../lib/adminValidation');
 
 function createApi(restImpl, options = {}) {
   const withSoftAuth = options.withSoftAuth !== false;
@@ -81,7 +82,7 @@ test('POST /api/cosmetics/purchase accepts cosmetic_id and forwards cosmetic_key
 
 test('GET /api/cosmetics enriches achievement visibility and progress fields', async () => {
   const app = createApi(async (method, path) => {
-    if (method === 'GET' && path === '/cosmetics?active=eq.true&select=id,key,type,name,description,rarity,asset_url,preview_asset_url,title_text,unlock_type,achievement_key,tab_price,active,sort_order,created_at&order=sort_order.asc,created_at.asc') {
+    if (method === 'GET' && path === '/cosmetics?active=eq.true&select=id,key,type,name,description,rarity,asset_url,preview_asset_url,title_text,unlock_type,achievement_key,tab_price,active,sort_order,border_fit,created_at&order=sort_order.asc,created_at.asc') {
       return {
         status: 200,
         body: [
@@ -122,6 +123,12 @@ test('GET /api/cosmetics enriches achievement visibility and progress fields', a
         ],
       };
     }
+    if (method === 'GET' && path === '/user_cosmetics?user_id=eq.user-123&select=cosmetic_id&limit=5000') {
+      return { status: 200, body: [] };
+    }
+    if (method === 'GET' && path === '/profiles?id=eq.user-123&select=equipped_border_id,equipped_title_id&limit=1') {
+      return { status: 200, body: [{ equipped_border_id: null, equipped_title_id: null }] };
+    }
     if (method === 'GET' && path === '/achievements?key=in.(hidden_ach)&select=id,key,is_hidden,rules') {
       return {
         status: 200,
@@ -158,7 +165,7 @@ test('GET /api/cosmetics enriches achievement visibility and progress fields', a
 
 test('GET /api/cosmetics skips user progress lookup when unauthenticated', async () => {
   const app = createApi(async (method, path) => {
-    if (method === 'GET' && path === '/cosmetics?active=eq.true&select=id,key,type,name,description,rarity,asset_url,preview_asset_url,title_text,unlock_type,achievement_key,tab_price,active,sort_order,created_at&order=sort_order.asc,created_at.asc') {
+    if (method === 'GET' && path === '/cosmetics?active=eq.true&select=id,key,type,name,description,rarity,asset_url,preview_asset_url,title_text,unlock_type,achievement_key,tab_price,active,sort_order,border_fit,created_at&order=sort_order.asc,created_at.asc') {
       return {
         status: 200,
         body: [
@@ -289,7 +296,7 @@ test('GET /api/users/:id/cosmetics returns owned cosmetics with is_equipped', as
         body: [{ equipped_border_id: '00000000-0000-4000-8000-000000000001', equipped_title_id: null }],
       };
     }
-    if (path === '/cosmetics?id=in.(00000000-0000-4000-8000-000000000001)&select=id,key,type,name,description,rarity,asset_url,preview_asset_url,title_text,unlock_type,achievement_key,tab_price,active,sort_order,created_at') {
+    if (path === '/cosmetics?id=in.(00000000-0000-4000-8000-000000000001)&select=id,key,type,name,description,rarity,asset_url,preview_asset_url,title_text,unlock_type,achievement_key,tab_price,active,sort_order,border_fit,created_at') {
       return {
         status: 200,
         body: [
@@ -320,4 +327,34 @@ test('GET /api/users/:id/cosmetics returns owned cosmetics with is_equipped', as
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
+});
+
+test('validateCosmeticPatch accepts border_fit (object and null)', async () => {
+  const vNull = await validateCosmeticPatch({ border_fit: null });
+  assert.equal(vNull.valid, true);
+  assert.equal(vNull.data.border_fit, null);
+
+  const vObj = await validateCosmeticPatch({
+    border_fit: { scale: 1.15, rotationDeg: -5, offsetX: 0.02, offsetY: -0.01, avatarScale: 0.65 },
+  });
+  assert.equal(vObj.valid, true);
+  assert.equal(vObj.data.border_fit.scale, 1.15);
+  assert.equal(vObj.data.border_fit.rotationDeg, -5);
+  assert.equal(vObj.data.border_fit.offsetX, 0.02);
+  assert.equal(vObj.data.border_fit.offsetY, -0.01);
+  assert.equal(vObj.data.border_fit.avatarScale, 0.65);
+
+  const vObjNoAvatar = await validateCosmeticPatch({
+    border_fit: { scale: 1, rotationDeg: 0, offsetX: 0, offsetY: 0 },
+  });
+  assert.equal(vObjNoAvatar.valid, true);
+  assert.equal(vObjNoAvatar.data.border_fit.avatarScale, undefined);
+
+  const vBad = await validateCosmeticPatch({ border_fit: { scale: 1 } });
+  assert.equal(vBad.valid, false);
+  assert.match(vBad.error, /rotationDeg|offsetX|offsetY/);
+
+  const vRange = await validateCosmeticPatch({ border_fit: { scale: 10, rotationDeg: 0, offsetX: 0, offsetY: 0 } });
+  assert.equal(vRange.valid, false);
+  assert.match(vRange.error, /scale/);
 });

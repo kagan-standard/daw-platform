@@ -385,7 +385,7 @@ module.exports = function tabsRoutes(opts) {
     try {
       const out = await rest(
         'GET',
-        '/cosmetics?active=eq.true&select=id,key,type,name,description,rarity,asset_url,preview_asset_url,title_text,unlock_type,achievement_key,tab_price,active,sort_order,created_at&order=sort_order.asc,created_at.asc'
+        '/cosmetics?active=eq.true&select=id,key,type,name,description,rarity,asset_url,preview_asset_url,title_text,unlock_type,achievement_key,tab_price,active,sort_order,border_fit,created_at&order=sort_order.asc,created_at.asc'
       );
       if (out.status >= 400) return res.status(out.status).json(out.body || { error: 'Upstream error' });
       const cosmetics = Array.isArray(out.body) ? out.body : [];
@@ -493,7 +493,7 @@ module.exports = function tabsRoutes(opts) {
 
       const cosmeticsOut = await rest(
         'GET',
-        `/cosmetics?id=in.(${idList})&select=id,key,type,name,description,rarity,asset_url,preview_asset_url,title_text,unlock_type,achievement_key,tab_price,active,sort_order,created_at`
+        `/cosmetics?id=in.(${idList})&select=id,key,type,name,description,rarity,asset_url,preview_asset_url,title_text,unlock_type,achievement_key,tab_price,active,sort_order,border_fit,created_at`
       );
       if (cosmeticsOut.status >= 400) return res.status(cosmeticsOut.status).json(cosmeticsOut.body || { error: 'Upstream error' });
       const cosmetics = Array.isArray(cosmeticsOut.body) ? cosmeticsOut.body : [];
@@ -513,6 +513,7 @@ module.exports = function tabsRoutes(opts) {
             asset_url: cosmetic.asset_url ?? null,
             preview_asset_url: cosmetic.preview_asset_url ?? null,
             title_text: cosmetic.title_text ?? null,
+            border_fit: cosmetic.border_fit ?? null,
             acquired_via: row.acquired_via,
             acquired_at: row.acquired_at,
             is_owned: true,

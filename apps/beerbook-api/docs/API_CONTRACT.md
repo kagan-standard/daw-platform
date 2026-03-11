@@ -1109,9 +1109,12 @@ Both routes are aliases and return the same response shape.
   "equipped_border_id": "uuid | null",
   "equipped_title_id": "uuid | null",
   "equipped_border_asset_url": "string | null",
+  "equipped_border_fit": "object | null",
   "equipped_title_text": "string | null"
 }
 ```
+
+- **`equipped_border_fit`:** Fit metadata (scale, rotationDeg, offsetX, offsetY, optional avatarScale) from the equipped border cosmetic; `null` when no border equipped or border has no fit.
 
 **Error Responses:**
 - 404: `{ "error": "User not found" }`
@@ -1191,10 +1194,13 @@ Both routes are identical.
   "equipped_border_id": "uuid | null",
   "equipped_title_id": "uuid | null",
   "equipped_border_asset_url": "string | null",
+  "equipped_border_fit": "object | null",
   "equipped_title_text": "string | null",
   "is_admin": false
 }
 ```
+
+- **`equipped_border_fit`:** Fit metadata from the equipped border cosmetic; `null` when no border equipped or border has no fit.
 
 Returns 201 if profile was newly created, 200 if existing.
 
@@ -1231,6 +1237,7 @@ At least one of `display_name` or `avatar_url` must be provided.
   "equipped_border_id": "uuid | null",
   "equipped_title_id": "uuid | null",
   "equipped_border_asset_url": "string | null",
+  "equipped_border_fit": "object | null",
   "equipped_title_text": "string | null",
   "is_admin": false
 }
@@ -2630,6 +2637,7 @@ Legacy achievement rule keys such as `review_min_len`, `stars_gte`/`stars_lte`, 
       "tab_price": 0,
       "active": true,
       "sort_order": 0,
+      "border_fit": "object | null",
       "created_at": "ISO8601",
       "is_owned": false,
       "is_equipped": false
@@ -2638,6 +2646,7 @@ Legacy achievement rule keys such as `review_min_len`, `stars_gte`/`stars_lte`, 
 }
 ```
 
+- **`border_fit`:** Optional per-border fit metadata (scale, rotationDeg, offsetX, offsetY, optional avatarScale); only present for border cosmetics. `null` or omitted means use app default.
 - **`is_owned`:** When the request is authenticated, `true` if the user has this cosmetic in `user_cosmetics`; otherwise `false`. When unauthenticated, always `false`.
 - **`is_equipped`:** When authenticated, `true` if this cosmetic is the user's equipped border or title; otherwise `false`.
 
@@ -2675,6 +2684,7 @@ Additional cosmetic achievement fields:
       "asset_url": "string | null",
       "preview_asset_url": "string | null",
       "title_text": "string | null",
+      "border_fit": "object | null",
       "acquired_via": "string",
       "acquired_at": "ISO8601",
       "is_owned": true,
@@ -2683,6 +2693,8 @@ Additional cosmetic achievement fields:
   ]
 }
 ```
+
+- **`border_fit`:** Per-border fit metadata when present on the cosmetic; `null` when not set.
 
 **Error Responses:**
 - 400: `{ "error": "Missing user id" }`
@@ -3654,7 +3666,7 @@ All admin routes require `authMiddleware` + `adminMiddleware`.
 
 - **File:** `routes/admin.js`
 
-**Success Response (200):** `{ "data": [ cosmetic rows ] }`
+**Success Response (200):** `{ "data": [ cosmetic rows ] }`. Each cosmetic row includes `border_fit` (object | null) when present.
 
 ---
 
@@ -3672,7 +3684,7 @@ All admin routes require `authMiddleware` + `adminMiddleware`.
 
 - **File:** `routes/admin.js`
 
-**Body:** Partial cosmetic fields. **200:** Updated row.
+**Body:** Partial cosmetic fields. Supports `border_fit`: `null` to clear, or object `{ scale, rotationDeg, offsetX, offsetY, avatarScale? }` (scale in (0, 5], rotationDeg in [-360, 360]). **200:** Updated row (includes `border_fit`).
 
 ---
 
