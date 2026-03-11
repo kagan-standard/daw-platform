@@ -1368,6 +1368,100 @@ const DB = {
         return await this._api('GET', '/api/admin/tabs/stats');
     },
 
+    async adminGetChallenges(params = {}) {
+        if (this.isDemo) return { data: [], pagination: { limit: 50, offset: 0, total: 0 } };
+        const qs = new URLSearchParams();
+        if (params.limit != null) qs.set('limit', params.limit);
+        if (params.offset != null) qs.set('offset', params.offset);
+        return await this._api('GET', `/api/admin/challenges?${qs.toString()}`);
+    },
+    async adminGetChallenge(id) {
+        if (this.isDemo) return null;
+        return await this._api('GET', `/api/admin/challenges/${encodeURIComponent(id)}`);
+    },
+    async adminCreateChallenge(body) {
+        if (this.isDemo) return null;
+        return await this._api('POST', '/api/admin/challenges', { body: JSON.stringify(body) });
+    },
+    async adminUpdateChallenge(id, body) {
+        if (this.isDemo) return null;
+        return await this._api('PATCH', `/api/admin/challenges/${encodeURIComponent(id)}`, { body: JSON.stringify(body) });
+    },
+    async adminDeleteChallenge(id) {
+        if (this.isDemo) return null;
+        return await this._api('DELETE', `/api/admin/challenges/${encodeURIComponent(id)}`);
+    },
+
+    async adminGetAchievements() {
+        if (this.isDemo) return { data: [] };
+        return await this._api('GET', '/api/admin/achievements');
+    },
+    async adminGetAchievement(id) {
+        if (this.isDemo) return null;
+        return await this._api('GET', `/api/admin/achievements/${encodeURIComponent(id)}`);
+    },
+    async adminCreateAchievement(body) {
+        if (this.isDemo) return null;
+        return await this._api('POST', '/api/admin/achievements', { body: JSON.stringify(body) });
+    },
+    async adminUpdateAchievement(id, body) {
+        if (this.isDemo) return null;
+        return await this._api('PATCH', `/api/admin/achievements/${encodeURIComponent(id)}`, { body: JSON.stringify(body) });
+    },
+    async adminDeactivateAchievement(id) {
+        if (this.isDemo) return null;
+        return await this._api('PATCH', `/api/admin/achievements/${encodeURIComponent(id)}/deactivate`);
+    },
+    async adminGetAchievementCategories() {
+        if (this.isDemo) return { data: [] };
+        return await this._api('GET', '/api/admin/achievement-categories');
+    },
+    async adminCreateAchievementCategory(body) {
+        if (this.isDemo) return null;
+        return await this._api('POST', '/api/admin/achievement-categories', { body: JSON.stringify(body) });
+    },
+    async adminUpdateAchievementCategory(key, body) {
+        if (this.isDemo) return null;
+        return await this._api('PATCH', `/api/admin/achievement-categories/${encodeURIComponent(key)}`, { body: JSON.stringify(body) });
+    },
+
+    async adminGetFeaturedBeers(params = {}) {
+        if (this.isDemo) return { data: [], pagination: { limit: 50, offset: 0, total: 0 } };
+        const qs = new URLSearchParams();
+        if (params.limit != null) qs.set('limit', params.limit);
+        if (params.offset != null) qs.set('offset', params.offset);
+        return await this._api('GET', `/api/admin/featured-beers?${qs.toString()}`);
+    },
+    async adminCreateFeaturedBeer(body) {
+        if (this.isDemo) return null;
+        return await this._api('POST', '/api/admin/featured-beers', { body: JSON.stringify(body) });
+    },
+    async adminUpdateFeaturedBeer(id, body) {
+        if (this.isDemo) return null;
+        return await this._api('PATCH', `/api/admin/featured-beers/${encodeURIComponent(id)}`, { body: JSON.stringify(body) });
+    },
+    async adminDeleteFeaturedBeer(id) {
+        if (this.isDemo) return null;
+        return await this._api('DELETE', `/api/admin/featured-beers/${encodeURIComponent(id)}`);
+    },
+
+    async adminGetCosmetics() {
+        if (this.isDemo) return { data: [] };
+        return await this._api('GET', '/api/admin/cosmetics');
+    },
+    async adminCreateCosmetic(body) {
+        if (this.isDemo) return null;
+        return await this._api('POST', '/api/admin/cosmetics', { body: JSON.stringify(body) });
+    },
+    async adminUpdateCosmetic(id, body) {
+        if (this.isDemo) return null;
+        return await this._api('PATCH', `/api/admin/cosmetics/${encodeURIComponent(id)}`, { body: JSON.stringify(body) });
+    },
+    async adminDeactivateCosmetic(id) {
+        if (this.isDemo) return null;
+        return await this._api('PATCH', `/api/admin/cosmetics/${encodeURIComponent(id)}/deactivate`);
+    },
+
     _demoGetFollows() {
         return Utils.storage.get('demo_follows', {});
     },

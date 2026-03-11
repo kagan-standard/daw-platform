@@ -1,4 +1,5 @@
 const express = require('express');
+const adminValidation = require('../lib/adminValidation');
 
 const USER_SORT_WHITELIST = new Set(['last_active', 'total_ratings', 'created_at']);
 const ORDER_WHITELIST = new Set(['asc', 'desc']);
@@ -394,6 +395,333 @@ module.exports = function adminRoutes(opts) {
         top_pages,
         daily_trend,
       });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // ---------- Weekly Challenges CRUD ----------
+  router.get('/challenges', async (req, res, next) => {
+    try {
+      const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 200);
+      const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
+      const path = `/weekly_challenges?order=week_start.desc&limit=${limit}&offset=${offset}`;
+      const out = await rest('GET', path, { headers: { Prefer: 'count=exact' } });
+      if (out.status >= 400) return res.status(out.status).json(out.body || { error: 'Failed to fetch challenges' });
+      res.json({
+        data: Array.isArray(out.body) ? out.body : [],
+        pagination: { limit, offset, total: totalFromContentRange(out.headers['content-range']) ?? 0 },
+      });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.get('/challenges/:id', async (req, res, next) => {
+    try {
+      const id = encodeURIComponent(req.params.id);
+      const out = await rest('GET', `/weekly_challenges?id=eq.${id}&limit=1`);
+      if (out.status >= 400) return res.status(out.status).json(out.body || { error: 'Failed to fetch challenge' });
+      const row = Array.isArray(out.body) && out.body.length ? out.body[0] : null;
+      if (!row) return res.status(404).json({ error: 'Challenge not found' });
+      res.json(row);
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.post('/challenges', async (req, res, next) => {
+    try {
+      const v = await adminValidation.validateChallengeCreate(req.body || {});
+      if (!v.valid) return res.status(400).json({ error: v.error });
+      const out = await rest('POST', '/weekly_challenges', {
+        headers: { 'Content-Type': 'application/json', Prefer: 'return=representation' },
+        body: JSON.stringify(v.data),
+      });
+      if (out.status >= 400) return res.status(out.status).json(out.body || { error: 'Failed to create challenge' });
+      const row = Array.isArray(out.body) && out.body.length ? out.body[0] : out.body;
+      res.status(201).json(row);
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.patch('/challenges/:id', async (req, res, next) => {
+    try {
+      const v = await adminValidation.validateChallengePatch(req.body || {});
+      if (!v.valid) return res.status(400).json({ error: v.error });
+      if (Object.keys(v.data).length === 0) return res.status(400).json({ error: 'No fields to update' });
+      const id = encodeURIComponent(req.params.id);
+      const out = await rest('PATCH', `/weekly_challenges?id=eq.${id}`, {
+        headers: { 'Content-Type': 'application/json', Prefer: 'return=representation' },
+        body: JSON.stringify(v.data),
+      });
+      if (out.status >= 400) return res.status(out.status).json(out.body || { error: 'Failed to update challenge' });
+      const row = Array.isArray(out.body) && out.body.length ? out.body[0] : out.body;
+      res.json(row);
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.delete('/challenges/:id', async (req, res, next) => {
+    try {
+      const id = encodeURIComponent(req.params.id);
+      const out = await rest('DELETE', `/weekly_challenges?id=eq.${id}`);
+      if (out.status >= 400) return res.status(out.status).json(out.body || { error: 'Failed to delete challenge' });
+      res.status(204).send();
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // ---------- Achievements CRUD ----------
+  router.get('/achievements', async (req, res, next) => {
+    try {
+      const path = '/achievements?select=*,achievement_categories(name,icon)&order=category_key.asc,key.asc';
+      const out = await rest('GET', path);
+      if (out.status >= 400) return res.status(out.status).json(out.body || { error: 'Failed to fetch achievements' });
+      res.json({ data: Array.isArray(out.body) ? out.body : [] });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.get('/achievements/:id', async (req, res, next) => {
+    try {
+      const id = encodeURIComponent(req.params.id);
+      const [achRes, countRes] = await Promise.all([
+        rest('GET', `/achievements?id=eq.${id}&limit=1`),
+        rest('GET', `/user_achievements?achievement_id=eq.${id}&limit=1`, { headers: { Prefer: 'count=exact' } }),
+      ]);
+      if (achRes.status >= 400) return res.status(achRes.status).json(achRes.body || { error: 'Failed to fetch achievement' });
+      const row = Array.isArray(achRes.body) && achRes.body.length ? achRes.body[0] : null;
+      if (!row) return res.status(404).json({ error: 'Achievement not found' });
+      const unlock_count = totalFromContentRange(countRes.headers['content-range']) ?? 0;
+      res.json({ ...row, unlock_count: Number(unlock_count) });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.post('/achievements', async (req, res, next) => {
+    try {
+      const v = await adminValidation.validateAchievementCreate(req.body || {});
+      if (!v.valid) return res.status(400).json({ error: v.error });
+      const out = await rest('POST', '/achievements', {
+        headers: { 'Content-Type': 'application/json', Prefer: 'return=representation' },
+        body: JSON.stringify(v.data),
+      });
+      if (out.status >= 400) return res.status(out.status).json(out.body || { error: 'Failed to create achievement' });
+      const row = Array.isArray(out.body) && out.body.length ? out.body[0] : out.body;
+      res.status(201).json(row);
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.patch('/achievements/:id/deactivate', async (req, res, next) => {
+    try {
+      const id = encodeURIComponent(req.params.id);
+      const out = await rest('PATCH', `/achievements?id=eq.${id}`, {
+        headers: { 'Content-Type': 'application/json', Prefer: 'return=representation' },
+        body: JSON.stringify({ active: false }),
+      });
+      if (out.status >= 400) return res.status(out.status).json(out.body || { error: 'Failed to deactivate achievement' });
+      const row = Array.isArray(out.body) && out.body.length ? out.body[0] : out.body;
+      res.json(row);
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.patch('/achievements/:id', async (req, res, next) => {
+    try {
+      const v = await adminValidation.validateAchievementPatch(req.body || {});
+      if (!v.valid) return res.status(400).json({ error: v.error });
+      if (Object.keys(v.data).length === 0) return res.status(400).json({ error: 'No fields to update' });
+      const id = encodeURIComponent(req.params.id);
+      const existing = await rest('GET', `/achievements?id=eq.${id}&select=version&limit=1`);
+      let payload = { ...v.data };
+      if (existing.status < 400 && Array.isArray(existing.body) && existing.body.length) {
+        payload.version = (existing.body[0].version || 1) + 1;
+      }
+      const out = await rest('PATCH', `/achievements?id=eq.${id}`, {
+        headers: { 'Content-Type': 'application/json', Prefer: 'return=representation' },
+        body: JSON.stringify(payload),
+      });
+      if (out.status >= 400) return res.status(out.status).json(out.body || { error: 'Failed to update achievement' });
+      const row = Array.isArray(out.body) && out.body.length ? out.body[0] : out.body;
+      res.json(row);
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // ---------- Achievement Categories CRUD ----------
+  router.get('/achievement-categories', async (req, res, next) => {
+    try {
+      const out = await rest('GET', '/achievement_categories?order=sort_order.asc,key.asc');
+      if (out.status >= 400) return res.status(out.status).json(out.body || { error: 'Failed to fetch categories' });
+      res.json({ data: Array.isArray(out.body) ? out.body : [] });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.post('/achievement-categories', async (req, res, next) => {
+    try {
+      const v = await adminValidation.validateAchievementCategoryCreate(req.body || {});
+      if (!v.valid) return res.status(400).json({ error: v.error });
+      const out = await rest('POST', '/achievement_categories', {
+        headers: { 'Content-Type': 'application/json', Prefer: 'return=representation' },
+        body: JSON.stringify(v.data),
+      });
+      if (out.status >= 400) return res.status(out.status).json(out.body || { error: 'Failed to create category' });
+      const row = Array.isArray(out.body) && out.body.length ? out.body[0] : out.body;
+      res.status(201).json(row);
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.patch('/achievement-categories/:key', async (req, res, next) => {
+    try {
+      const v = await adminValidation.validateAchievementCategoryPatch(req.body || {});
+      if (!v.valid) return res.status(400).json({ error: v.error });
+      if (Object.keys(v.data).length === 0) return res.status(400).json({ error: 'No fields to update' });
+      const key = encodeURIComponent(req.params.key);
+      const out = await rest('PATCH', `/achievement_categories?key=eq.${key}`, {
+        headers: { 'Content-Type': 'application/json', Prefer: 'return=representation' },
+        body: JSON.stringify(v.data),
+      });
+      if (out.status >= 400) return res.status(out.status).json(out.body || { error: 'Failed to update category' });
+      const row = Array.isArray(out.body) && out.body.length ? out.body[0] : out.body;
+      res.json(row);
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // ---------- Featured Beers CRUD ----------
+  router.get('/featured-beers', async (req, res, next) => {
+    try {
+      const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 200);
+      const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
+      const path = `/featured_beers?order=week_start.desc&limit=${limit}&offset=${offset}`;
+      const out = await rest('GET', path, { headers: { Prefer: 'count=exact' } });
+      if (out.status >= 400) return res.status(out.status).json(out.body || { error: 'Failed to fetch featured beers' });
+      res.json({
+        data: Array.isArray(out.body) ? out.body : [],
+        pagination: { limit, offset, total: totalFromContentRange(out.headers['content-range']) ?? 0 },
+      });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.post('/featured-beers', async (req, res, next) => {
+    try {
+      const createdBy = req.claims && req.claims.sub ? String(req.claims.sub) : '';
+      if (!createdBy) return res.status(401).json({ error: 'Authentication required' });
+      const v = await adminValidation.validateFeaturedBeerCreate(req.body || {}, createdBy);
+      if (!v.valid) return res.status(400).json({ error: v.error });
+      const out = await rest('POST', '/featured_beers', {
+        headers: { 'Content-Type': 'application/json', Prefer: 'return=representation' },
+        body: JSON.stringify(v.data),
+      });
+      if (out.status >= 400) return res.status(out.status).json(out.body || { error: 'Failed to create featured beer' });
+      const row = Array.isArray(out.body) && out.body.length ? out.body[0] : out.body;
+      res.status(201).json(row);
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.patch('/featured-beers/:id', async (req, res, next) => {
+    try {
+      const v = await adminValidation.validateFeaturedBeerPatch(req.body || {});
+      if (!v.valid) return res.status(400).json({ error: v.error });
+      if (Object.keys(v.data).length === 0) return res.status(400).json({ error: 'No fields to update' });
+      const id = encodeURIComponent(req.params.id);
+      const out = await rest('PATCH', `/featured_beers?id=eq.${id}`, {
+        headers: { 'Content-Type': 'application/json', Prefer: 'return=representation' },
+        body: JSON.stringify(v.data),
+      });
+      if (out.status >= 400) return res.status(out.status).json(out.body || { error: 'Failed to update featured beer' });
+      const row = Array.isArray(out.body) && out.body.length ? out.body[0] : out.body;
+      res.json(row);
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.delete('/featured-beers/:id', async (req, res, next) => {
+    try {
+      const id = encodeURIComponent(req.params.id);
+      const out = await rest('DELETE', `/featured_beers?id=eq.${id}`);
+      if (out.status >= 400) return res.status(out.status).json(out.body || { error: 'Failed to delete featured beer' });
+      res.status(204).send();
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // ---------- Cosmetics CRUD ----------
+  router.get('/cosmetics', async (req, res, next) => {
+    try {
+      const out = await rest('GET', '/cosmetics?order=sort_order.asc,key.asc');
+      if (out.status >= 400) return res.status(out.status).json(out.body || { error: 'Failed to fetch cosmetics' });
+      res.json({ data: Array.isArray(out.body) ? out.body : [] });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.post('/cosmetics', async (req, res, next) => {
+    try {
+      const v = await adminValidation.validateCosmeticCreate(req.body || {});
+      if (!v.valid) return res.status(400).json({ error: v.error });
+      const out = await rest('POST', '/cosmetics', {
+        headers: { 'Content-Type': 'application/json', Prefer: 'return=representation' },
+        body: JSON.stringify(v.data),
+      });
+      if (out.status >= 400) return res.status(out.status).json(out.body || { error: 'Failed to create cosmetic' });
+      const row = Array.isArray(out.body) && out.body.length ? out.body[0] : out.body;
+      res.status(201).json(row);
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.patch('/cosmetics/:id/deactivate', async (req, res, next) => {
+    try {
+      const id = encodeURIComponent(req.params.id);
+      const out = await rest('PATCH', `/cosmetics?id=eq.${id}`, {
+        headers: { 'Content-Type': 'application/json', Prefer: 'return=representation' },
+        body: JSON.stringify({ active: false }),
+      });
+      if (out.status >= 400) return res.status(out.status).json(out.body || { error: 'Failed to deactivate cosmetic' });
+      const row = Array.isArray(out.body) && out.body.length ? out.body[0] : out.body;
+      res.json(row);
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.patch('/cosmetics/:id', async (req, res, next) => {
+    try {
+      const v = await adminValidation.validateCosmeticPatch(req.body || {});
+      if (!v.valid) return res.status(400).json({ error: v.error });
+      if (Object.keys(v.data).length === 0) return res.status(400).json({ error: 'No fields to update' });
+      const id = encodeURIComponent(req.params.id);
+      const out = await rest('PATCH', `/cosmetics?id=eq.${id}`, {
+        headers: { 'Content-Type': 'application/json', Prefer: 'return=representation' },
+        body: JSON.stringify(v.data),
+      });
+      if (out.status >= 400) return res.status(out.status).json(out.body || { error: 'Failed to update cosmetic' });
+      const row = Array.isArray(out.body) && out.body.length ? out.body[0] : out.body;
+      res.json(row);
     } catch (e) {
       next(e);
     }

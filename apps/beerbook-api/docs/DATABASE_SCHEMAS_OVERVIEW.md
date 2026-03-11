@@ -17,6 +17,7 @@ This file outlines the current BeerBook database schema state after applying the
 - `apps/beerbook-api/supabase/migrations/20260306003000_refresh_rating_award_profile_cache.sql`
 - `apps/beerbook-api/supabase/migrations/20260313000000_crew_milestones.sql`
 - `apps/beerbook-api/supabase/migrations/20260314000000_weekly_challenges.sql`
+- `apps/beerbook-api/supabase/migrations/20260320100000_admin_featured_beers.sql`
 
 ## Schemas
 
@@ -208,6 +209,12 @@ This file outlines the current BeerBook database schema state after applying the
 - **Columns:** `week_start`, `week_end`, `title`, `description`, `target_style`, `target_count`, `reward_label`, `reward_badge_id`, `created_at`
 - **Constraints:** `week_end > week_start`; unique on `week_start` (one challenge per week).
 - **Usage:** One active challenge per week (global); progress computed per crew via `get_crew_weekly_challenge(p_crew_id, p_week_start)`.
+
+### `featured_beers`
+- **Primary key:** `id` (uuid)
+- **Columns:** `beer_id`, `beer_name`, `brewery`, `style`, `feature_type`, `week_start`, `week_end`, `headline`, `body`, `photo_url`, `created_by`, `created_at`
+- **Constraints:** `week_end > week_start`; unique on `(feature_type, week_start)`. Optional FK `beer_id -> beers(id)` when beers table exists.
+- **Usage:** Admin-curated "Beer of the Week" picks. `GET /api/highlights/beer-of-the-week` prefers a row for the current week when present; otherwise falls back to auto-computed from ratings. RLS: service_role only.
 
 ## Enums
 

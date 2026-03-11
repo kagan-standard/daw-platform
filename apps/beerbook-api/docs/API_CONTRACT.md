@@ -3504,6 +3504,186 @@ All admin routes require `authMiddleware` + `adminMiddleware`.
 
 ---
 
+#### GET /api/admin/challenges
+
+- **File:** `routes/admin.js`
+
+**Query Params:** `limit` (1–200, default 50), `offset` (default 0).
+
+**Success Response (200):** `{ "data": [ { "id", "week_start", "week_end", "title", "description", "target_style", "target_count", "reward_label", "reward_badge_id", "created_at" } ], "pagination": { "limit", "offset", "total" } }`
+
+---
+
+#### GET /api/admin/challenges/:id
+
+- **File:** `routes/admin.js`
+
+**Success Response (200):** Single challenge row. **404:** `{ "error": "Challenge not found" }`
+
+---
+
+#### POST /api/admin/challenges
+
+- **File:** `routes/admin.js`
+
+**Body:** `week_start` (required, Monday 00:00 UTC ISO), `title` (1–200 chars), `description` (1–1000 chars), `target_count` (positive int), `target_style` (optional), `reward_label` (required), `reward_badge_id` (optional UUID). `week_end` auto-computed if omitted.
+
+**Success Response (201):** Created challenge row. **400:** Validation error message in `error`.
+
+---
+
+#### PATCH /api/admin/challenges/:id
+
+- **File:** `routes/admin.js`
+
+**Body:** Same fields as POST (partial update). **200:** Updated row. **400:** Validation error.
+
+---
+
+#### DELETE /api/admin/challenges/:id
+
+- **File:** `routes/admin.js`
+
+**Success Response (204):** No content.
+
+---
+
+#### GET /api/admin/achievements
+
+- **File:** `routes/admin.js`
+
+**Success Response (200):** `{ "data": [ achievement rows with optional achievement_categories embed ] }`
+
+---
+
+#### GET /api/admin/achievements/:id
+
+- **File:** `routes/admin.js`
+
+**Success Response (200):** Achievement row plus `unlock_count`. **404:** `{ "error": "Achievement not found" }`
+
+---
+
+#### POST /api/admin/achievements
+
+- **File:** `routes/admin.js`
+
+**Body:** `key` (slug), `name`, `description`, `category_key`, `subtype`, `trigger_type`, `rules` (jsonb), `difficulty`, `reward_tabs`, `is_hidden`. Validation in `lib/adminValidation.js`.
+
+**Success Response (201):** Created achievement row. **400:** Validation error.
+
+---
+
+#### PATCH /api/admin/achievements/:id
+
+- **File:** `routes/admin.js`
+
+**Body:** Partial achievement fields; `version` bumped automatically. **200:** Updated row.
+
+---
+
+#### PATCH /api/admin/achievements/:id/deactivate
+
+- **File:** `routes/admin.js`
+
+**Body:** None. Sets `active = false`. **200:** Updated row.
+
+---
+
+#### GET /api/admin/achievement-categories
+
+- **File:** `routes/admin.js`
+
+**Success Response (200):** `{ "data": [ { "key", "name", "icon", "sort_order" } ] }`
+
+---
+
+#### POST /api/admin/achievement-categories
+
+- **File:** `routes/admin.js`
+
+**Body:** `key` (slug), `name`, `icon` (optional), `sort_order` (optional, default 0). **201:** Created category row.
+
+---
+
+#### PATCH /api/admin/achievement-categories/:key
+
+- **File:** `routes/admin.js`
+
+**Body:** `name`, `icon`, or `sort_order` (partial). **200:** Updated row.
+
+---
+
+#### GET /api/admin/featured-beers
+
+- **File:** `routes/admin.js`
+
+**Query Params:** `limit` (1–200, default 50), `offset` (default 0).
+
+**Success Response (200):** `{ "data": [ featured_beer rows ], "pagination": { "limit", "offset", "total" } }`
+
+---
+
+#### POST /api/admin/featured-beers
+
+- **File:** `routes/admin.js`
+
+**Body:** `beer_name` (required), `brewery`, `style`, `week_start`, `week_end` (optional, derived from week_start if omitted), `headline`, `body`, `photo_url`, `beer_id`. `created_by` set from JWT `sub`.
+
+**Success Response (201):** Created featured_beer row. **400:** Validation error.
+
+---
+
+#### PATCH /api/admin/featured-beers/:id
+
+- **File:** `routes/admin.js`
+
+**Body:** Partial featured_beer fields. **200:** Updated row.
+
+---
+
+#### DELETE /api/admin/featured-beers/:id
+
+- **File:** `routes/admin.js`
+
+**Success Response (204):** No content.
+
+---
+
+#### GET /api/admin/cosmetics
+
+- **File:** `routes/admin.js`
+
+**Success Response (200):** `{ "data": [ cosmetic rows ] }`
+
+---
+
+#### POST /api/admin/cosmetics
+
+- **File:** `routes/admin.js`
+
+**Body:** `key`, `type` (border|title), `name`, `description`, `rarity`, `unlock_type`, `tab_price`, `achievement_key`, etc. Validation in `lib/adminValidation.js`.
+
+**Success Response (201):** Created cosmetic row. **400:** Validation error.
+
+---
+
+#### PATCH /api/admin/cosmetics/:id
+
+- **File:** `routes/admin.js`
+
+**Body:** Partial cosmetic fields. **200:** Updated row.
+
+---
+
+#### PATCH /api/admin/cosmetics/:id/deactivate
+
+- **File:** `routes/admin.js`
+
+**Body:** None. Sets `active = false`. **200:** Updated row.
+
+---
+
 #### GET /api/admin/tabs/users
 
 - **File:** `routes/tabs.js`
