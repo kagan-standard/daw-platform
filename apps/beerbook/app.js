@@ -458,6 +458,15 @@ const App = {
             DB.startRegistration();
         });
 
+        // Continue as Guest (real API with X-Guest-Id; requires backend ENABLE_GUEST_RATINGS)
+        document.getElementById('guest-continue')?.addEventListener('click', () => {
+            const names = ['Hoppy Trails', 'Malt Master', 'Brew Believer', 'Pint Sized', 'Yeast Mode', 'Guest'];
+            const displayName = names[Math.floor(Math.random() * (names.length - 1))] || 'Guest';
+            DB.enterGuestMode(displayName);
+            App.toast(`Welcome, ${displayName}! Rate beers — create an account later to keep them.`, 'info');
+            this.enterApp();
+        });
+
         // Demo login
         document.getElementById('demo-login')?.addEventListener('click', () => {
             DB.enterDemoMode();

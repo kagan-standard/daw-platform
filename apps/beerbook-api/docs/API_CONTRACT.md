@@ -48,7 +48,7 @@ Process-event source: `lib/processEvent.js` + `lib/processEventEngine.js` + `rou
 | Convention        | Value |
 |-------------------|-------|
 | Base URL          | `https://<host>/api` (all public routes); `/internal` for internal routes |
-| Auth              | Bearer JWT via `Authorization: Bearer <token>` (Keycloak) |
+| Auth              | Bearer JWT via `Authorization: Bearer <token>` (Keycloak). For guest ratings (when `ENABLE_GUEST_RATINGS` is set): no JWT; send `X-Guest-Id` header with client-generated UUID v4 instead. |
 | Content-Type      | `application/json` (except uploads which use `multipart/form-data`) |
 | Rate Limit        | 200 requests per 60s window on `/api` (configurable via `RATE_LIMIT_MAX`, `RATE_LIMIT_WINDOW_MS`) |
 | CORS              | Origin allowlist (`CORS_ORIGIN` + `CORS_ORIGINS`), credentials enabled |
@@ -75,6 +75,13 @@ Process-event source: `lib/processEvent.js` + `lib/processEventEngine.js` + `rou
 | `authMiddleware` | Required. Rejects with 401/403 if missing, expired, or invalid. |
 | `softAuthMiddleware` | Optional. If token present and valid, sets `req.claims`. If missing or invalid, continues without `req.claims` (no error). |
 | `adminMiddleware` | Runs after `authMiddleware`. Checks trimmed `req.claims.sub` against env-admin IDs parsed from `ADMIN_USER_IDS` (comma-separated) plus optional `ADMIN_USER_ID` fallback. |
+
+**Feature flag:** `ENABLE_GUEST_RATINGS` — when set to `true` or `1`, POST and DELETE `/api/ratings` accept a guest actor via the `X-Guest-Id` header (client-generated UUID v4) when no JWT is sent. Claim endpoint `POST /api/guest-ratings/claim` is always available for authenticated users.
+
+**Guest ratings (client summary):**
+- **Identify as guest:** Omit `Authorization`; send `X-Guest-Id: <uuid>` (client-generated, e.g. `crypto.randomUUID()`). Optional body field `user_name` for display name (default `"Guest"`).
+- **Dedupe:** One rating per (actor, beer, venue). Guest and user are distinct actors.
+- **After signup/login:** Call `POST /api/guest-ratings/claim` with body `{ "guest_id": "<same-uuid>" }` while authenticated to reassign guest ratings to the user. Conflict rule: same beer/venue → keep user rating, discard guest rating.
 
 ### `req.claims` Shape
 
@@ -622,6 +629,12 @@ Max 500 breweries. `truncated` is `true` when total exceeds limit. Sorted by dis
 }
 ```
 
+**Rating item fields (author identity):**
+- `user_id` (string | null): Keycloak sub for user-owned ratings; `null` for guest-owned ratings.
+- `guest_id` (string | null): Client-generated guest UUID for guest-owned ratings; `null` for user-owned ratings.
+- `author_type` (string): `"user"` or `"guest"`. Exactly one of `user_id` or `guest_id` is set per rating.
+- `user_name` (string): Display name (from token for users; from request body for guests).
+
 **Enrichment fields (added by helpers):**
 - `cheers_count` (number): always present; count of cheers reactions
 - `you_cheered` (boolean): `true` if authed user cheered; `false` otherwise
@@ -672,13 +685,21 @@ When unauthenticated, `you_cheered` is always `false`.
 
 #### POST /api/ratings
 
-- **Auth:** `authMiddleware` (required)
+- **Auth:** User (JWT via `Authorization: Bearer`) **or** Guest (when `ENABLE_GUEST_RATINGS` is set): send `X-Guest-Id` header with a client-generated UUID v4. Exactly one of valid JWT or valid guest ID required.
 - **File:** `server.js`
+
+**Request Headers (guest only):**
+
+| Header | Type | Required (guest) | Validation |
+|--------|------|-------------------|------------|
+| `X-Guest-Id` | string | yes (when not sending JWT) | Client-generated UUID v4 (e.g. from `crypto.randomUUID()`). Backend does not issue guest IDs. |
 
 **Request Body:**
 
 | Field | Type | Required | Validation |
 |-------|------|----------|------------|
+| `guest_id` / `guestId` | string | no | Alternative to `X-Guest-Id` for guest actor; same UUID format. Prefer header for consistency. |
+| `user_name` / `userName` | string | no | Display name for **guest** ratings (e.g. beer-pun name). Ignored for authenticated users (uses token). Default `"Guest"` if omitted for guest. |
 | `yg_value` / `ygValue` | number | **yes** | Integer -6 to 7, zero not allowed (user-facing scale; internal star rating is derived, never exposed) |
 | `beer_name` / `beerName` | string | yes* | *Required unless `beer_id` resolves a name |
 | `brewery` | string | yes** | **Required for `is_new_beer` (min 2 chars) |
@@ -706,11 +727,15 @@ Note: Accepts both `snake_case` and `camelCase` for most fields.
 
 **Success Response — NEW RATING (201):**
 
+`data` includes `user_id` (user) or `guest_id` (guest); the other is null. `author_type` is `"user"` or `"guest"`.
+
 ```json
 {
   "data": {
     "id": "uuid",
-    "user_id": "string",
+    "user_id": "string | null",
+    "guest_id": "string | null",
+    "author_type": "user | guest",
     "user_name": "string",
     "beer_name": "string",
     "brewery": "string",
@@ -790,8 +815,12 @@ Note: Accepts both `snake_case` and `camelCase` for most fields.
 
 Note: Update response does NOT include `tabs_earned`, `tabs_breakdown`, `tier_multiplier`, `seeder_multiplier`, `new_beer_multiplier`, `is_new_beer`, `achievements_unlocked`, `current_streak_weeks`, or `longest_streak_weeks`. No tabs are awarded on update.
 
+**Guest ratings (201 response):** When the request is authenticated as a guest (`X-Guest-Id`, no JWT), the response still returns 201 with `data` and the same top-level keys, but progression fields are zero/default: `tabs_earned` = 0, `tabs_breakdown` = {}, `tabs_reason` = `"weekly_cap"`, `achievements_unlocked` = [], `current_streak_weeks` = 0, `longest_streak_weeks` = 0, `weekly_count` = 0. No tabs or achievements are awarded for guest ratings.
+
 **Error Responses:**
 - 400: `{ "error": "yg_value is required (integer -6 to 7, zero not allowed)" }`
+- 400: `{ "error_code": "INVALID_GUEST_ID", "error": "guest_id must be a valid UUID (e.g. client-generated UUID v4)" }` (guest path, invalid or missing `X-Guest-Id` / `guest_id`)
+- 401: `{ "error_code": "AUTH_REQUIRED", "error": "Authentication required. Guest ratings are not enabled." }` (no JWT and guest path when `ENABLE_GUEST_RATINGS` is not set)
 - 400: `{ "error": "yg_value must be an integer from -6 to 7 (zero not allowed)" }`
 - 400: `{ "error": "latitude and longitude must be provided together" }`
 - 400: `{ "error": "latitude and longitude must be valid numbers" }`
@@ -807,18 +836,16 @@ Note: Update response does NOT include `tabs_earned`, `tabs_breakdown`, `tier_mu
 - 502: various upstream/process-event errors
 
 **Side Effects:**
-- Inserts or updates `ratings` row
-- May create new `beers` row (when `is_new_beer`)
-- May create new `venues` row (when lat/lng provided with location_name and no nearby venue)
-- Ensures `profiles` and `user_tabs_profile` exist
-- Awards tabs via `invokeProcessEvent('rating_award')` -> `tabs_ledger`
-- Evaluates achievements via `invokeProcessEvent('rating_submitted')` -> `user_achievements`, `user_cosmetics`
+- Inserts or updates `ratings` row (with `user_id`/`author_type=user` for authenticated user, or `guest_id`/`author_type=guest` for guest).
+- May create new `beers` row (when `is_new_beer`).
+- May create new `venues` row (when lat/lng provided with location_name and no nearby venue).
+- **Authenticated users only:** Ensures `profiles` and `user_tabs_profile` exist; awards tabs via `invokeProcessEvent('rating_award')` -> `tabs_ledger`; evaluates achievements via `invokeProcessEvent('rating_submitted')` -> `user_achievements`, `user_cosmetics`; crew milestones. **Guest ratings:** No tabs, achievements, or milestones (side effects skipped).
 
 ---
 
 #### DELETE /api/ratings/:id
 
-- **Auth:** `authMiddleware` (required)
+- **Auth:** User (JWT) **or** Guest (`X-Guest-Id` when `ENABLE_GUEST_RATINGS`). Ownership: rating must match `user_id` (user) or `guest_id` (guest).
 - **File:** `server.js`
 
 **URL Params:** `id` — rating UUID
@@ -830,6 +857,38 @@ Note: Update response does NOT include `tabs_earned`, `tabs_breakdown`, `tier_mu
 - 502: `{ "error": "Delete failed" }`
 
 **Side Effects:** Deletes from `ratings`. Does NOT reverse tab awards.
+
+---
+
+#### POST /api/guest-ratings/claim
+
+- **Auth:** `authMiddleware` (required). Caller must be the newly signed-in user.
+- **File:** `server.js`
+
+**Request Body:**
+
+| Field | Type | Required | Validation |
+|-------|------|----------|------------|
+| `guest_id` / `guestId` | string | yes | Same client-generated UUID used when rating as guest. Proves ownership of guest ratings to claim. |
+
+**Success Response (200):**
+
+```json
+{
+  "claimed": 3,
+  "discarded": 1
+}
+```
+
+- `claimed`: Count of guest ratings reassigned to the authenticated user (no conflict with existing user rating for same beer/venue).
+- `discarded`: Count of guest ratings deleted because the user already had a rating for the same beer/venue (conflict rule: keep user rating, discard guest).
+
+When there are no guest ratings for the given `guest_id`, returns `{ "claimed": 0, "discarded": 0, "message": "No guest ratings to claim" }`.
+
+**Error Responses:**
+- 400: `{ "error_code": "INVALID_GUEST_ID", "error": "guest_id must be a valid UUID (e.g. client-generated UUID v4)" }`
+
+**Side Effects:** For each rating owned by `guest_id`: either UPDATE `ratings` set `user_id` = caller, `guest_id` = null, `author_type` = 'user' (when user has no rating for that beer/venue), or DELETE the guest rating (when user already has a rating for that beer/venue). Idempotent; safe to call multiple times.
 
 ---
 
@@ -4036,9 +4095,11 @@ All admin routes require `authMiddleware` + `adminMiddleware`.
 
 | Endpoint | DB Writes | Notifications | Tabs |
 |----------|-----------|---------------|------|
-| `POST /api/ratings` (create) | `ratings`, possibly `beers`, `venues`, `profiles`, `tabs_ledger`, `user_tabs_profile`, `user_achievements`, `user_cosmetics` | Achievement unlocks | Yes: rating_award + rating_submitted |
+| `POST /api/ratings` (create, user) | `ratings`, possibly `beers`, `venues`, `profiles`, `tabs_ledger`, `user_tabs_profile`, `user_achievements`, `user_cosmetics` | Achievement unlocks | Yes: rating_award + rating_submitted |
+| `POST /api/ratings` (create, guest) | `ratings`, possibly `beers`, `venues` | None | No (guest ratings skip tabs/achievements/milestones) |
 | `POST /api/ratings` (update) | `ratings` | None | No |
 | `DELETE /api/ratings/:id` | `ratings` (delete) | None | No (tabs NOT reversed) |
+| `POST /api/guest-ratings/claim` | `ratings` (UPDATE or DELETE per row) | None | No |
 | `POST /api/ratings/:id/cheers` (add) | `reactions` (insert), `profiles` | Yes (cheers_received) | Yes: cheers_given + cheers_received |
 | `POST /api/ratings/:id/cheers` (remove) | `reactions` (delete) | None | No |
 | `POST /api/ratings/:id/comments` | `rating_comments`, `ratings.comment_count` | None | No |

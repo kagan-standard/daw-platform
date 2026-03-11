@@ -19,6 +19,7 @@ const { requireCrewMembership } = require('./lib/crewAuth');
 const { emitMilestonesAfterRating } = require('./lib/crewMilestones');
 const { getAdminToken, createUser, getTokensForUser, refreshTokens, sendVerificationEmail } = require('./lib/keycloakAdmin');
 const { validateYgValue, ygValueToStarRating } = require('./lib/ratingsValidation');
+const { actorMiddleware, ENABLE_GUEST_RATINGS, validateGuestId } = require('./lib/actorIdentity');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -1289,6 +1290,8 @@ app.get('/api/ratings/user/:id', softAuthMiddleware, validateSort, async (req, r
 
 const RATING_DB_COLUMNS = new Set([
   'user_id',
+  'guest_id',
+  'author_type',
   'user_name',
   'beer_name',
   'brewery',
@@ -1323,10 +1326,13 @@ function sanitizeRatingDbFields(input) {
   return out;
 }
 
-// POST /api/ratings — auth required. YG-only: yg_value required; star rating derived internally, never shown to users.
-// Phase 2.1: lat/lng, location_name, venue_id, photo_url
-app.post('/api/ratings', authMiddleware, async (req, res) => {
-  const { sub, preferred_username } = req.claims;
+// POST /api/ratings — user (JWT) or guest (X-Guest-Id when ENABLE_GUEST_RATINGS). YG-only: yg_value required.
+// Phase 2.1: lat/lng, location_name, venue_id, photo_url. Tabs/achievements/milestones only for authenticated users.
+app.post('/api/ratings', softAuthMiddleware, actorMiddleware, async (req, res) => {
+  const actor = req.actor;
+  const isUser = actor.type === 'user';
+  const sub = isUser ? actor.sub : null;
+  const preferred_username = isUser ? (actor.preferred_username || actor.sub) : (req.body?.user_name || req.body?.userName || 'Guest');
   const {
     is_new_beer: isNewBeerRaw,
     new_beer_multiplier: _reqNewBeerMultiplier,
@@ -1450,7 +1456,7 @@ app.post('/api/ratings', authMiddleware, async (req, res) => {
             name: locationName,
             latitude: latNum,
             longitude: lngNum,
-            created_by: sub,
+            created_by: isUser ? sub : actor.guest_id,
             venue_type: venueType || null,
           }),
         });
@@ -1463,7 +1469,9 @@ app.post('/api/ratings', authMiddleware, async (req, res) => {
     }
   }
   const record = {
-    user_id: sub,
+    user_id: isUser ? sub : null,
+    guest_id: isUser ? null : actor.guest_id,
+    author_type: isUser ? 'user' : 'guest',
     user_name: preferred_username || 'Anonymous',
     beer_name: incomingBeerName || '',
     brewery: incomingBrewery || '',
@@ -1495,7 +1503,7 @@ app.post('/api/ratings', authMiddleware, async (req, res) => {
         style: record.style,
         abv: record.abv,
         source: 'user_submitted',
-        submitted_by: sub,
+        submitted_by: isUser ? sub : actor.guest_id,
         verified: false,
       }),
     });
@@ -1532,10 +1540,11 @@ app.post('/api/ratings', authMiddleware, async (req, res) => {
   const { is_new_beer: _isNewBeer, ...ratingCandidateFields } = ratingData;
   const ratingFields = sanitizeRatingDbFields(ratingCandidateFields);
 
+  const actorId = isUser ? sub : actor.guest_id;
   let existing = null;
-  const existingRes = await rest('POST', '/rpc/find_existing_user_rating', {
+  const existingRes = await rest('POST', '/rpc/find_existing_actor_rating', {
     body: JSON.stringify({
-      p_user_id: sub,
+      p_actor_id: actorId,
       p_beer_id: record.beer_id || null,
       p_beer_name: record.beer_name,
       p_venue_id: record.venue_id || null,
@@ -1550,6 +1559,8 @@ app.post('/api/ratings', authMiddleware, async (req, res) => {
     const {
       user_id: _ignoreUserId,
       user_name: _ignoreUserName,
+      guest_id: _ignoreGuestId,
+      author_type: _ignoreAuthorType,
       ...mutableRatingFields
     } = ratingFields;
     const updatePayload = {
@@ -1581,38 +1592,45 @@ app.post('/api/ratings', authMiddleware, async (req, res) => {
   const ratingId = row?.id || null;
   const ratingRow = row || ratingFields;
 
-  // Ensure profile exists before process-event (trigger is update-only)
-  await ensureProfileExists(rest, sub, preferred_username, req.claims.email);
-  const profile = await ensureUserTabsProfile(rest, sub, {
-    displayName: preferred_username,
-    email: req.claims.email,
-    isAdmin: isAdmin(sub),
-  });
-  const tierInfo = await getTierMultiplier(rest, profile.current_tier);
-  const tierMultiplier = Number(tierInfo.multiplier) || 1.0;
-  const seederMultiplier = profile.is_seeder ? 1.5 : 1.0;
-  const newBeerMultiplier = isNewBeer ? 1.5 : 1.0;
-  const components = calculateRatingComponents(ratingRow);
   let tabsEarned = 0;
   let breakdown = {};
   let achievementsUnlocked = [];
-  let weeklyCount = Number(profile.ratings_this_week) || 0;
-  let currentStreakWeeks = Number(profile.current_streak_weeks) || 0;
-  let longestStreakWeeks = Number(profile.longest_streak_weeks) || 0;
+  let weeklyCount = 0;
+  let currentStreakWeeks = 0;
+  let longestStreakWeeks = 0;
   const weeklyCap = 10;
+  let tierMultiplier = 1.0;
+  let seederMultiplier = 1.0;
+  let newBeerMultiplier = isNewBeer ? 1.5 : 1.0;
 
-  try {
-    const eventId = crypto.randomUUID();
-    const perComponent = components.map((c) => ({
-      source: c.source,
-      base: c.base,
-      amount: Math.round(c.base * newBeerMultiplier * tierMultiplier * seederMultiplier),
-    }));
-    const total = perComponent.reduce((s, p) => s + p.amount, 0);
-    breakdown = Object.fromEntries(perComponent.map((p) => [p.source, p.amount]));
-    const ratingAwardRes = await invokeProcessEvent(req.headers.authorization, 'rating_award', eventId, {
-      amount: total,
-      breakdown,
+  if (isUser) {
+    await ensureProfileExists(rest, sub, preferred_username, req.claims.email);
+    const profile = await ensureUserTabsProfile(rest, sub, {
+      displayName: preferred_username,
+      email: req.claims.email,
+      isAdmin: isAdmin(sub),
+    });
+    const tierInfo = await getTierMultiplier(rest, profile.current_tier);
+    tierMultiplier = Number(tierInfo.multiplier) || 1.0;
+    seederMultiplier = profile.is_seeder ? 1.5 : 1.0;
+    newBeerMultiplier = isNewBeer ? 1.5 : 1.0;
+    const components = calculateRatingComponents(ratingRow);
+    weeklyCount = Number(profile.ratings_this_week) || 0;
+    currentStreakWeeks = Number(profile.current_streak_weeks) || 0;
+    longestStreakWeeks = Number(profile.longest_streak_weeks) || 0;
+
+    try {
+      const eventId = crypto.randomUUID();
+      const perComponent = components.map((c) => ({
+        source: c.source,
+        base: c.base,
+        amount: Math.round(c.base * newBeerMultiplier * tierMultiplier * seederMultiplier),
+      }));
+      breakdown = Object.fromEntries(perComponent.map((p) => [p.source, p.amount]));
+      const total = perComponent.reduce((s, p) => s + p.amount, 0);
+      const ratingAwardRes = await invokeProcessEvent(req.headers.authorization, 'rating_award', eventId, {
+        amount: total,
+        breakdown,
       context: {
         rating_id: ratingId,
         beer_id: ratingRow.beer_id ?? null,
@@ -1622,50 +1640,50 @@ app.post('/api/ratings', authMiddleware, async (req, res) => {
         is_new_beer: isNewBeer,
       },
     });
-    tabsEarned = ratingAwardRes.tabs_delta;
-    if (ratingAwardRes.current_streak_weeks != null) {
-      currentStreakWeeks = Number(ratingAwardRes.current_streak_weeks) || 0;
-    }
-    if (ratingAwardRes.longest_streak_weeks != null) {
-      longestStreakWeeks = Number(ratingAwardRes.longest_streak_weeks) || 0;
+      tabsEarned = ratingAwardRes.tabs_delta;
+      if (ratingAwardRes.current_streak_weeks != null) {
+        currentStreakWeeks = Number(ratingAwardRes.current_streak_weeks) || 0;
+      }
+      if (ratingAwardRes.longest_streak_weeks != null) {
+        longestStreakWeeks = Number(ratingAwardRes.longest_streak_weeks) || 0;
+      }
+
+      const achRes = await invokeProcessEvent(req.headers.authorization, 'rating_submitted', null, {
+        rating_id: ratingId,
+        beer_id: ratingRow.beer_id ?? null,
+        venue_id: ratingRow.venue_id ?? null,
+        ...ratingRow,
+      });
+      achievementsUnlocked = achRes.unlocked || [];
+
+      const weekStart = getCurrentWeekStartUtcIso();
+      const weeklyCountRes = await rest(
+        'GET',
+        `/tabs_ledger?user_id=eq.${encodeURIComponent(sub)}&event_type=eq.rating_award&created_at=gte.${encodeURIComponent(weekStart)}&select=id`,
+        { headers: { Prefer: 'count=exact' } }
+      );
+      if (weeklyCountRes.status < 400) {
+        weeklyCount = totalFromContentRange(weeklyCountRes.headers['content-range']) ?? weeklyCount;
+      }
+    } catch (err) {
+      if (err.status >= 400 && err.status < 500) {
+        return res.status(err.status).json(err.body || { error: err.message });
+      }
+      console.error('process-event failed for rating; returning 201 with fallback tabs fields:', {
+        ratingId,
+        userId: sub,
+        error: err.message || err,
+      });
     }
 
-    const achRes = await invokeProcessEvent(req.headers.authorization, 'rating_submitted', null, {
-      rating_id: ratingId,
-      beer_id: ratingRow.beer_id ?? null,
-      venue_id: ratingRow.venue_id ?? null,
-      ...ratingRow,
-    });
-    achievementsUnlocked = achRes.unlocked || [];
-
-    const weekStart = getCurrentWeekStartUtcIso();
-    const weeklyCountRes = await rest(
-      'GET',
-      `/tabs_ledger?user_id=eq.${encodeURIComponent(sub)}&event_type=eq.rating_award&created_at=gte.${encodeURIComponent(weekStart)}&select=id`,
-      { headers: { Prefer: 'count=exact' } }
-    );
-    if (weeklyCountRes.status < 400) {
-      weeklyCount = totalFromContentRange(weeklyCountRes.headers['content-range']) ?? weeklyCount;
-    }
-  } catch (err) {
-    if (err.status >= 400 && err.status < 500) {
-      return res.status(err.status).json(err.body || { error: err.message });
-    }
-    console.error('process-event failed for rating; returning 201 with fallback tabs fields:', {
-      ratingId,
+    emitMilestonesAfterRating(rest, {
       userId: sub,
-      error: err.message || err,
-    });
+      userDisplayName: preferred_username,
+      venueId: ratingRow.venue_id ?? null,
+      venueName: ratingRow.location_name || null,
+      currentStreakWeeks: currentStreakWeeks ?? null,
+    }).catch((err) => console.error('emitMilestonesAfterRating:', err?.message || err));
   }
-
-  // Phase 2: crew milestones (crew_total_ratings, first_venue_visit, member_streak)
-  emitMilestonesAfterRating(rest, {
-    userId: sub,
-    userDisplayName: profile?.display_name || preferred_username,
-    venueId: ratingRow.venue_id ?? null,
-    venueName: ratingRow.location_name || null,
-    currentStreakWeeks: currentStreakWeeks ?? null,
-  }).catch((err) => console.error('emitMilestonesAfterRating:', err?.message || err));
 
   res.status(201).json({
     data: row || record,
@@ -1685,11 +1703,17 @@ app.post('/api/ratings', authMiddleware, async (req, res) => {
   });
 });
 
-// DELETE /api/ratings/:id — auth required, ownership check
-app.delete('/api/ratings/:id', authMiddleware, async (req, res) => {
+// DELETE /api/ratings/:id — user (JWT) or guest (X-Guest-Id), ownership check
+app.delete('/api/ratings/:id', softAuthMiddleware, actorMiddleware, async (req, res) => {
   const id = encodeURIComponent(req.params.id);
-  const { sub } = req.claims;
-  const { status: getStatus, body: row } = await rest('GET', `/ratings?id=eq.${id}&user_id=eq.${encodeURIComponent(sub)}&limit=1`);
+  const actor = req.actor;
+  let getPath;
+  if (actor.type === 'user') {
+    getPath = `/ratings?id=eq.${id}&user_id=eq.${encodeURIComponent(actor.sub)}&limit=1`;
+  } else {
+    getPath = `/ratings?id=eq.${id}&guest_id=eq.${encodeURIComponent(actor.guest_id)}&limit=1`;
+  }
+  const { status: getStatus, body: row } = await rest('GET', getPath);
   if (getStatus >= 400 || !Array.isArray(row) || row.length === 0) {
     return res.status(404).json({ error: 'Rating not found or not owned by you' });
   }
@@ -1698,6 +1722,65 @@ app.delete('/api/ratings/:id', authMiddleware, async (req, res) => {
     return res.status(502).json({ error: 'Delete failed' });
   }
   res.status(204).end();
+});
+
+// POST /api/guest-ratings/claim — auth required. Reassign guest-owned ratings to user; on conflict (same beer/venue) keep user rating, discard guest.
+app.post('/api/guest-ratings/claim', authMiddleware, async (req, res) => {
+  const { sub, preferred_username } = req.claims;
+  const guestIdRaw = req.body?.guest_id ?? req.body?.guestId;
+  const result = validateGuestId(guestIdRaw);
+  if (!result.valid) {
+    return res.status(400).json({
+      error_code: 'INVALID_GUEST_ID',
+      error: result.error,
+      request_id: req.requestId || null,
+    });
+  }
+  const guestId = result.value;
+
+  const { status: listStatus, body: guestRatings } = await rest(
+    'GET',
+    `/ratings?guest_id=eq.${encodeURIComponent(guestId)}&select=id,beer_id,venue_id`,
+    { headers: { Prefer: 'count=exact' } }
+  );
+  if (listStatus >= 400) {
+    return res.status(listStatus >= 500 ? 502 : listStatus).json(guestRatings || { error: 'Failed to fetch guest ratings' });
+  }
+  const list = Array.isArray(guestRatings) ? guestRatings : [];
+  if (list.length === 0) {
+    return res.status(200).json({ claimed: 0, discarded: 0, message: 'No guest ratings to claim' });
+  }
+
+  let claimed = 0;
+  let discarded = 0;
+  for (const row of list) {
+    const beerId = row.beer_id || '';
+    const venueId = row.venue_id;
+    const venueFilter = (venueId != null && venueId !== '')
+      ? `&venue_id=eq.${encodeURIComponent(venueId)}`
+      : '&venue_id=is.null';
+    const { status: existingStatus, body: existingBody } = await rest(
+      'GET',
+      `/ratings?user_id=eq.${encodeURIComponent(sub)}&beer_id=eq.${encodeURIComponent(beerId)}&limit=1${venueFilter}`
+    );
+    const userAlreadyHas = existingStatus < 400 && Array.isArray(existingBody) && existingBody.length > 0;
+    if (userAlreadyHas) {
+      const { status: delStatus } = await rest('DELETE', `/ratings?id=eq.${encodeURIComponent(row.id)}`);
+      if (delStatus < 400) discarded += 1;
+    } else {
+      const { status: patchStatus } = await rest('PATCH', `/ratings?id=eq.${encodeURIComponent(row.id)}`, {
+        body: JSON.stringify({
+          user_id: sub,
+          user_name: preferred_username || sub,
+          guest_id: null,
+          author_type: 'user',
+        }),
+      });
+      if (patchStatus < 400) claimed += 1;
+    }
+  }
+
+  res.status(200).json({ claimed, discarded });
 });
 
 // GET /api/ratings/:id/comments — public, paginated, newest first

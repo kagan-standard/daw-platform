@@ -203,7 +203,11 @@ const DB = {
         
         const token = this._getAccessToken();
         if (token) headers['Authorization'] = `Bearer ${token}`;
-        
+        else {
+            const guestId = this.getGuestId();
+            if (guestId) headers['X-Guest-Id'] = guestId;
+        }
+
         let res = await fetch(url, { method, headers, ...opts });
         
         // If 401, try refreshing token once and retry (only retry once to avoid infinite loops)
@@ -283,6 +287,41 @@ const DB = {
         window.location.href = `${registrationUrl}?${params}`;
     },
 
+    getGuestId() { return Utils.storage.get('beerbook_guest_id') || null; },
+    setGuestId(id) { if (id) Utils.storage.set('beerbook_guest_id', id); else Utils.storage.remove('beerbook_guest_id'); },
+    getGuestDisplayName() { return Utils.storage.get('beerbook_guest_display_name') || 'Guest'; },
+    setGuestDisplayName(name) { if (name) Utils.storage.set('beerbook_guest_display_name', name); else Utils.storage.remove('beerbook_guest_display_name'); },
+    clearGuest() { Utils.storage.remove('beerbook_guest_id'); Utils.storage.remove('beerbook_guest_display_name'); },
+    isGuestMode() { return !this._getAccessToken() && !!this.getGuestId(); },
+
+    async _claimGuestRatingsIfAny() {
+        const guestId = this.getGuestId();
+        if (!guestId || !this.apiBaseUrl) return;
+        try {
+            const res = await this._api('POST', '/api/guest-ratings/claim', { body: JSON.stringify({ guest_id: guestId }) });
+            if (res && (res.claimed > 0 || res.discarded > 0)) {
+                Utils.toast(`Welcome! ${res.claimed} rating(s) claimed.${res.discarded > 0 ? ` ${res.discarded} duplicate(s) kept your existing rating.` : ''}`, 'info');
+            }
+        } catch (e) {
+            console.warn('Guest ratings claim failed:', e?.message || e);
+        } finally {
+            this.clearGuest();
+        }
+    },
+
+    enterGuestMode(displayName = 'Guest') {
+        const gid = crypto.randomUUID?.() || this._fallbackUuid();
+        this.setGuestId(gid);
+        this.setGuestDisplayName(displayName);
+        this.currentUser = { id: gid, display_name: displayName, email: '', isGuest: true };
+    },
+
+    _fallbackUuid() {
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+            const r = Math.random() * 16 | 0; const v = c === 'x' ? r : (r & 0x3 | 0x8); return v.toString(16);
+        });
+    },
+
     async handleOIDCCallback() {
         const params = new URLSearchParams(window.location.search);
         const code = params.get('code');
@@ -336,6 +375,7 @@ const DB = {
             Utils.storage.remove('oidc_state');
             Utils.storage.remove('sso_silent_attempted');
             this.currentUser = user;
+            await this._claimGuestRatingsIfAny();
             return user;
         } catch (e) {
             console.error('Token exchange failed:', e);
@@ -392,6 +432,14 @@ const DB = {
             const demo = Utils.storage.get('demo_user');
             if (demo) { this.currentUser = demo; this.isDemo = true; return demo; }
             return null;
+        }
+        const token = this._getAccessToken();
+        if (!token) {
+            const guestId = this.getGuestId();
+            if (guestId) {
+                this.currentUser = { id: guestId, display_name: this.getGuestDisplayName(), email: '', isGuest: true };
+                return this.currentUser;
+            }
         }
 
         // Clean up stale OIDC state if there's no code in the URL (e.g. email verification redirect)
@@ -479,6 +527,7 @@ const DB = {
         Utils.storage.remove('oidc_state');
         Utils.storage.remove('sso_silent_attempted');
         Utils.storage.remove('demo_user');
+        this.clearGuest();
         this.currentUser = null;
 
         // If we have Keycloak endpoints and an id_token, do a proper Keycloak logout
@@ -568,6 +617,7 @@ const DB = {
             beer_id: record.beer_id,
             serve_type: record.serve_type ?? null,
         };
+        if (this.isGuestMode()) body.user_name = this.getGuestDisplayName();
         const response = await this._api('POST', '/api/ratings', { body: JSON.stringify(body) });
         invalidateCache('');
         if (response && response.data !== undefined) return response;
