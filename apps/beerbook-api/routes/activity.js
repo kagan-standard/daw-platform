@@ -293,7 +293,7 @@ module.exports = function (opts) {
         const venues = Array.isArray(venuesRes.body) ? venuesRes.body : [];
         const ratingItems = ratings.map((r) => {
           const actor = profileById[String(r.user_id)] || {};
-          const displayAvatarUrl = (actor.equipped_avatar_id && avatarById[actor.equipped_avatar_id]?.asset_url) || actor.avatar_url ?? null;
+          const displayAvatarUrl = ((actor.equipped_avatar_id && avatarById[actor.equipped_avatar_id]?.asset_url) || actor.avatar_url) ?? null;
           return {
             type: 'rating',
             ...r,
@@ -309,7 +309,7 @@ module.exports = function (opts) {
         const cheersItems = cheersRows.map((row) => {
           const actor = profileById[String(row.user_id)] || {};
           const rating = ratingInfoById[String(row.rating_id)] || {};
-          const displayAvatarUrl = (actor.equipped_avatar_id && avatarById[actor.equipped_avatar_id]?.asset_url) || actor.avatar_url ?? null;
+          const displayAvatarUrl = ((actor.equipped_avatar_id && avatarById[actor.equipped_avatar_id]?.asset_url) || actor.avatar_url) ?? null;
           return {
             type: 'cheers',
             id: row.id || `cheers:${row.user_id}:${row.rating_id}:${row.created_at}`,
@@ -330,7 +330,7 @@ module.exports = function (opts) {
           .map((row) => {
             const actor = profileById[String(row.follower_id)] || {};
             const followed = profileById[String(row.followed_id)] || {};
-            const displayAvatarUrl = (actor.equipped_avatar_id && avatarById[actor.equipped_avatar_id]?.asset_url) || actor.avatar_url ?? null;
+            const displayAvatarUrl = ((actor.equipped_avatar_id && avatarById[actor.equipped_avatar_id]?.asset_url) || actor.avatar_url) ?? null;
             return {
               type: 'follow',
               id: row.id || `follow:${row.follower_id}:${row.followed_id}:${row.created_at}`,
@@ -349,7 +349,7 @@ module.exports = function (opts) {
           .filter((row) => !!row.joined_at)
           .map((row) => {
             const actor = profileById[String(row.user_id)] || {};
-            const displayAvatarUrl = (actor.equipped_avatar_id && avatarById[actor.equipped_avatar_id]?.asset_url) || actor.avatar_url ?? null;
+            const displayAvatarUrl = ((actor.equipped_avatar_id && avatarById[actor.equipped_avatar_id]?.asset_url) || actor.avatar_url) ?? null;
             return {
               type: 'crew_join',
               id: row.id || `crew_join:${row.user_id}:${row.crew_id}:${row.joined_at}`,
