@@ -150,6 +150,23 @@ const STYLE_GUIDE = {
     'Other': { desc: 'Other or unspecified beer style.', abv: '—' }
 };
 
+/** Canonical 9 style families for filter chips (Porter separate from Stout). Aligns with backend style_category. */
+const STYLE_FILTER_OPTIONS = [
+    'IPA', 'Pale Ale', 'Lager', 'Stout', 'Porter', 'Wheat', 'Pilsner', 'Sour', 'Belgian'
+];
+
+/**
+ * Display label for beer style: family (style_category) when present, else specific style, else ''.
+ * Use for pill/chip text so the user sees the family when available.
+ * @param {{ style?: string | null; style_category?: string | null }} beer
+ * @returns {string}
+ */
+function getDisplayStyle(beer) {
+    if (!beer) return '';
+    const v = beer.style_category ?? beer.style;
+    return (v != null && String(v).trim() !== '') ? String(v).trim() : '';
+}
+
 const Tracking = {
     getSessionId() {
         try {
@@ -1289,7 +1306,8 @@ const App = {
                     : `<button type="button" class="autocomplete-add-new" data-add-new-beer="1" data-query="${query}">➕ Add "${query}"<span class="autocomplete-add-new-sub">as a new beer</span></button>`;
                 return `${noResultsCopy}${addRow}`;
             }
-            const breweryAndStyle = [item.brewery, item.style].filter(Boolean).map((part) => Utils.escapeHtml(part)).join(' · ');
+            const displayStyle = getDisplayStyle(item);
+            const breweryAndStyle = [item.brewery, displayStyle].filter(Boolean).map((part) => Utils.escapeHtml(part)).join(' · ');
             const ratingBadge = item.review_overall != null
                 ? `<span class="autocomplete-rating">${Number(item.review_overall).toFixed(1)} / 5</span>`
                 : '';
@@ -1442,15 +1460,18 @@ const App = {
         panel.innerHTML = `
             <div class="new-beer-match-title">⚠️ Similar beers already exist:</div>
             <div class="new-beer-match-list">
-                ${this._newBeerMatches.map((m) => `
+                ${this._newBeerMatches.map((m) => {
+                    const matchDisplayStyle = getDisplayStyle(m);
+                    const styleLine = matchDisplayStyle ? ` · ${Utils.escapeHtml(matchDisplayStyle)}${m.style && String(m.style).trim() !== matchDisplayStyle ? ` (${Utils.escapeHtml(m.style)})` : ''}` : '';
+                    return `
                     <div class="new-beer-match-item">
                         <div class="new-beer-match-meta">
                             <div class="new-beer-match-name">${Utils.escapeHtml(m.name || '')}</div>
-                            <div>${Utils.escapeHtml(m.brewery_name || 'Unknown brewery')} ${m.similarity != null ? `(${Math.round(Number(m.similarity) * 100)}% match)` : ''}</div>
+                            <div>${Utils.escapeHtml(m.brewery_name || 'Unknown brewery')}${styleLine} ${m.similarity != null ? `(${Math.round(Number(m.similarity) * 100)}% match)` : ''}</div>
                         </div>
                         <button type="button" class="btn btn-ghost btn-sm" data-rate-existing-id="${Utils.escapeHtml(String(m.id || ''))}" data-rate-existing-name="${Utils.escapeHtml(m.name || '')}" data-rate-existing-brewery="${Utils.escapeHtml(m.brewery_name || '')}" data-rate-existing-style="${Utils.escapeHtml(m.style || '')}" data-rate-existing-abv="${Utils.escapeHtml(m.abv != null ? String(m.abv) : '')}">Rate This Instead</button>
                     </div>
-                `).join('')}
+                `; }).join('')}
             </div>
             <div class="new-beer-match-actions">
                 <button type="button" class="btn btn-primary btn-sm" id="confirm-new-beer-btn">None of these? Confirm New Beer</button>
@@ -2375,7 +2396,8 @@ const App = {
 
         const name = Utils.escapeHtml(beer.beer_name);
         const brew = Utils.escapeHtml(beer.brewery || '');
-        const st = Utils.escapeHtml(beer.style || '');
+        const displayStyle = getDisplayStyle(beer);
+        const st = Utils.escapeHtml(displayStyle);
         const abv = beer.abv != null ? `${beer.abv}% ABV` : '';
         const avgRating = beer.avg_rating ?? (beer.ratings && beer.ratings.length ? (beer.ratings.reduce((s, r) => s + (r.rating || 0), 0) / beer.ratings.length).toFixed(1) : '—');
         const reviewCount = beer.review_count != null ? beer.review_count : ((beer.ratings && beer.ratings.length) || 0);
@@ -2428,12 +2450,12 @@ const App = {
             </div>`;
         })() : '';
 
-        const catalogInfoHtml = (catalogBeer && (catalogBeer.description || catalogBeer.review_overall != null || catalogBeer.abv != null || catalogBeer.style)) ? (() => {
+        const catalogInfoHtml = (catalogBeer && (catalogBeer.description || catalogBeer.review_overall != null || catalogBeer.abv != null || getDisplayStyle(catalogBeer))) ? (() => {
             const parts = [];
             if (catalogBeer.description) parts.push(`<p class="catalog-desc">${Utils.escapeHtml(catalogBeer.description)}</p>`);
             const stats = [];
             if (catalogBeer.abv != null) stats.push(`<span>ABV: ${Utils.escapeHtml(String(catalogBeer.abv))}%</span>`);
-            if (catalogBeer.style) stats.push(`<span>Style: ${Utils.escapeHtml(catalogBeer.style)}</span>`);
+            if (getDisplayStyle(catalogBeer)) stats.push(`<span>Style: ${Utils.escapeHtml(getDisplayStyle(catalogBeer))}${catalogBeer.style && catalogBeer.style !== (catalogBeer.style_category || '') ? ` (${Utils.escapeHtml(catalogBeer.style)})` : ''}</span>`);
             if (stats.length) parts.push(`<div class="catalog-stats">${stats.join('')}</div>`);
             if (parts.length === 0) return '';
             return `<div class="catalog-info"><span class="catalog-badge">📖 From BeerBook Catalog</span>${parts.join('')}</div>`;
@@ -2449,7 +2471,7 @@ const App = {
             <h2 class="beer-detail-name">${name}</h2>
             ${brew ? `<div class="beer-detail-brewery">${brew}</div>` : ''}
             <div class="beer-detail-meta">
-                ${st ? `<span class="style-tooltip" data-style="${Utils.escapeHtml(beer.style || '')}">${st}</span>` : ''}
+                ${st ? `<span class="style-tooltip" data-style="${Utils.escapeHtml(beer.style || displayStyle || '')}">${st}</span>${beer.style && String(beer.style).trim() !== displayStyle ? ` <span class="beer-detail-style-secondary">${Utils.escapeHtml(beer.style)}</span>` : ''}` : ''}
                 ${abv ? `<span>${abv}</span>` : ''}
             </div>
             ${communityRatingHtml}
@@ -3525,7 +3547,7 @@ const App = {
                 <div class="catalog-card-title">📚 ${Utils.escapeHtml(beer.name || 'Unknown Beer')}</div>
                 <div class="catalog-card-subtitle">${Utils.escapeHtml(beer.brewery_name || 'Unknown Brewery')}${beer.abv != null ? ` · ${Utils.escapeHtml(String(beer.abv))}%` : ''}</div>
                 <div class="catalog-card-meta">
-                    ${beer.style ? `<span class="beer-card-tag style-tooltip" data-style="${Utils.escapeHtml(beer.style)}">${Utils.escapeHtml(beer.style)}</span>` : ''}
+                    ${(() => { const displayStyle = getDisplayStyle(beer); return displayStyle ? `<span class="beer-card-tag style-tooltip" data-style="${Utils.escapeHtml(beer.style || displayStyle)}">${Utils.escapeHtml(displayStyle)}</span>${beer.style && String(beer.style).trim() !== displayStyle ? ` <span class="catalog-style-secondary">${Utils.escapeHtml(beer.style)}</span>` : ''}` : ''; })()}
                     ${ibuRange ? `<span class="catalog-ibu">IBU: ${Utils.escapeHtml(ibuRange)}</span>` : ''}
                 </div>
                 ${beer.description ? `<div class="catalog-card-description">${Utils.escapeHtml(beer.description)}</div>` : ''}
@@ -3733,7 +3755,8 @@ const App = {
         const hiddenSelect = document.getElementById('filter-style');
         if (this.browseTab === 'catalog') {
             if (!hiddenSelect) return;
-            const styles = [...new Set((this.catalogStyles || []).filter(Boolean))].sort();
+            // Use canonical 9 families (including Porter) so filter chips always match backend style_category.
+            const styles = [...new Set([...STYLE_FILTER_OPTIONS, ...(this.catalogStyles || []).filter(Boolean)])].sort();
             const current = hiddenSelect.value;
             hiddenSelect.innerHTML = '<option value="">All Styles</option>' +
                 styles.map((s) => `<option value="${Utils.escapeHtml(s)}">${Utils.escapeHtml(s)}</option>`).join('');
