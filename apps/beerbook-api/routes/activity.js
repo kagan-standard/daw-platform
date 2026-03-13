@@ -7,6 +7,7 @@ const crypto = require('crypto');
 const { ensureProfileExists } = require('../lib/tabs');
 const { invokeProcessEvent } = require('../lib/processEvent');
 const { requireCrewMembership } = require('../lib/crewAuth');
+const { styleDistributionToFamilies } = require('../lib/styleFamily');
 
 module.exports = function (opts) {
   const { rest } = opts;
@@ -446,7 +447,7 @@ module.exports = function (opts) {
   });
 
   // GET /api/users/:id/stats (define before /users/:id so path matches)
-  // Phase 4.1: rating-derived stats from user_stats_aggregate RPC; follower/following/crew from follow_counts and crew_members.
+  // Phase 4.1: rating-derived stats from user_stats_aggregate RPC; style_distribution/most_rated_style by family.
   router.get('/users/:id/stats', (req, res, next) => {
     const id = String(req.params.id || '').trim();
     if (!id) return res.status(400).json({ error: 'User id required' });
@@ -469,15 +470,17 @@ module.exports = function (opts) {
         const ratingDist = stats.rating_distribution && typeof stats.rating_distribution === 'object' ? stats.rating_distribution : {};
         const distWithDefaults = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
         [1, 2, 3, 4, 5].forEach((k) => { distWithDefaults[k] = Number(ratingDist[k] ?? ratingDist[String(k)] ?? 0); });
+        const rawStyleDist = stats.style_distribution && typeof stats.style_distribution === 'object' ? stats.style_distribution : {};
+        const { byFamily: styleDistribution, topFamily: most_rated_style } = styleDistributionToFamilies(rawStyleDist);
         res.json({
           total_ratings: Number(stats.total_ratings ?? 0),
           total_styles: Number(stats.total_styles ?? 0),
           avg_rating: Number(stats.avg_rating ?? 0),
           avg_yg_value: Number(stats.avg_yg_value ?? 0),
           total_yg_portfolio: Number(stats.total_yg_portfolio ?? 0),
-          most_rated_style: stats.most_rated_style ?? null,
+          most_rated_style: most_rated_style ?? null,
           highest_rated_beer: stats.highest_rated_beer ?? null,
-          style_distribution: stats.style_distribution && typeof stats.style_distribution === 'object' ? stats.style_distribution : {},
+          style_distribution: styleDistribution,
           rating_distribution: distWithDefaults,
           monthly_activity: Array.isArray(stats.monthly_activity) ? stats.monthly_activity : [],
           follower_count: followerCount,

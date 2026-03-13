@@ -318,10 +318,10 @@ ALTER TABLE ratings ADD COLUMN IF NOT EXISTS beer_id TEXT REFERENCES beers(id) O
 CREATE INDEX IF NOT EXISTS idx_ratings_beer_id ON ratings(beer_id);
 
 CREATE OR REPLACE FUNCTION search_beer_catalog(search_term TEXT, max_results INTEGER DEFAULT 10)
-RETURNS TABLE (id TEXT, name TEXT, brewery_name TEXT, style TEXT, abv DECIMAL(4,2), review_overall DECIMAL(4,2), review_count INTEGER, source TEXT, similarity_score REAL) AS $$
+RETURNS TABLE (id TEXT, name TEXT, brewery_name TEXT, style TEXT, style_category TEXT, abv DECIMAL(4,2), review_overall DECIMAL(4,2), review_count INTEGER, source TEXT, similarity_score REAL) AS $$
 BEGIN
     RETURN QUERY
-    SELECT b.id::TEXT, b.name, b.brewery_name, b.style, b.abv, b.review_overall, b.review_count, b.source,
+    SELECT b.id::TEXT, b.name, b.brewery_name, b.style, b.style_category, b.abv, b.review_overall, b.review_count, b.source,
         greatest(similarity(b.name, search_term), similarity(b.brewery_name || ' ' || b.name, search_term))::REAL
     FROM beers b
     WHERE b.name ILIKE search_term || '%' OR (b.brewery_name || ' ' || b.name) ILIKE '%' || search_term || '%'

@@ -20,6 +20,7 @@ const { emitMilestonesAfterRating } = require('./lib/crewMilestones');
 const { getAdminToken, createUser, getTokensForUser, refreshTokens, sendVerificationEmail } = require('./lib/keycloakAdmin');
 const { validateYgValue, ygValueToStarRating } = require('./lib/ratingsValidation');
 const { actorMiddleware, ENABLE_GUEST_RATINGS, validateGuestId } = require('./lib/actorIdentity');
+const { CANONICAL_FAMILIES, styleDistributionToFamilies, styleToFamily } = require('./lib/styleFamily');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -826,6 +827,7 @@ function mapCatalogBeer(row) {
     name: row.name,
     brewery_name: row.brewery_name ?? null,
     style: row.style ?? null,
+    style_category: row.style_category ?? null,
     abv: toNumberOrNull(row.abv),
     description: row.description ?? null,
     ibu_min: toNumberOrNull(row.ibu_min),
@@ -905,6 +907,7 @@ app.get('/api/catalog/search', async (req, res) => {
       name: r.name,
       brewery_name: r.brewery_name ?? null,
       style: r.style ?? null,
+      style_category: r.style_category ?? null,
       abv: r.abv != null ? Number(r.abv) : null,
       description: r.description ?? null,
       review_overall: r.review_overall != null ? Number(r.review_overall) : null,
@@ -930,14 +933,14 @@ app.get('/api/catalog/browse', async (req, res) => {
   const like = encodeURIComponent(`*${q}*`);
 
   let path = '/beers?';
-  path += 'select=id,name,brewery_name,style,abv,description,ibu_min,ibu_max,';
+  path += 'select=id,name,brewery_name,style,style_category,abv,description,ibu_min,ibu_max,';
   path += 'flavor_astringency,flavor_body,flavor_alcohol,flavor_bitter,flavor_sweet,flavor_sour,';
   path += 'flavor_salty,flavor_fruity,flavor_hoppy,flavor_spicy,flavor_malty,';
   path += 'review_aroma,review_appearance,review_palate,review_taste,review_overall,review_count';
   path += `&limit=${limit}&offset=${offset}&order=${sort}.${order}`;
 
   if (style) {
-    path += `&style=eq.${encodeURIComponent(style)}`;
+    path += `&style_category=eq.${encodeURIComponent(style)}`;
   }
   if (q) {
     path += `&or=(name.ilike.${like},brewery_name.ilike.${like},style.ilike.${like})`;
@@ -960,25 +963,10 @@ app.get('/api/catalog/browse', async (req, res) => {
   }
 });
 
-// GET /api/catalog/styles — distinct style list for filters
+// GET /api/catalog/styles — canonical 9 family names for filters (optionally from API)
 app.get('/api/catalog/styles', async (req, res) => {
   try {
-    const { status, body } = await rest('GET', '/beers?select=style&style=not.is.null&order=style.asc&limit=10000');
-    if (status >= 400) {
-      return res.status(status >= 500 ? 502 : status).json(body || { error: 'Catalog styles failed' });
-    }
-    const rows = Array.isArray(body) ? body : [];
-    const uniq = [];
-    const seen = new Set();
-    for (const row of rows) {
-      const style = (row && row.style ? String(row.style) : '').trim();
-      if (!style) continue;
-      const key = style.toLowerCase();
-      if (seen.has(key)) continue;
-      seen.add(key);
-      uniq.push(style);
-    }
-    res.json({ data: uniq });
+    res.json({ data: [...CANONICAL_FAMILIES] });
   } catch (e) {
     console.error('Catalog styles error:', e);
     res.status(502).json({ error: 'Catalog styles failed' });
@@ -1019,6 +1007,7 @@ app.get('/api/catalog/validate-new', async (req, res) => {
           name: beer.name,
           brewery_name: beer.brewery_name,
           style: beer.style,
+          style_category: beer.style_category ?? null,
           abv: beer.abv != null ? Number(beer.abv) : null,
           name_similarity: nameSim,
           brewery_match: breweryMatch,
@@ -1042,7 +1031,7 @@ app.get('/api/catalog/beer/:id', async (req, res) => {
   try {
     const { status, body } = await rest(
       'GET',
-      `/beers?id=eq.${id}&select=id,name,brewery_name,style,abv,description,ibu_min,ibu_max,flavor_astringency,flavor_body,flavor_alcohol,flavor_bitter,flavor_sweet,flavor_sour,flavor_salty,flavor_fruity,flavor_hoppy,flavor_spicy,flavor_malty,review_aroma,review_appearance,review_palate,review_taste,review_overall,review_count&limit=1`
+      `/beers?id=eq.${id}&select=id,name,brewery_name,style,style_category,abv,description,ibu_min,ibu_max,flavor_astringency,flavor_body,flavor_alcohol,flavor_bitter,flavor_sweet,flavor_sour,flavor_salty,flavor_fruity,flavor_hoppy,flavor_spicy,flavor_malty,review_aroma,review_appearance,review_palate,review_taste,review_overall,review_count&limit=1`
     );
     if (status >= 400) {
       return res.status(status >= 500 ? 502 : status).json(body || { error: 'Upstream error' });
@@ -1960,6 +1949,17 @@ app.patch('/api/profile', authMiddleware, async (req, res) => {
   });
 });
 
+function remapStatsToStyleFamilies(stats) {
+  if (!stats || typeof stats !== 'object') return stats ?? {};
+  const rawDist = stats.style_distribution && typeof stats.style_distribution === 'object' ? stats.style_distribution : {};
+  const { byFamily, topFamily } = styleDistributionToFamilies(rawDist);
+  return {
+    ...stats,
+    style_distribution: byFamily,
+    favorite_style: topFamily ?? (stats.favorite_style ? styleToFamily(stats.favorite_style) : null),
+  };
+}
+
 async function enrichStatsWithInferredFlavors(stats, userId) {
   if (!stats || typeof stats !== 'object') return stats ?? {};
   const flavors = stats.flavors;
@@ -2000,7 +2000,7 @@ async function enrichStatsWithInferredFlavors(stats, userId) {
   return { ...stats, flavors_inferred: false };
 }
 
-// GET /api/stats/me — auth required, enhanced user stats (flavors, style_distribution, etc.)
+// GET /api/stats/me — auth required, enhanced user stats (flavors, style_distribution by family, etc.)
 app.get('/api/stats/me', authMiddleware, async (req, res) => {
   try {
     const userId = req.claims.sub;
@@ -2009,7 +2009,8 @@ app.get('/api/stats/me', authMiddleware, async (req, res) => {
       body: JSON.stringify({ target_user_id: userId }),
     });
     if (status >= 400) return res.status(status).json(body || { error: 'Upstream error' });
-    const enriched = await enrichStatsWithInferredFlavors(body, userId);
+    const statsWithFamily = remapStatsToStyleFamilies(body);
+    const enriched = await enrichStatsWithInferredFlavors(statsWithFamily, userId);
     res.json(enriched);
   } catch (err) {
     console.error('Stats error:', err);
@@ -2017,7 +2018,7 @@ app.get('/api/stats/me', authMiddleware, async (req, res) => {
   }
 });
 
-// GET /api/stats/:userId — public, enhanced stats for specified user
+// GET /api/stats/:userId — public, enhanced stats for specified user (style_distribution by family)
 app.get('/api/stats/:userId', async (req, res) => {
   try {
     const userId = req.params.userId;
@@ -2026,7 +2027,8 @@ app.get('/api/stats/:userId', async (req, res) => {
       body: JSON.stringify({ target_user_id: userId }),
     });
     if (status >= 400) return res.status(status).json(body || { error: 'Upstream error' });
-    const enriched = await enrichStatsWithInferredFlavors(body, userId);
+    const statsWithFamily = remapStatsToStyleFamilies(body);
+    const enriched = await enrichStatsWithInferredFlavors(statsWithFamily, userId);
     res.json(enriched);
   } catch (err) {
     console.error('Stats error:', err);

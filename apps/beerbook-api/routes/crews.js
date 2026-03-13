@@ -1,5 +1,6 @@
 const express = require('express');
 const { requireCrewMembership } = require('../lib/crewAuth');
+const { styleToFamily } = require('../lib/styleFamily');
 
 function generateInviteCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -259,8 +260,8 @@ module.exports = function (opts) {
 
       const counts = {};
       ratings.forEach((r) => {
-        const style = r.style && String(r.style).trim() ? String(r.style).trim() : 'Unknown';
-        counts[style] = (counts[style] || 0) + 1;
+        const family = styleToFamily(r.style);
+        counts[family] = (counts[family] || 0) + 1;
       });
 
       res.json(counts);
@@ -311,7 +312,10 @@ module.exports = function (opts) {
       ratings.forEach((r) => {
         totalRatings += 1;
         ratingSum += Number(r.rating) || 0;
-        if (r.style) styleCounts[r.style] = (styleCounts[r.style] || 0) + 1;
+        if (r.style) {
+          const family = styleToFamily(r.style);
+          styleCounts[family] = (styleCounts[family] || 0) + 1;
+        }
         if (r.beer_name) beerCounts[r.beer_name] = (beerCounts[r.beer_name] || 0) + 1;
         if (r.venue_id) venueIds.add(r.venue_id);
       });

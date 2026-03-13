@@ -195,7 +195,7 @@ Most list endpoints use:
 | `GET /api/ratings/:id/comments` | `{ data: [...] }` | Accepts limit/offset but no pagination object in response |
 | `GET /api/breweries/map`, `GET /api/map/breweries` | `{ data: [...], pagination: { limit, offset, total }, truncated }` | Has pagination + `truncated` boolean |
 | `GET /api/leaderboard` | `{ period, crew_id, top_reviewers, top_beers, top_yg_values, most_venues, truncated, pagination }` | Custom shape; optional crew scoping |
-| `GET /api/crews/:id/style-counts` | `{ "IPA": n, "Lager": n, ... }` | Plain object (style → count) |
+| `GET /api/crews/:id/style-counts` | `{ "IPA": n, "Lager": n, ... }` | Plain object (style **family** → count) |
 | `GET /api/highlights/beer-of-the-week` | `{ beer: ... }` | Single object wrapper |
 | `GET /api/activity` | `{ data: [...], pagination: { limit, offset, total } }` | Merged multi-type activity feed |
 | `GET /api/map` | `{ data: [...] }` | No pagination |
@@ -298,7 +298,7 @@ This applies to crew operations, follow operations, and any other proxied writes
 | `q` | string | — | Required; returns `{ data: [] }` if < 2 chars |
 | `limit` | number | 10 | Clamped 1–50 |
 
-**Success Response (200):**
+**Success Response (200):** Each item includes `style_category` (canonical family or null).
 
 ```json
 {
@@ -308,6 +308,7 @@ This applies to crew operations, follow operations, and any other proxied writes
       "name": "string",
       "brewery_name": "string",
       "style": "string",
+      "style_category": "string | null",
       "abv": 5.5,
       "description": "string",
       "review_overall": 4.2,
@@ -335,10 +336,10 @@ This applies to crew operations, follow operations, and any other proxied writes
 | `offset` | number | 0 | >= 0 |
 | `sort` | string | `"name"` | One of: `name`, `abv`, `review_overall`, `review_count` |
 | `order` | string | `"asc"` | `"asc"` or `"desc"` |
-| `style` | string | — | Optional filter |
+| `style` | string | — | Optional; filters by **style family** (`style_category`), e.g. `Lager` returns all beers whose family is Lager (Light Lager, American Lager, etc.) |
 | `q` | string | — | Optional; `%` characters stripped |
 
-**Success Response (200):**
+**Success Response (200):** Each item includes `style` (specific name) and `style_category` (canonical family or null).
 
 ```json
 {
@@ -348,6 +349,7 @@ This applies to crew operations, follow operations, and any other proxied writes
       "name": "string",
       "brewery_name": "string",
       "style": "string",
+      "style_category": "string | null",
       "abv": 5.5,
       "description": "string",
       "ibu_min": 30,
@@ -383,13 +385,11 @@ This applies to crew operations, follow operations, and any other proxied writes
 
 **Request:** no params
 
-**Success Response (200):**
+**Success Response (200):** Canonical 9 style family names for filter chips: IPA, Pale Ale, Lager, Stout, Porter, Wheat, Pilsner, Sour, Belgian.
 
 ```json
-{ "data": ["IPA", "Lager", "Stout", "..."] }
+{ "data": ["IPA", "Pale Ale", "Lager", "Stout", "Porter", "Wheat", "Pilsner", "Sour", "Belgian"] }
 ```
-
-Sorted, unique style strings.
 
 **Error Responses:**
 - 502 or upstream body
@@ -408,7 +408,7 @@ Sorted, unique style strings.
 | `name` | string | — | Required; returns `{ data: [] }` if < 2 chars |
 | `brewery` | string | — | Optional |
 
-**Success Response (200):**
+**Success Response (200):** Each match includes `style` and `style_category` (canonical family or null).
 
 ```json
 {
@@ -418,6 +418,7 @@ Sorted, unique style strings.
       "name": "string",
       "brewery_name": "string",
       "style": "string",
+      "style_category": "string | null",
       "abv": 5.5,
       "name_similarity": 0.85,
       "brewery_match": true,
@@ -439,7 +440,7 @@ On upstream error: returns `{ "data": [] }` (does NOT propagate errors).
 
 **URL Params:** `id` — beer UUID
 
-**Success Response (200):** Single `mapCatalogBeer` object (same shape as browse items, NOT wrapped in `data`).
+**Success Response (200):** Single `mapCatalogBeer` object (same shape as browse items including `style_category`, NOT wrapped in `data`).
 
 **Error Responses:**
 - 404: `{ "error": "Beer not found" }`
@@ -1334,7 +1335,7 @@ At least one of `display_name` or `avatar_url` must be provided.
 }
 ```
 
-Returns `{}` if no ratings. From `user_enhanced_stats` RPC.
+Returns `{}` if no ratings. From `user_enhanced_stats` RPC. **Style family contract:** `favorite_style` and `style_distribution` keys/values use the 9 canonical style families (IPA, Pale Ale, Lager, Stout, Porter, Wheat, Pilsner, Sour, Belgian); counts are aggregated by family.
 
 Note: This has different field names than `GET /api/users/:id/stats` (e.g. `average_rating` vs `avg_rating`, `unique_beers` vs absent, `monthly_counts` vs `monthly_activity`).
 
@@ -3057,7 +3058,7 @@ This is a toggle endpoint.
 }
 ```
 
-`weekly_challenge` is populated when the current week has an active challenge; otherwise `challenge` and `progress` may be null.
+`weekly_challenge` is populated when the current week has an active challenge; otherwise `challenge` and `progress` may be null. **Style family:** `stats.most_popular_style` and `stats.favorite_style_name` are one of the 9 canonical style families.
 
 **Error Responses:**
 - 403: `{ "error": "Crew access denied" }`
@@ -3181,7 +3182,7 @@ Beers ranked by rating count within the crew over the given `days`. Empty crew r
 
 **URL Params:** `id` — crew UUID
 
-**Success Response (200):** Plain object (style name → count), e.g.:
+**Success Response (200):** Plain object (**style family** → count). Keys are the 9 canonical families (IPA, Pale Ale, Lager, Stout, Porter, Wheat, Pilsner, Sour, Belgian) or "Unknown". Counts are aggregated by family, e.g.:
 
 ```json
 {
