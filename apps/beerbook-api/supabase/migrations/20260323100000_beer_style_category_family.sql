@@ -72,6 +72,8 @@ CREATE TRIGGER beers_style_category_trigger
   FOR EACH ROW EXECUTE FUNCTION beers_set_style_category();
 
 -- 4) search_beer_catalog: add style_category to RETURNS and SELECT.
+-- Drop first because return type (RETURNS TABLE) changed; PostgreSQL does not allow REPLACE when signature changes.
+DROP FUNCTION IF EXISTS search_beer_catalog(text, integer);
 CREATE OR REPLACE FUNCTION search_beer_catalog(search_term TEXT, max_results INTEGER DEFAULT 10)
 RETURNS TABLE (
   id TEXT,
