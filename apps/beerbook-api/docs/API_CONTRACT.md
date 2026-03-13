@@ -1168,13 +1168,16 @@ Both routes are aliases and return the same response shape.
   "updated_at": "ISO8601",
   "equipped_border_id": "uuid | null",
   "equipped_title_id": "uuid | null",
+  "equipped_avatar_id": "uuid | null",
   "equipped_border_asset_url": "string | null",
   "equipped_border_fit": "object | null",
-  "equipped_title_text": "string | null"
+  "equipped_title_text": "string | null",
+  "equipped_avatar_asset_url": "string | null"
 }
 ```
 
 - **`equipped_border_fit`:** Fit metadata (scale, rotationDeg, offsetX, offsetY, optional avatarScale) from the equipped border cosmetic; `null` when no border equipped or border has no fit.
+- **`equipped_avatar_asset_url`:** Resolved asset URL of the equipped avatar cosmetic; `null` when no avatar equipped. Use for profile picture display (prefer over `avatar_url` when present).
 
 **Error Responses:**
 - 404: `{ "error": "User not found" }`
@@ -1253,14 +1256,17 @@ Both routes are identical.
   "updated_at": "ISO8601",
   "equipped_border_id": "uuid | null",
   "equipped_title_id": "uuid | null",
+  "equipped_avatar_id": "uuid | null",
   "equipped_border_asset_url": "string | null",
   "equipped_border_fit": "object | null",
   "equipped_title_text": "string | null",
+  "equipped_avatar_asset_url": "string | null",
   "is_admin": false
 }
 ```
 
 - **`equipped_border_fit`:** Fit metadata from the equipped border cosmetic; `null` when no border equipped or border has no fit.
+- **`equipped_avatar_asset_url`:** Resolved asset URL of the equipped avatar cosmetic; use for profile picture (prefer over `avatar_url` when present).
 
 Returns 201 if profile was newly created, 200 if existing.
 
@@ -1296,9 +1302,11 @@ At least one of `display_name` or `avatar_url` must be provided.
   "updated_at": "ISO8601",
   "equipped_border_id": "uuid | null",
   "equipped_title_id": "uuid | null",
+  "equipped_avatar_id": "uuid | null",
   "equipped_border_asset_url": "string | null",
   "equipped_border_fit": "object | null",
   "equipped_title_text": "string | null",
+  "equipped_avatar_asset_url": "string | null",
   "is_admin": false
 }
 ```
@@ -2373,7 +2381,7 @@ Both routes are identical.
 }
 ```
 
-Profile/cosmetics fields (`avatar_url`, `equipped_border_asset_url`, `equipped_border_fit`) are included for both global and crew-filtered leaderboards. `equipped_border_fit` is the border cosmetic’s fit metadata when present.
+Profile/cosmetics fields (`avatar_url`, `equipped_border_asset_url`, `equipped_border_fit`, `equipped_avatar_asset_url`) are included for both global and crew-filtered leaderboards. For profile picture display use `equipped_avatar_asset_url ?? avatar_url`. `equipped_border_fit` is the border cosmetic’s fit metadata when present.
 
 `period` only affects `rating_count`, `avg_rating`, and `total_cheers`:
 - `weekly`: current week starting Monday 00:00 UTC
@@ -2712,7 +2720,7 @@ Legacy achievement rule keys such as `review_min_len`, `stars_gte`/`stars_lte`, 
 
 - **`border_fit`:** Optional per-border fit metadata (scale, rotationDeg, offsetX, offsetY, optional avatarScale); only present for border cosmetics. `null` or omitted means use app default.
 - **`is_owned`:** When the request is authenticated, `true` if the user has this cosmetic in `user_cosmetics`; otherwise `false`. When unauthenticated, always `false`.
-- **`is_equipped`:** When authenticated, `true` if this cosmetic is the user's equipped border or title; otherwise `false`.
+- **`is_equipped`:** When authenticated, `true` if this cosmetic is the user's equipped border, title, or avatar; otherwise `false`. Catalog and inventory include cosmetics with `type: 'avatar'`.
 
 Additional cosmetic achievement fields:
 
@@ -2816,7 +2824,7 @@ Additional cosmetic achievement fields:
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
 | `cosmetic_id` | string or null | yes | UUID to equip, `null` to unequip |
-| `slot` | string | conditional | Required when `cosmetic_id` is null: `"border"` or `"title"` |
+| `slot` | string | conditional | Required when `cosmetic_id` is null: `"border"`, `"title"`, or `"avatar"` |
 
 **Success Response (200) — equip:**
 
@@ -2826,7 +2834,8 @@ Additional cosmetic achievement fields:
     "slot": "border",
     "cosmetic_id": "uuid",
     "equipped_border_id": "uuid | null",
-    "equipped_title_id": "uuid | null"
+    "equipped_title_id": "uuid | null",
+    "equipped_avatar_id": "uuid | null"
   }
 }
 ```
@@ -2836,16 +2845,17 @@ Additional cosmetic achievement fields:
 ```json
 {
   "data": {
-    "slot": "border",
+    "slot": "avatar",
     "cosmetic_id": null,
-    "equipped_border_id": null,
-    "equipped_title_id": "uuid | null"
+    "equipped_border_id": "uuid | null",
+    "equipped_title_id": "uuid | null",
+    "equipped_avatar_id": null
   }
 }
 ```
 
 **Error Responses:**
-- 400: `{ "error": "slot must be 'border' or 'title' when cosmetic_id is null" }`
+- 400: `{ "error": "slot must be 'border', 'title', or 'avatar' when cosmetic_id is null" }`
 - 400: `{ "error": "cosmetic_id must be a UUID or null" }`
 - 400: `{ "error": "Invalid cosmetic_id" }`
 - 400: `{ "error": "Cosmetic is inactive" }`
@@ -3738,7 +3748,7 @@ All admin routes require `authMiddleware` + `adminMiddleware`.
 
 - **File:** `routes/admin.js`
 
-**Body:** `key`, `type` (border|title), `name`, `description`, `rarity`, `unlock_type`, `tab_price`, `achievement_key`, etc. Validation in `lib/adminValidation.js`.
+**Body:** `key`, `type` (border|title|avatar), `name`, `description`, `rarity`, `unlock_type`, `tab_price`, `achievement_key`, etc. Validation in `lib/adminValidation.js`.
 
 **Success Response (201):** Created cosmetic row. **400:** Validation error.
 

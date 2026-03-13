@@ -126,8 +126,8 @@ test('GET /api/cosmetics enriches achievement visibility and progress fields', a
     if (method === 'GET' && path === '/user_cosmetics?user_id=eq.user-123&select=cosmetic_id&limit=5000') {
       return { status: 200, body: [] };
     }
-    if (method === 'GET' && path === '/profiles?id=eq.user-123&select=equipped_border_id,equipped_title_id&limit=1') {
-      return { status: 200, body: [{ equipped_border_id: null, equipped_title_id: null }] };
+    if (method === 'GET' && path === '/profiles?id=eq.user-123&select=equipped_border_id,equipped_title_id,equipped_avatar_id&limit=1') {
+      return { status: 200, body: [{ equipped_border_id: null, equipped_title_id: null, equipped_avatar_id: null }] };
     }
     if (method === 'GET' && path === '/achievements?key=in.(hidden_ach)&select=id,key,is_hidden,rules') {
       return {
@@ -220,7 +220,7 @@ test('POST /api/cosmetics/equip supports per-slot unequip with null cosmetic_id'
       assert.equal(body.equipped_border_id, null);
       return {
         status: 200,
-        body: [{ equipped_border_id: null, equipped_title_id: '00000000-0000-4000-8000-000000000099' }],
+        body: [{ equipped_border_id: null, equipped_title_id: '00000000-0000-4000-8000-000000000099', equipped_avatar_id: null }],
       };
     }
     throw new Error(`Unhandled rest call: ${method} ${path}`);
@@ -256,7 +256,7 @@ test('POST /api/cosmetics/equip infers slot from cosmetic type', async () => {
       assert.equal(body.equipped_title_id, '00000000-0000-4000-8000-000000000001');
       return {
         status: 200,
-        body: [{ equipped_border_id: null, equipped_title_id: '00000000-0000-4000-8000-000000000001' }],
+        body: [{ equipped_border_id: null, equipped_title_id: '00000000-0000-4000-8000-000000000001', equipped_avatar_id: null }],
       };
     }
     throw new Error(`Unhandled rest call: ${method} ${path}`);
@@ -270,6 +270,71 @@ test('POST /api/cosmetics/equip infers slot from cosmetic type', async () => {
     assert.equal(out.status, 200);
     assert.equal(out.body?.data?.slot, 'title');
     assert.equal(out.body?.data?.cosmetic_id, '00000000-0000-4000-8000-000000000001');
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test('POST /api/cosmetics/equip unequip avatar slot with cosmetic_id null', async () => {
+  const app = createApi(async (method, path, opts = {}) => {
+    if (method === 'PATCH' && path === '/profiles?id=eq.user-123') {
+      const body = JSON.parse(opts.body || '{}');
+      assert.equal(body.equipped_avatar_id, null);
+      return {
+        status: 200,
+        body: [{ equipped_border_id: null, equipped_title_id: null, equipped_avatar_id: null }],
+      };
+    }
+    throw new Error(`Unhandled rest call: ${method} ${path}`);
+  });
+
+  const server = app.listen(0);
+  try {
+    const out = await requestJson(server, 'POST', '/api/cosmetics/equip', {
+      slot: 'avatar',
+      cosmetic_id: null,
+    });
+    assert.equal(out.status, 200);
+    assert.equal(out.body?.data?.slot, 'avatar');
+    assert.equal(out.body?.data?.cosmetic_id, null);
+    assert.equal(out.body?.data?.equipped_avatar_id, null);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test('POST /api/cosmetics/equip infers slot avatar from cosmetic type', async () => {
+  const avatarCosmeticId = '00000000-0000-4000-8000-0000000000a1';
+  const app = createApi(async (method, path, opts = {}) => {
+    if (method === 'GET' && path === `/cosmetics?id=eq.${encodeURIComponent(avatarCosmeticId)}&select=id,type,active&limit=1`) {
+      return {
+        status: 200,
+        body: [{ id: avatarCosmeticId, type: 'avatar', active: true }],
+      };
+    }
+    if (method === 'GET' && path === `/user_cosmetics?user_id=eq.user-123&cosmetic_id=eq.${encodeURIComponent(avatarCosmeticId)}&select=id&limit=1`) {
+      return { status: 200, body: [{ id: 'owned-av' }] };
+    }
+    if (method === 'PATCH' && path === '/profiles?id=eq.user-123') {
+      const body = JSON.parse(opts.body || '{}');
+      assert.equal(body.equipped_avatar_id, avatarCosmeticId);
+      return {
+        status: 200,
+        body: [{ equipped_border_id: null, equipped_title_id: null, equipped_avatar_id: avatarCosmeticId }],
+      };
+    }
+    throw new Error(`Unhandled rest call: ${method} ${path}`);
+  });
+
+  const server = app.listen(0);
+  try {
+    const out = await requestJson(server, 'POST', '/api/cosmetics/equip', {
+      cosmetic_id: avatarCosmeticId,
+    });
+    assert.equal(out.status, 200);
+    assert.equal(out.body?.data?.slot, 'avatar');
+    assert.equal(out.body?.data?.cosmetic_id, avatarCosmeticId);
+    assert.equal(out.body?.data?.equipped_avatar_id, avatarCosmeticId);
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
@@ -290,10 +355,10 @@ test('GET /api/users/:id/cosmetics returns owned cosmetics with is_equipped', as
         ],
       };
     }
-    if (path === '/profiles?id=eq.user-123&select=equipped_border_id,equipped_title_id&limit=1') {
+    if (path === '/profiles?id=eq.user-123&select=equipped_border_id,equipped_title_id,equipped_avatar_id&limit=1') {
       return {
         status: 200,
-        body: [{ equipped_border_id: '00000000-0000-4000-8000-000000000001', equipped_title_id: null }],
+        body: [{ equipped_border_id: '00000000-0000-4000-8000-000000000001', equipped_title_id: null, equipped_avatar_id: null }],
       };
     }
     if (path === '/cosmetics?id=in.(00000000-0000-4000-8000-000000000001)&select=id,key,type,name,description,rarity,asset_url,preview_asset_url,title_text,unlock_type,achievement_key,tab_price,active,sort_order,border_fit,created_at') {

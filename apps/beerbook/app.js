@@ -3394,8 +3394,17 @@ const App = {
 
         const showCount = this.browseShownCount || 24;
         const visibleRatings = filtered.slice(0, showCount);
+        const avatarImgSrc = (url) => {
+            if (!url) return '';
+            const base = (DB.apiBaseUrl || '').replace(/\/+$/, '');
+            return url.startsWith('http') ? url : base + (url.startsWith('/') ? url : '/' + url);
+        };
         container.innerHTML = visibleRatings.map((r, i) => {
             const initials = Utils.initials(r.user_name || 'Anonymous') || '🍺';
+            const displayAvatarUrl = r.avatar_url || null;
+            const avatarHtml = displayAvatarUrl
+                ? `<img class="rating-card__avatar-img" src="${Utils.escapeHtml(avatarImgSrc(displayAvatarUrl))}" alt="${Utils.escapeHtml(r.user_name || '')}" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling && (this.nextElementSibling.style.display='flex');"><span class="rating-card__avatar-initials" style="display:none">${Utils.escapeHtml(initials)}</span>`
+                : `<span class="rating-card__avatar-initials">${Utils.escapeHtml(initials)}</span>`;
             const avatarColors = [
                 'linear-gradient(135deg, #F4B223 0%, #FF9F1C 100%)',
                 'linear-gradient(135deg, #48BB78 0%, #3BA894 100%)',
@@ -3448,7 +3457,7 @@ const App = {
             return `
                 <div class="rating-card" data-user-id="${Utils.escapeHtml(r.user_id || '')}" data-user-name="${Utils.escapeHtml(r.user_name || 'Anonymous')}" style="animation-delay: ${Math.min(i * 0.07, 0.35)}s">
                     <div class="rating-card__header">
-                        <div class="rating-card__avatar" style="background: ${avatarColors[colorIdx]}">${Utils.escapeHtml(initials)}</div>
+                        <div class="rating-card__avatar" style="background: ${displayAvatarUrl ? 'transparent' : avatarColors[colorIdx]}">${avatarHtml}</div>
                         <div class="rating-card__user-info">
                             <div class="rating-card__username">${Utils.escapeHtml(r.user_name || 'Anonymous')}</div>
                             <div class="rating-card__time">${Utils.timeAgo(r.created_at)}</div>
@@ -3674,6 +3683,12 @@ const App = {
             }
             const name = item.user_name || 'Someone';
             const initials = Utils.initials(name) || '🍺';
+            const activityAvatarSrc = item.avatar_url
+                ? (item.avatar_url.startsWith('http') ? item.avatar_url : (DB.apiBaseUrl || '').replace(/\/+$/, '') + (item.avatar_url.startsWith('/') ? item.avatar_url : '/' + item.avatar_url))
+                : '';
+            const activityAvatarHtml = activityAvatarSrc
+                ? `<img class="activity-avatar-img" src="${Utils.escapeHtml(activityAvatarSrc)}" alt="${Utils.escapeHtml(name)}" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling && (this.nextElementSibling.style.display='');"><span class="activity-avatar-initials" style="display:none">${Utils.escapeHtml(initials)}</span>`
+                : Utils.escapeHtml(initials);
             const ygBadge = (item.yg_value != null && item.yg_value > 0) ? ` <span class="yg-badge-pill">${Number(item.yg_value)} YG</span>` : '';
             const cheers = (item.cheers_count > 0) ? ` · 🍻 ${item.cheers_count} cheers` : '';
             const beerName = item.beer_name || '';
@@ -3681,7 +3696,7 @@ const App = {
             const beerLink = beerName ? `<span class="beer-name-link" data-beer-name="${Utils.escapeHtml(beerName)}" data-beer-brewery="${Utils.escapeHtml(item.brewery || '')}" data-beer-style="${Utils.escapeHtml(item.style || '')}"${beerIdAttr} role="button" tabindex="0">${Utils.escapeHtml(beerName)}</span>` : '';
             const cheersBtn = item.id ? `<div class="activity-cheers">${this.cheersButtonHtml(item.id)}</div>` : '';
             return `<div class="activity-item" data-user-id="${Utils.escapeHtml(item.user_id || '')}" data-user-name="${Utils.escapeHtml(name)}">
-                <div class="activity-avatar">${Utils.escapeHtml(initials)}</div>
+                <div class="activity-avatar">${activityAvatarHtml}</div>
                 <div class="activity-body">
                     <div class="activity-text">${Utils.escapeHtml(name)} rated ${beerLink} ${Utils.stars(item.rating || 0)}${ygBadge}${item.location_name ? ' at ' + Utils.escapeHtml(item.location_name) : ''}</div>
                     ${item.notes ? `<div class="activity-notes">"${Utils.escapeHtml(Utils.truncate(item.notes, 80))}"</div>` : ''}
@@ -3701,7 +3716,21 @@ const App = {
         if (!DB.currentUser) return;
         document.getElementById('profile-name').textContent = DB.currentUser.display_name;
         document.getElementById('profile-email').textContent = DB.currentUser.email;
-        document.getElementById('profile-avatar').textContent = Utils.initials(DB.currentUser.display_name) || '🍺';
+        const profileAvatarEl = document.getElementById('profile-avatar');
+        const displayAvatarUrl = DB.currentUser.equipped_avatar_asset_url || DB.currentUser.avatar_url || null;
+        if (displayAvatarUrl) {
+            const base = (DB.apiBaseUrl || '').replace(/\/+$/, '');
+            const src = displayAvatarUrl.startsWith('http') ? displayAvatarUrl : base + (displayAvatarUrl.startsWith('/') ? displayAvatarUrl : '/' + displayAvatarUrl);
+            profileAvatarEl.innerHTML = '';
+            const img = document.createElement('img');
+            img.src = src;
+            img.alt = DB.currentUser.display_name || 'Profile';
+            img.setAttribute('class', 'profile-avatar-img');
+            profileAvatarEl.appendChild(img);
+        } else {
+            profileAvatarEl.innerHTML = '';
+            profileAvatarEl.textContent = Utils.initials(DB.currentUser.display_name) || '🍺';
+        }
 
         const myRatings = this.allRatings.filter(r => r.user_id === DB.currentUser.id);
         document.getElementById('pstat-total').textContent = myRatings.length;

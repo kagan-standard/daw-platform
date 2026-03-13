@@ -214,13 +214,15 @@ async function attachEquippedCosmeticsToProfile(profile) {
   if (!profile || typeof profile !== 'object') return profile;
   const borderId = profile.equipped_border_id;
   const titleId = profile.equipped_title_id;
-  const ids = [borderId, titleId].filter(Boolean);
+  const avatarId = profile.equipped_avatar_id;
+  const ids = [borderId, titleId, avatarId].filter(Boolean);
   if (!ids.length) {
     return {
       ...profile,
       equipped_border_asset_url: null,
       equipped_border_fit: null,
       equipped_title_text: null,
+      equipped_avatar_asset_url: null,
     };
   }
 
@@ -231,6 +233,7 @@ async function attachEquippedCosmeticsToProfile(profile) {
       equipped_border_asset_url: null,
       equipped_border_fit: null,
       equipped_title_text: null,
+      equipped_avatar_asset_url: null,
     };
   }
 
@@ -239,12 +242,14 @@ async function attachEquippedCosmeticsToProfile(profile) {
   const byId = Object.fromEntries(cosmetics.map((row) => [row.id, row]));
   const border = borderId ? byId[borderId] : null;
   const title = titleId ? byId[titleId] : null;
+  const avatar = avatarId ? byId[avatarId] : null;
 
   return {
     ...profile,
     equipped_border_asset_url: border?.asset_url ?? null,
     equipped_border_fit: border?.border_fit ?? null,
     equipped_title_text: title?.title_text || title?.name || null,
+    equipped_avatar_asset_url: avatar?.asset_url ?? null,
   };
 }
 

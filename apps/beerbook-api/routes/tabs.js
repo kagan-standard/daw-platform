@@ -397,10 +397,11 @@ module.exports = function tabsRoutes(opts) {
       let ownedCosmeticIds = new Set();
       let equippedBorderId = null;
       let equippedTitleId = null;
+      let equippedAvatarId = null;
       if (userId) {
         const [userCosmeticsOut, profileOut] = await Promise.all([
           rest('GET', `/user_cosmetics?user_id=eq.${encodeURIComponent(userId)}&select=cosmetic_id&limit=5000`),
-          rest('GET', `/profiles?id=eq.${encodeURIComponent(userId)}&select=equipped_border_id,equipped_title_id&limit=1`),
+          rest('GET', `/profiles?id=eq.${encodeURIComponent(userId)}&select=equipped_border_id,equipped_title_id,equipped_avatar_id&limit=1`),
         ]);
         if (userCosmeticsOut.status === 200 && Array.isArray(userCosmeticsOut.body)) {
           userCosmeticsOut.body.forEach((row) => {
@@ -411,6 +412,7 @@ module.exports = function tabsRoutes(opts) {
           const p = profileOut.body[0];
           equippedBorderId = p.equipped_border_id ?? null;
           equippedTitleId = p.equipped_title_id ?? null;
+          equippedAvatarId = p.equipped_avatar_id ?? null;
         }
       }
 
@@ -450,7 +452,7 @@ module.exports = function tabsRoutes(opts) {
       const data = cosmetics.map((cosmetic) => {
         const achievement = cosmetic.achievement_key ? achievementByKey[cosmetic.achievement_key] : null;
         const is_owned = userId ? ownedCosmeticIds.has(cosmetic.id) : false;
-        const is_equipped = userId && (cosmetic.id === equippedBorderId || cosmetic.id === equippedTitleId);
+        const is_equipped = userId && (cosmetic.id === equippedBorderId || cosmetic.id === equippedTitleId || cosmetic.id === equippedAvatarId);
         return {
           ...cosmetic,
           achievement_hidden: !!achievement?.is_hidden,
@@ -476,7 +478,7 @@ module.exports = function tabsRoutes(opts) {
 
       const [ownedOut, profileOut] = await Promise.all([
         rest('GET', `/user_cosmetics?user_id=eq.${userId}&select=id,cosmetic_id,acquired_via,acquired_at&order=acquired_at.desc&limit=5000`),
-        rest('GET', `/profiles?id=eq.${userId}&select=equipped_border_id,equipped_title_id&limit=1`),
+        rest('GET', `/profiles?id=eq.${userId}&select=equipped_border_id,equipped_title_id,equipped_avatar_id&limit=1`),
       ]);
       if (ownedOut.status >= 400) return res.status(ownedOut.status).json(ownedOut.body || { error: 'Upstream error' });
       if (profileOut.status >= 400) return res.status(profileOut.status).json(profileOut.body || { error: 'Upstream error' });
@@ -486,6 +488,7 @@ module.exports = function tabsRoutes(opts) {
       const profile = Array.isArray(profileOut.body) && profileOut.body[0] ? profileOut.body[0] : null;
       const equippedBorderId = profile?.equipped_border_id || null;
       const equippedTitleId = profile?.equipped_title_id || null;
+      const equippedAvatarId = profile?.equipped_avatar_id || null;
 
       const cosmeticIds = [...new Set(ownedRows.map((row) => row.cosmetic_id).filter(Boolean))];
       const idList = cosmeticIds.map((id) => encodeURIComponent(id)).join(',');
@@ -517,7 +520,7 @@ module.exports = function tabsRoutes(opts) {
             acquired_via: row.acquired_via,
             acquired_at: row.acquired_at,
             is_owned: true,
-            is_equipped: cosmetic.id === equippedBorderId || cosmetic.id === equippedTitleId,
+            is_equipped: cosmetic.id === equippedBorderId || cosmetic.id === equippedTitleId || cosmetic.id === equippedAvatarId,
           };
         })
         .filter(Boolean);
@@ -596,10 +599,10 @@ module.exports = function tabsRoutes(opts) {
       const cosmeticIdRaw = req.body?.cosmetic_id;
 
       if (cosmeticIdRaw == null) {
-        if (!['border', 'title'].includes(slot)) {
-          return res.status(400).json({ error: "slot must be 'border' or 'title' when cosmetic_id is null" });
+        if (!['border', 'title', 'avatar'].includes(slot)) {
+          return res.status(400).json({ error: "slot must be 'border', 'title', or 'avatar' when cosmetic_id is null" });
         }
-        const field = slot === 'border' ? 'equipped_border_id' : 'equipped_title_id';
+        const field = slot === 'border' ? 'equipped_border_id' : slot === 'title' ? 'equipped_title_id' : 'equipped_avatar_id';
         const patchOut = await rest('PATCH', `/profiles?id=eq.${encodeURIComponent(userId)}`, {
           headers: { Prefer: 'return=representation' },
           body: JSON.stringify({ [field]: null }),
@@ -613,6 +616,7 @@ module.exports = function tabsRoutes(opts) {
             cosmetic_id: null,
             equipped_border_id: row.equipped_border_id ?? null,
             equipped_title_id: row.equipped_title_id ?? null,
+            equipped_avatar_id: row.equipped_avatar_id ?? null,
           },
         });
       }
@@ -636,7 +640,7 @@ module.exports = function tabsRoutes(opts) {
       if (!cosmetic) return res.status(400).json({ error: 'Invalid cosmetic_id' });
       if (cosmetic.active !== true) return res.status(400).json({ error: 'Cosmetic is inactive' });
       const inferredSlot = String(cosmetic.type || '').trim();
-      if (!['border', 'title'].includes(inferredSlot)) {
+      if (!['border', 'title', 'avatar'].includes(inferredSlot)) {
         return res.status(400).json({ error: 'Cosmetic has unsupported type' });
       }
       if (slot && slot !== inferredSlot) {
@@ -646,7 +650,7 @@ module.exports = function tabsRoutes(opts) {
       const owned = Array.isArray(ownedOut.body) && ownedOut.body.length > 0;
       if (!owned) return res.status(400).json({ error: 'Cosmetic is not owned by user' });
 
-      const field = inferredSlot === 'border' ? 'equipped_border_id' : 'equipped_title_id';
+      const field = inferredSlot === 'border' ? 'equipped_border_id' : inferredSlot === 'title' ? 'equipped_title_id' : 'equipped_avatar_id';
       const patchOut = await rest('PATCH', `/profiles?id=eq.${encodeURIComponent(userId)}`, {
         headers: { Prefer: 'return=representation' },
         body: JSON.stringify({ [field]: cosmeticId }),
@@ -661,6 +665,7 @@ module.exports = function tabsRoutes(opts) {
           cosmetic_id: cosmeticId,
           equipped_border_id: row.equipped_border_id ?? null,
           equipped_title_id: row.equipped_title_id ?? null,
+          equipped_avatar_id: row.equipped_avatar_id ?? null,
         },
       });
     } catch (e) {
@@ -736,11 +741,13 @@ module.exports = function tabsRoutes(opts) {
         const userInClauseProfiles = userIds.map((id) => encodeURIComponent(id)).join(',');
         const profilesRes = await rest(
           'GET',
-          `/profiles?id=in.(${userInClauseProfiles})&select=id,avatar_url,equipped_border_id&limit=5000`
+          `/profiles?id=in.(${userInClauseProfiles})&select=id,avatar_url,equipped_border_id,equipped_avatar_id&limit=5000`
         );
         const profiles = profilesRes.status < 400 && Array.isArray(profilesRes.body) ? profilesRes.body : [];
         const borderIds = [...new Set(profiles.map((p) => p?.equipped_border_id).filter(Boolean))];
+        const avatarIds = [...new Set(profiles.map((p) => p?.equipped_avatar_id).filter(Boolean))];
         let borderById = Object.create(null);
+        let avatarById = Object.create(null);
         if (borderIds.length) {
           const borderInClause = borderIds.map((id) => encodeURIComponent(id)).join(',');
           const cosmeticsRes = await rest(
@@ -750,14 +757,25 @@ module.exports = function tabsRoutes(opts) {
           const cosmetics = cosmeticsRes.status < 400 && Array.isArray(cosmeticsRes.body) ? cosmeticsRes.body : [];
           borderById = Object.fromEntries(cosmetics.map((c) => [c.id, c]));
         }
+        if (avatarIds.length) {
+          const avatarInClause = avatarIds.map((id) => encodeURIComponent(id)).join(',');
+          const avatarCosmeticsRes = await rest(
+            'GET',
+            `/cosmetics?id=in.(${avatarInClause})&select=id,asset_url&limit=500`
+          );
+          const avatarCosmetics = avatarCosmeticsRes.status < 400 && Array.isArray(avatarCosmeticsRes.body) ? avatarCosmeticsRes.body : [];
+          avatarById = Object.fromEntries(avatarCosmetics.map((c) => [c.id, c]));
+        }
         profiles.forEach((p) => {
           const uid = String(p?.id || '').trim();
           if (!uid) return;
           const border = p.equipped_border_id ? borderById[p.equipped_border_id] : null;
+          const avatar = p.equipped_avatar_id ? avatarById[p.equipped_avatar_id] : null;
           profileCosmeticsByUser[uid] = {
             avatar_url: p.avatar_url ?? null,
             equipped_border_asset_url: border?.asset_url ?? null,
             equipped_border_fit: border?.border_fit ?? null,
+            equipped_avatar_asset_url: avatar?.asset_url ?? null,
           };
         });
       }
@@ -822,11 +840,13 @@ module.exports = function tabsRoutes(opts) {
         const stats = statsByUser[userId] || { rating_count: 0, avg_rating_sum: 0, total_cheers: 0 };
         const avg = stats.rating_count > 0 ? (stats.avg_rating_sum / stats.rating_count) : 0;
         const cosmetics = profileCosmeticsByUser[userId];
+        const displayAvatarUrl = cosmetics?.equipped_avatar_asset_url ?? cosmetics?.avatar_url ?? row.avatar_url ?? null;
         return {
           ...row,
-          avatar_url: cosmetics?.avatar_url ?? row.avatar_url ?? null,
+          avatar_url: displayAvatarUrl,
           equipped_border_asset_url: cosmetics?.equipped_border_asset_url ?? null,
           equipped_border_fit: cosmetics?.equipped_border_fit ?? null,
+          equipped_avatar_asset_url: cosmetics?.equipped_avatar_asset_url ?? null,
           rating_count: stats.rating_count,
           avg_rating: Number(avg.toFixed(2)),
           total_cheers: stats.total_cheers,

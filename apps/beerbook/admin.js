@@ -831,7 +831,7 @@ const Admin = {
                             </div>
                             <div class="form-group">
                                 <label for="admin-cosmetic-type">Type</label>
-                                <select id="admin-cosmetic-type"><option value="border">border</option><option value="title">title</option></select>
+                                <select id="admin-cosmetic-type"><option value="border">border</option><option value="title">title</option><option value="avatar">avatar</option></select>
                             </div>
                             <div class="form-group">
                                 <label for="admin-cosmetic-rarity">Rarity</label>

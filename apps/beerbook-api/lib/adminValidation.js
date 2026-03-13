@@ -10,7 +10,7 @@ const ACHIEVEMENT_SUBTYPES = new Set([
   'stars_gte', 'stars_lte', 'price', 'cheers_given', 'cheers_received', 'streak_weeks',
 ]);
 const ACHIEVEMENT_DIFFICULTIES = new Set(['easy', 'medium', 'hard']);
-const COSMETIC_TYPES = new Set(['border', 'title']);
+const COSMETIC_TYPES = new Set(['border', 'title', 'avatar']);
 const COSMETIC_RARITIES = new Set(['common', 'rare', 'epic', 'legendary']);
 const COSMETIC_UNLOCK_TYPES = new Set(['achievement', 'purchase', 'both']);
 
@@ -334,7 +334,7 @@ async function validateCosmeticCreate(body) {
   if (!key || !SLUG_REGEX.test(key)) return { valid: false, error: 'key is required, slug format [a-z0-9_]' };
 
   const type = String(body.type || '').trim();
-  if (!COSMETIC_TYPES.has(type)) return { valid: false, error: 'type must be border or title' };
+  if (!COSMETIC_TYPES.has(type)) return { valid: false, error: 'type must be border, title, or avatar' };
 
   const name = String(body.name || '').trim();
   if (!name) return { valid: false, error: 'name is required' };
@@ -394,7 +394,7 @@ async function validateCosmeticPatch(body) {
     data.key = key;
   }
   if (body.type !== undefined) {
-    if (!COSMETIC_TYPES.has(String(body.type).trim())) return { valid: false, error: 'type must be border or title' };
+    if (!COSMETIC_TYPES.has(String(body.type).trim())) return { valid: false, error: 'type must be border, title, or avatar' };
     data.type = String(body.type).trim();
   }
   if (body.name !== undefined) data.name = String(body.name).trim();

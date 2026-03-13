@@ -106,13 +106,15 @@ module.exports = function (opts) {
     if (!profile || typeof profile !== 'object') return profile;
     const borderId = profile.equipped_border_id;
     const titleId = profile.equipped_title_id;
-    const ids = [borderId, titleId].filter(Boolean);
+    const avatarId = profile.equipped_avatar_id;
+    const ids = [borderId, titleId, avatarId].filter(Boolean);
     if (!ids.length) {
       return {
         ...profile,
         equipped_border_asset_url: null,
         equipped_border_fit: null,
         equipped_title_text: null,
+        equipped_avatar_asset_url: null,
       };
     }
     const idList = [...new Set(ids)].map((id) => encodeURIComponent(id)).join(',');
@@ -122,6 +124,7 @@ module.exports = function (opts) {
         equipped_border_asset_url: null,
         equipped_border_fit: null,
         equipped_title_text: null,
+        equipped_avatar_asset_url: null,
       };
     }
     const cosmeticsOut = await rest(
@@ -132,11 +135,13 @@ module.exports = function (opts) {
     const byId = Object.fromEntries(cosmetics.map((item) => [item.id, item]));
     const border = borderId ? byId[borderId] : null;
     const title = titleId ? byId[titleId] : null;
+    const avatar = avatarId ? byId[avatarId] : null;
     return {
       ...profile,
       equipped_border_asset_url: border?.asset_url ?? null,
       equipped_border_fit: border?.border_fit ?? null,
       equipped_title_text: title?.title_text || title?.name || null,
+      equipped_avatar_asset_url: avatar?.asset_url ?? null,
     };
   }
 
@@ -265,23 +270,37 @@ module.exports = function (opts) {
         crewJoins.forEach((row) => { if (row?.user_id) actorIds.add(String(row.user_id)); });
 
         const profileById = Object.create(null);
+        let avatarById = Object.create(null);
         const actorList = [...actorIds].filter(Boolean);
         if (actorList.length) {
           const inClause = buildInClause(actorList);
-          const profilesRes = await rest('GET', `/profiles?id=in.(${inClause})&select=id,display_name,avatar_url&limit=5000`);
+          const profilesRes = await rest('GET', `/profiles?id=in.(${inClause})&select=id,display_name,avatar_url,equipped_avatar_id&limit=5000`);
           if (profilesRes.status < 400) {
             const profiles = Array.isArray(profilesRes.body) ? profilesRes.body : [];
             profiles.forEach((profile) => { profileById[String(profile.id)] = profile; });
+            const avatarIds = [...new Set(profiles.map((p) => p?.equipped_avatar_id).filter(Boolean))];
+            if (avatarIds.length) {
+              const avatarIdList = avatarIds.map((id) => encodeURIComponent(id)).join(',');
+              const cosmeticsRes = await rest('GET', `/cosmetics?id=in.(${avatarIdList})&select=id,asset_url&limit=500`);
+              if (cosmeticsRes.status < 400 && Array.isArray(cosmeticsRes.body)) {
+                avatarById = Object.fromEntries(cosmeticsRes.body.map((c) => [c.id, c]));
+              }
+            }
           }
         }
 
         const feedSource = feed === 'crew' ? 'crew' : (feed === 'following' ? 'following' : 'global');
         const venues = Array.isArray(venuesRes.body) ? venuesRes.body : [];
-        const ratingItems = ratings.map((r) => ({
-          type: 'rating',
-          ...r,
-          feed_source: feedSource,
-        }));
+        const ratingItems = ratings.map((r) => {
+          const actor = profileById[String(r.user_id)] || {};
+          const displayAvatarUrl = (actor.equipped_avatar_id && avatarById[actor.equipped_avatar_id]?.asset_url) || actor.avatar_url ?? null;
+          return {
+            type: 'rating',
+            ...r,
+            feed_source: feedSource,
+            avatar_url: displayAvatarUrl,
+          };
+        });
         const venueItems = venues.map((v) => ({
           type: 'venue',
           ...v,
@@ -290,12 +309,13 @@ module.exports = function (opts) {
         const cheersItems = cheersRows.map((row) => {
           const actor = profileById[String(row.user_id)] || {};
           const rating = ratingInfoById[String(row.rating_id)] || {};
+          const displayAvatarUrl = (actor.equipped_avatar_id && avatarById[actor.equipped_avatar_id]?.asset_url) || actor.avatar_url ?? null;
           return {
             type: 'cheers',
             id: row.id || `cheers:${row.user_id}:${row.rating_id}:${row.created_at}`,
             user_id: row.user_id,
             user_name: actor.display_name || 'Beer Lover',
-            avatar_url: actor.avatar_url ?? null,
+            avatar_url: displayAvatarUrl,
             data: {
               rating_id: row.rating_id || null,
               beer_id: rating.beer_id || null,
@@ -310,12 +330,13 @@ module.exports = function (opts) {
           .map((row) => {
             const actor = profileById[String(row.follower_id)] || {};
             const followed = profileById[String(row.followed_id)] || {};
+            const displayAvatarUrl = (actor.equipped_avatar_id && avatarById[actor.equipped_avatar_id]?.asset_url) || actor.avatar_url ?? null;
             return {
               type: 'follow',
               id: row.id || `follow:${row.follower_id}:${row.followed_id}:${row.created_at}`,
               user_id: row.follower_id,
               user_name: actor.display_name || 'Beer Lover',
-              avatar_url: actor.avatar_url ?? null,
+              avatar_url: displayAvatarUrl,
               data: {
                 followed_user_id: row.followed_id || null,
                 followed_user_name: followed.display_name || 'Beer Lover',
@@ -328,12 +349,13 @@ module.exports = function (opts) {
           .filter((row) => !!row.joined_at)
           .map((row) => {
             const actor = profileById[String(row.user_id)] || {};
+            const displayAvatarUrl = (actor.equipped_avatar_id && avatarById[actor.equipped_avatar_id]?.asset_url) || actor.avatar_url ?? null;
             return {
               type: 'crew_join',
               id: row.id || `crew_join:${row.user_id}:${row.crew_id}:${row.joined_at}`,
               user_id: row.user_id,
               user_name: actor.display_name || 'Beer Lover',
-              avatar_url: actor.avatar_url ?? null,
+              avatar_url: displayAvatarUrl,
               data: {
                 crew_name: crewNameById[String(row.crew_id)] || null,
                 crew_id: row.crew_id || null,
