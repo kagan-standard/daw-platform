@@ -373,6 +373,8 @@ This applies to crew operations, follow operations, and any other proxied writes
 }
 ```
 
+Per-beer review count is always present as `review_count` and `reviews.count` (0 when there are no reviews). Both are numbers; client sort by review count is consistent.
+
 **Error Responses:**
 - 502 or upstream status with body
 

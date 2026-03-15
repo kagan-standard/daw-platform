@@ -21,6 +21,7 @@ const { getAdminToken, createUser, getTokensForUser, refreshTokens, sendVerifica
 const { validateYgValue, ygValueToStarRating } = require('./lib/ratingsValidation');
 const { actorMiddleware, ENABLE_GUEST_RATINGS, validateGuestId } = require('./lib/actorIdentity');
 const { CANONICAL_FAMILIES, styleDistributionToFamilies, styleToFamily } = require('./lib/styleFamily');
+const { mapCatalogBeer } = require('./lib/catalogMap');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -830,11 +831,6 @@ app.post('/api/auth/refresh', async (req, res) => {
 });
 
 // ---------- Phase 3.2: Catalog (no auth — public catalog) ----------
-function toNumberOrNull(v) {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : null;
-}
-
 function getCurrentWeekStartUtcIso() {
   const d = new Date();
   const utcDay = d.getUTCDay();
@@ -842,49 +838,6 @@ function getCurrentWeekStartUtcIso() {
   d.setUTCDate(d.getUTCDate() + diffToMonday);
   d.setUTCHours(0, 0, 0, 0);
   return d.toISOString();
-}
-
-function mapCatalogBeer(row) {
-  const reviews = {
-    aroma: toNumberOrNull(row.review_aroma),
-    appearance: toNumberOrNull(row.review_appearance),
-    palate: toNumberOrNull(row.review_palate),
-    taste: toNumberOrNull(row.review_taste),
-    overall: toNumberOrNull(row.review_overall),
-    count: toNumberOrNull(row.review_count),
-  };
-  return {
-    id: row.id,
-    name: row.name,
-    brewery_name: row.brewery_name ?? null,
-    style: row.style ?? null,
-    style_category: row.style_category ?? null,
-    abv: toNumberOrNull(row.abv),
-    description: row.description ?? null,
-    ibu_min: toNumberOrNull(row.ibu_min),
-    ibu_max: toNumberOrNull(row.ibu_max),
-    flavors: {
-      astringency: toNumberOrNull(row.flavor_astringency),
-      body: toNumberOrNull(row.flavor_body),
-      alcohol: toNumberOrNull(row.flavor_alcohol),
-      bitter: toNumberOrNull(row.flavor_bitter),
-      sweet: toNumberOrNull(row.flavor_sweet),
-      sour: toNumberOrNull(row.flavor_sour),
-      salty: toNumberOrNull(row.flavor_salty),
-      fruits: toNumberOrNull(row.flavor_fruity),
-      hoppy: toNumberOrNull(row.flavor_hoppy),
-      spices: toNumberOrNull(row.flavor_spicy),
-      malty: toNumberOrNull(row.flavor_malty),
-    },
-    reviews,
-    // Backward-compat fields still used by existing frontend code paths.
-    review_aroma: reviews.aroma,
-    review_appearance: reviews.appearance,
-    review_palate: reviews.palate,
-    review_taste: reviews.taste,
-    review_overall: reviews.overall ?? toNumberOrNull(row.review_overall),
-    review_count: reviews.count ?? (toNumberOrNull(row.review_count) ?? 0),
-  };
 }
 
 async function findSimilarBeers(name, brewery, limit = 5) {
