@@ -294,7 +294,7 @@ module.exports = function (opts) {
           ? rest('GET', `/profiles?id=in.(${inClause})&select=id,display_name,avatar_url`)
           : Promise.resolve({ status: 200, body: [] }),
         userIds.length
-          ? rest('GET', `/ratings?user_id=in.(${inClause})&select=id,user_id,beer_name,style,rating,venue_id`)
+          ? rest('GET', `/ratings?user_id=in.(${inClause})&select=id,user_id,beer_name,style,rating,venue_id,location_verified`)
           : Promise.resolve({ status: 200, body: [] }),
       ]);
       const profiles = Array.isArray(profilesRes.body) ? profilesRes.body : [];
@@ -317,7 +317,7 @@ module.exports = function (opts) {
           styleCounts[family] = (styleCounts[family] || 0) + 1;
         }
         if (r.beer_name) beerCounts[r.beer_name] = (beerCounts[r.beer_name] || 0) + 1;
-        if (r.venue_id) venueIds.add(r.venue_id);
+        if (r.venue_id && r.location_verified === true) venueIds.add(r.venue_id);
       });
       const topStyle = Object.entries(styleCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
       const topBeer = Object.entries(beerCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || null;

@@ -1,6 +1,7 @@
 /**
  * GET /api/highlights/beer-of-the-week
  * Prefers admin-curated featured_beers for the current week when present; otherwise auto-computed from ratings.
+ * Optionally includes first_rated_by { user_id, display_name } when the first rater can be resolved.
  */
 const express = require('express');
 
@@ -17,6 +18,16 @@ function getCurrentWeekRange() {
   return { week_start: monday.toISOString(), week_end: sunday.toISOString() };
 }
 
+/** Resolve first_rated_by from a user_id; returns { user_id, display_name } or null. */
+async function resolveFirstRater(rest, userId) {
+  if (!userId || typeof userId !== 'string' || !userId.trim()) return null;
+  const id = userId.trim();
+  const { status, body } = await rest('GET', `/profiles?id=eq.${encodeURIComponent(id)}&select=id,display_name&limit=1`);
+  if (status >= 400 || !Array.isArray(body) || body.length === 0) return null;
+  const row = body[0];
+  return { user_id: row.id, display_name: row.display_name || 'Beer Lover' };
+}
+
 module.exports = function (opts) {
   const { rest } = opts;
   const router = express.Router();
@@ -28,6 +39,15 @@ module.exports = function (opts) {
       const featuredRes = await rest('GET', featuredPath);
       if (featuredRes.status < 400 && Array.isArray(featuredRes.body) && featuredRes.body.length > 0) {
         const pick = featuredRes.body[0];
+        let first_rated_by = null;
+        const breweryParam = pick.brewery != null && pick.brewery !== '' ? `&brewery=eq.${encodeURIComponent(pick.brewery)}` : '&brewery=is.null';
+        const styleParam = pick.style != null && pick.style !== '' ? `&style=eq.${encodeURIComponent(pick.style)}` : '&style=is.null';
+        const firstRatingPath = `/ratings?beer_name=eq.${encodeURIComponent(pick.beer_name)}${breweryParam}${styleParam}&created_at=gte.${encodeURIComponent(week_start)}&created_at=lte.${encodeURIComponent(week_end)}&order=created_at.asc&limit=1&select=user_id`;
+        const firstRatingRes = await rest('GET', firstRatingPath);
+        if (firstRatingRes.status < 400 && Array.isArray(firstRatingRes.body) && firstRatingRes.body.length > 0) {
+          const firstUserId = firstRatingRes.body[0].user_id;
+          first_rated_by = await resolveFirstRater(rest, firstUserId);
+        }
         return res.json({
           beer: {
             beer_name: pick.beer_name,
@@ -36,6 +56,7 @@ module.exports = function (opts) {
             review_count: null,
             avg_rating: null,
             first_reviewed: null,
+            first_rated_by,
             headline: pick.headline || null,
             body: pick.body || null,
             photo_url: pick.photo_url || null,
@@ -50,9 +71,12 @@ module.exports = function (opts) {
       const byBeer = {};
       ratings.forEach((r) => {
         const key = `${r.beer_name}|${r.brewery || ''}|${r.style || ''}`;
-        if (!byBeer[key]) byBeer[key] = { beer_name: r.beer_name, brewery: r.brewery, style: r.style, ratings: [], first_at: r.created_at };
+        if (!byBeer[key]) byBeer[key] = { beer_name: r.beer_name, brewery: r.brewery, style: r.style, ratings: [], first_at: r.created_at, first_user_id: r.user_id || null };
         byBeer[key].ratings.push(r);
-        if (r.created_at < byBeer[key].first_at) byBeer[key].first_at = r.created_at;
+        if (r.created_at < byBeer[key].first_at) {
+          byBeer[key].first_at = r.created_at;
+          byBeer[key].first_user_id = r.user_id || null;
+        }
       });
       const withTwo = Object.values(byBeer).filter((x) => x.ratings.length >= 2);
       if (withTwo.length === 0) return res.json({ beer: null, message: 'No beer with 2+ ratings in the last 7 days' });
@@ -63,6 +87,7 @@ module.exports = function (opts) {
       });
       const top = sorted[0];
       const avgRating = top.ratings.reduce((s, r) => s + (Number(r.rating) || 0), 0) / top.ratings.length;
+      const first_rated_by = await resolveFirstRater(rest, top.first_user_id);
       res.json({
         beer: {
           beer_name: top.beer_name,
@@ -71,6 +96,7 @@ module.exports = function (opts) {
           review_count: top.ratings.length,
           avg_rating: Math.round(avgRating * 100) / 100,
           first_reviewed: top.first_at,
+          first_rated_by,
           source: 'auto',
         },
       });

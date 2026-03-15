@@ -611,6 +611,7 @@ Max 500 breweries. `truncated` is `true` when total exceeds limit. Sorted by dis
       "longitude": -74.456,
       "location_name": "string",
       "venue_id": "uuid | null",
+      "location_verified": false,
       "photo_url": "string | null",
       "beer_id": "uuid | null",
       "price_cents": 600,
@@ -730,7 +731,7 @@ Note: Accepts both `snake_case` and `camelCase` for most fields.
 
 **Success Response — NEW RATING (201):**
 
-`data` includes `user_id` (user) or `guest_id` (guest); the other is null. `author_type` is `"user"` or `"guest"`.
+`data` includes `user_id` (user) or `guest_id` (guest); the other is null. `author_type` is `"user"` or `"guest"`. `location_verified` is `true` when the backend verified that submitted device coordinates were within the configured distance of the linked venue at create time (used for crew-visited and first-venue-visit milestones).
 
 ```json
 {
@@ -751,6 +752,7 @@ Note: Accepts both `snake_case` and `camelCase` for most fields.
     "longitude": -74.456,
     "location_name": "string",
     "venue_id": "uuid | null",
+    "location_verified": false,
     "photo_url": "string | null",
     "beer_id": "uuid | null",
     "price_cents": 600,
@@ -2348,10 +2350,13 @@ Both routes are identical.
     "style": "string",
     "review_count": 5,
     "avg_rating": 4.4,
-    "first_reviewed": "ISO8601"
+    "first_reviewed": "ISO8601",
+    "first_rated_by": { "user_id": "string", "display_name": "string" } | null
   }
 }
 ```
+
+`first_rated_by` is present when the first rater for the selected beer (in the feature window) can be resolved; otherwise `null` (e.g. no ratings, guest-only, or profile unavailable).
 
 **Success Response (200) — no qualifying beer:**
 

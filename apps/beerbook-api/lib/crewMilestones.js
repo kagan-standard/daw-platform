@@ -16,10 +16,11 @@ const MILESTONE_THRESHOLDS = [25, 50, 75, 100];
  * @param {string} [opts.userDisplayName] - for message text
  * @param {string} [opts.venueId] - rating venue_id
  * @param {string} [opts.venueName] - for message text
+ * @param {boolean} [opts.locationVerified] - true when rating was verified at venue (device within threshold)
  * @param {number} [opts.currentStreakWeeks] - from process-event; if crosses 5 or 10, emit member_streak (optional)
  */
 async function emitMilestonesAfterRating(rest, opts) {
-  const { userId, userDisplayName, venueId, venueName, currentStreakWeeks } = opts || {};
+  const { userId, userDisplayName, venueId, venueName, locationVerified, currentStreakWeeks } = opts || {};
   if (!userId) return;
 
   try {
@@ -53,7 +54,7 @@ async function emitMilestonesAfterRating(rest, opts) {
       }
     }
 
-    if (venueId) {
+    if (venueId && locationVerified === true) {
       let resolvedVenueName = venueName;
       if (!resolvedVenueName || !String(resolvedVenueName).trim()) {
         const venueRes = await rest('GET', `/venues?id=eq.${encodeURIComponent(venueId)}&select=name&limit=1`);

@@ -36,7 +36,7 @@ This file outlines the current BeerBook database schema state after applying the
 ### `ratings`
 - **Primary key:** `id` (text, uuid string)
 - **Core columns:** `user_id`, `user_name`, `beer_name`, `brewery`, `style`, `abv`, `rating`, flavor fields, `notes`, `created_at`, `yg_value`, location fields, `venue_id`, `photo_url`
-- **Added columns:** `beer_id`, `price_cents`, `serve_type`, `comment_count`, `rating_source`
+- **Added columns:** `beer_id`, `price_cents`, `serve_type`, `comment_count`, `rating_source`, `location_verified` (boolean, default false; set when device coords within threshold of venue at create)
 - **Constraints:**
   - `rating` in range 1-5
   - flavor fields in range 0-5

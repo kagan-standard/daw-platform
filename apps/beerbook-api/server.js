@@ -1287,6 +1287,7 @@ const RATING_DB_COLUMNS = new Set([
   'longitude',
   'location_name',
   'venue_id',
+  'location_verified',
   'photo_url',
   'beer_id',
   'price_cents',
@@ -1446,6 +1447,28 @@ app.post('/api/ratings', softAuthMiddleware, actorMiddleware, async (req, res) =
       console.error('Venue upsert failed (non-blocking):', err?.message || err);
     }
   }
+  // Best-effort venue check-in verification: if client sent device coords and venue_id, verify distance.
+  const VENUE_VERIFICATION_RADIUS_M = Number(process.env.VENUE_VERIFICATION_RADIUS_M) || 150;
+  let locationVerified = false;
+  if (resolvedVenueId && latNum != null && lngNum != null && Number.isFinite(latNum) && Number.isFinite(lngNum)) {
+    try {
+      const venueRes = await rest('GET', `/venues?id=eq.${encodeURIComponent(resolvedVenueId)}&select=latitude,longitude&limit=1`);
+      if (venueRes.status < 400 && Array.isArray(venueRes.body) && venueRes.body[0]) {
+        const v = venueRes.body[0];
+        const vLat = Number(v.latitude);
+        const vLng = Number(v.longitude);
+        if (Number.isFinite(vLat) && Number.isFinite(vLng)) {
+          const distanceM = metersBetween(latNum, lngNum, vLat, vLng);
+          if (distanceM <= VENUE_VERIFICATION_RADIUS_M) {
+            locationVerified = true;
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Venue verification failed (non-blocking):', err?.message || err);
+    }
+  }
+
   const record = {
     user_id: isUser ? sub : null,
     guest_id: isUser ? null : actor.guest_id,
@@ -1467,6 +1490,7 @@ app.post('/api/ratings', softAuthMiddleware, actorMiddleware, async (req, res) =
     longitude: lngNum,
     location_name: locationName,
     venue_id: resolvedVenueId,
+    location_verified: locationVerified,
     photo_url: b.photo_url ?? b.photoUrl ?? null,
     beer_id: incomingBeerId,
     price_cents: priceCentsRaw != null ? Number(priceCentsRaw) : null,
@@ -1661,6 +1685,7 @@ app.post('/api/ratings', softAuthMiddleware, actorMiddleware, async (req, res) =
       userDisplayName: preferred_username,
       venueId: ratingRow.venue_id ?? null,
       venueName: ratingRow.location_name || null,
+      locationVerified: ratingRow.location_verified === true,
       currentStreakWeeks: currentStreakWeeks ?? null,
     }).catch((err) => console.error('emitMilestonesAfterRating:', err?.message || err));
   }
