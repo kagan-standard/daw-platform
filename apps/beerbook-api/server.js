@@ -905,6 +905,8 @@ app.get('/api/catalog/search', async (req, res) => {
 });
 
 // GET /api/catalog/browse?limit=30&offset=0&sort=name&order=asc&style=IPA&q=hazy
+// Single code path: same query for unfiltered and style/q-filtered browse. ORDER BY is always
+// applied (e.g. order=review_count.desc); when style or q are set we only add WHERE conditions.
 app.get('/api/catalog/browse', async (req, res) => {
   const rawLimit = parseInt(req.query.limit, 10);
   const rawOffset = parseInt(req.query.offset, 10);
