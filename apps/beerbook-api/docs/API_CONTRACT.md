@@ -2,7 +2,7 @@
 
 Generated: 2026-03-15
 Source: `daw-platform/apps/beerbook-api`
-Verification: Endpoint parity checked against `server.js` + `routes/*.js` (103 implemented / 103 documented)
+Verification: Endpoint parity checked against `server.js` + `routes/*.js` (104 implemented / 104 documented)
 Process-event source: `lib/processEvent.js` + `lib/processEventEngine.js` + `routes/internal.js`
 
 ---
@@ -76,7 +76,7 @@ Process-event source: `lib/processEvent.js` + `lib/processEventEngine.js` + `rou
 | `softAuthMiddleware` | Optional. If token present and valid, sets `req.claims`. If missing or invalid, continues without `req.claims` (no error). |
 | `adminMiddleware` | Runs after `authMiddleware`. Checks trimmed `req.claims.sub` against env-admin IDs parsed from `ADMIN_USER_IDS` (comma-separated) plus optional `ADMIN_USER_ID` fallback. |
 
-**Feature flag:** `ENABLE_GUEST_RATINGS` — when set to `true` or `1`, POST and DELETE `/api/ratings` accept a guest actor via the `X-Guest-Id` header (client-generated UUID v4) when no JWT is sent. Claim endpoint `POST /api/guest-ratings/claim` is always available for authenticated users.
+**Feature flag:** `ENABLE_GUEST_RATINGS` — when set to `true` or `1`, POST, PATCH, and DELETE `/api/ratings` accept a guest actor via the `X-Guest-Id` header (client-generated UUID v4) when no JWT is sent. Claim endpoint `POST /api/guest-ratings/claim` is always available for authenticated users.
 
 **Guest ratings (client summary):**
 - **Identify as guest:** Omit `Authorization`; send `X-Guest-Id: <uuid>` (client-generated, e.g. `crypto.randomUUID()`). Optional body field `user_name` for display name (default `"Guest"`).
@@ -841,6 +841,81 @@ Note: Update response does NOT include `tabs_earned`, `tabs_breakdown`, `tier_mu
 - May create new `beers` row (when `is_new_beer`).
 - May create new `venues` row (when lat/lng provided with location_name and no nearby venue).
 - **Authenticated users only:** Ensures `profiles` and `user_tabs_profile` exist; awards tabs via `invokeProcessEvent('rating_award')` -> `tabs_ledger`; evaluates achievements via `invokeProcessEvent('rating_submitted')` -> `user_achievements`, `user_cosmetics`; crew milestones. **Guest ratings:** No tabs, achievements, or milestones (side effects skipped).
+
+---
+
+#### PATCH /api/ratings/:id
+
+- **Auth:** User (JWT) **or** Guest (`X-Guest-Id` when `ENABLE_GUEST_RATINGS`). Same as POST/DELETE. Ownership: rating must match `user_id` (user) or `guest_id` (guest).
+- **Purpose:** Update an existing rating by ID (no ambiguity when a user has multiple ratings for the same beer at different venues). Content update only; no tabs, achievements, or streak.
+- **File:** `server.js`
+
+**URL Params:** `id` — rating UUID. The rating must be owned by the authenticated user or the guest identified by `X-Guest-Id`.
+
+**Request Body:** Same fields as POST /api/ratings, **all optional** (partial update). Validation rules match POST where applicable (e.g. `yg_value` in allowed set -6..7 no zero, ABV 0–30, lat/lng together, `serve_type` enum, `price_cents` positive integer).
+
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| `yg_value` / `ygValue` | number | no | Integer -6 to 7 (zero not allowed) |
+| `beer_name` / `beerName` | string | no | — |
+| `brewery` | string | no | — |
+| `style` | string | no | — |
+| `abv` | number | no | 0–30 |
+| `beer_id` / `beerId` | string | no | — |
+| `notes` | string | no | — |
+| `latitude` / `lat`, `longitude` / `lng` | number | no | Must provide both or neither |
+| `location_name` / `locationName` | string | no | — |
+| `venue_id` / `venueId` | string | no | — |
+| `photo_url` / `photoUrl` | string | no | — |
+| `price_cents` / `priceCents` | number | no | Positive integer |
+| `serve_type` / `serveType` | string | no | One of: draft, can, bottle, crowler, growler, nitro |
+| `flavor_hoppy`, `flavor_malty`, `flavor_bitter`, `flavor_sweet`, `flavor_fruity` | number | no | Or via `flavors.hoppy`, etc. |
+| `user_name` / `userName` | string | no | Guest display name only; ignored for authenticated users |
+
+**Success Response (200):**
+
+```json
+{
+  "data": {
+    "id": "uuid",
+    "user_id": "string | null",
+    "guest_id": "string | null",
+    "author_type": "user | guest",
+    "user_name": "string",
+    "beer_name": "string",
+    "brewery": "string",
+    "style": "string",
+    "abv": 5.5,
+    "rating": 4,
+    "yg_value": 3,
+    "notes": "string",
+    "latitude": 40.123,
+    "longitude": -74.456,
+    "location_name": "string",
+    "venue_id": "uuid | null",
+    "photo_url": "string | null",
+    "beer_id": "uuid | null",
+    "price_cents": 600,
+    "serve_type": "draft",
+    "flavor_hoppy": 3,
+    "flavor_malty": 2,
+    "flavor_bitter": 2,
+    "flavor_sweet": 1,
+    "flavor_fruity": 2,
+    "created_at": "ISO8601",
+    "updated_at": "ISO8601"
+  }
+}
+```
+
+Response does **not** include tabs_earned, tabs_breakdown, achievements_unlocked, streak, or weekly_count. Edit is content update only.
+
+**Error Responses:**
+- 400: `{ "error": "Rating id is required" }` (missing or empty id)
+- 404: `{ "error": "Rating not found or not owned by you" }`
+- 400: Validation errors (e.g. invalid `yg_value`, `abv` out of range, lat/lng not together, invalid `serve_type`, `price_cents` not positive integer)
+
+**Side Effects:** Updates the `ratings` row only. No new tabs, no achievement re-evaluation, no new beer/venue creation. Optionally refresh any denormalized/cache fields that depend on rating content.
 
 ---
 
@@ -4109,6 +4184,7 @@ All admin routes require `authMiddleware` + `adminMiddleware`.
 | `POST /api/ratings` (create, user) | `ratings`, possibly `beers`, `venues`, `profiles`, `tabs_ledger`, `user_tabs_profile`, `user_achievements`, `user_cosmetics` | Achievement unlocks | Yes: rating_award + rating_submitted |
 | `POST /api/ratings` (create, guest) | `ratings`, possibly `beers`, `venues` | None | No (guest ratings skip tabs/achievements/milestones) |
 | `POST /api/ratings` (update) | `ratings` | None | No |
+| `PATCH /api/ratings/:id` | `ratings` | None | No (content update only; no tabs/achievements) |
 | `DELETE /api/ratings/:id` | `ratings` (delete) | None | No (tabs NOT reversed) |
 | `POST /api/guest-ratings/claim` | `ratings` (UPDATE or DELETE per row) | None | No |
 | `POST /api/ratings/:id/cheers` (add) | `reactions` (insert), `profiles` | Yes (cheers_received) | Yes: cheers_given + cheers_received |

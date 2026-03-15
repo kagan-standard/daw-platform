@@ -1718,6 +1718,145 @@ app.delete('/api/ratings/:id', softAuthMiddleware, actorMiddleware, async (req, 
   res.status(204).end();
 });
 
+// PATCH /api/ratings/:id — edit existing rating by ID (user or guest). Content update only; no tabs/achievements.
+app.patch('/api/ratings/:id', softAuthMiddleware, actorMiddleware, async (req, res) => {
+  const id = req.params.id;
+  if (!id || typeof id !== 'string' || id.trim() === '') {
+    return res.status(400).json({ error: 'Rating id is required' });
+  }
+  const encodedId = encodeURIComponent(id.trim());
+  const actor = req.actor;
+  let getPath;
+  if (actor.type === 'user') {
+    getPath = `/ratings?id=eq.${encodedId}&user_id=eq.${encodeURIComponent(actor.sub)}&limit=1`;
+  } else {
+    getPath = `/ratings?id=eq.${encodedId}&guest_id=eq.${encodeURIComponent(actor.guest_id)}&limit=1`;
+  }
+  const { status: getStatus, body: existingRows } = await rest('GET', getPath);
+  if (getStatus >= 400 || !Array.isArray(existingRows) || existingRows.length === 0) {
+    return res.status(404).json({ error: 'Rating not found or not owned by you' });
+  }
+  const b = req.body || {};
+  const toMaybeTrimmedString = (value) => {
+    if (value == null) return null;
+    const s = String(value).trim();
+    return s ? s : null;
+  };
+  const updatePayload = {};
+  // yg_value (optional)
+  const ygValueRaw = b.yg_value ?? b.ygValue;
+  if (ygValueRaw !== undefined) {
+    const ygResult = validateYgValue(ygValueRaw);
+    if (!ygResult.valid) {
+      return res.status(400).json({ error: ygResult.error });
+    }
+    if (ygResult.value != null) {
+      updatePayload.yg_value = ygResult.value;
+      updatePayload.rating = ygValueToStarRating(ygResult.value);
+    }
+  }
+  // beer_name, brewery, style, abv, beer_id
+  if (b.beer_name !== undefined || b.beerName !== undefined) {
+    updatePayload.beer_name = toMaybeTrimmedString(b.beer_name ?? b.beerName) ?? '';
+  }
+  if (b.brewery !== undefined) updatePayload.brewery = toMaybeTrimmedString(b.brewery) ?? '';
+  if (b.style !== undefined) updatePayload.style = toMaybeTrimmedString(b.style) ?? '';
+  if (b.abv !== undefined) {
+    if (b.abv === null || b.abv === '') {
+      updatePayload.abv = null;
+    } else {
+      const abv = Number(b.abv);
+      if (!Number.isFinite(abv) || abv < 0 || abv > 30) {
+        return res.status(400).json({ error: 'abv must be a number between 0 and 30' });
+      }
+      updatePayload.abv = abv;
+    }
+  }
+  if (b.beer_id !== undefined || b.beerId !== undefined) {
+    updatePayload.beer_id = toMaybeTrimmedString(b.beer_id ?? b.beerId);
+  }
+  // notes
+  if (b.notes !== undefined) updatePayload.notes = b.notes != null ? String(b.notes) : '';
+  // flavors
+  if (b.flavor_hoppy !== undefined || b.flavors?.hoppy !== undefined) {
+    updatePayload.flavor_hoppy = Number(b.flavor_hoppy ?? b.flavors?.hoppy ?? 0) || 0;
+  }
+  if (b.flavor_malty !== undefined || b.flavors?.malty !== undefined) {
+    updatePayload.flavor_malty = Number(b.flavor_malty ?? b.flavors?.malty ?? 0) || 0;
+  }
+  if (b.flavor_bitter !== undefined || b.flavors?.bitter !== undefined) {
+    updatePayload.flavor_bitter = Number(b.flavor_bitter ?? b.flavors?.bitter ?? 0) || 0;
+  }
+  if (b.flavor_sweet !== undefined || b.flavors?.sweet !== undefined) {
+    updatePayload.flavor_sweet = Number(b.flavor_sweet ?? b.flavors?.sweet ?? 0) || 0;
+  }
+  if (b.flavor_fruity !== undefined || b.flavors?.fruity !== undefined) {
+    updatePayload.flavor_fruity = Number(b.flavor_fruity ?? b.flavors?.fruity ?? 0) || 0;
+  }
+  // location
+  const lat = b.latitude ?? b.lat;
+  const lng = b.longitude ?? b.lng;
+  if (lat !== undefined || lng !== undefined) {
+    if ((lat != null && lng == null) || (lat == null && lng != null)) {
+      return res.status(400).json({ error: 'latitude and longitude must be provided together' });
+    }
+    const latNum = lat != null ? Number(lat) : null;
+    const lngNum = lng != null ? Number(lng) : null;
+    if (latNum != null && lngNum != null && (!Number.isFinite(latNum) || !Number.isFinite(lngNum))) {
+      return res.status(400).json({ error: 'latitude and longitude must be valid numbers' });
+    }
+    updatePayload.latitude = latNum;
+    updatePayload.longitude = lngNum;
+  }
+  if (b.location_name !== undefined || b.locationName !== undefined) {
+    updatePayload.location_name = toMaybeTrimmedString(b.location_name ?? b.locationName);
+  }
+  if (b.venue_id !== undefined || b.venueId !== undefined) {
+    updatePayload.venue_id = toMaybeTrimmedString(b.venue_id ?? b.venueId);
+  }
+  // photo, price, serve_type
+  if (b.photo_url !== undefined || b.photoUrl !== undefined) {
+    updatePayload.photo_url = toMaybeTrimmedString(b.photo_url ?? b.photoUrl);
+  }
+  const priceCentsRaw = b.price_cents ?? b.priceCents;
+  if (priceCentsRaw !== undefined) {
+    if (priceCentsRaw == null || priceCentsRaw === '') {
+      updatePayload.price_cents = null;
+    } else {
+      const priceCents = Number(priceCentsRaw);
+      if (!Number.isInteger(priceCents) || priceCents <= 0) {
+        return res.status(400).json({ error: 'price_cents must be a positive integer' });
+      }
+      updatePayload.price_cents = priceCents;
+    }
+  }
+  const serveTypeRaw = toMaybeTrimmedString(b.serve_type ?? b.serveType);
+  if (serveTypeRaw !== undefined) {
+    const VALID_SERVE_TYPES = ['draft', 'can', 'bottle', 'crowler', 'growler', 'nitro'];
+    if (serveTypeRaw && !VALID_SERVE_TYPES.includes(serveTypeRaw)) {
+      return res.status(400).json({ error: 'Invalid serve_type. Must be one of: draft, can, bottle, crowler, growler, nitro' });
+    }
+    updatePayload.serve_type = serveTypeRaw || null;
+  }
+  // guest display name only (user_name)
+  if (actor.type === 'guest' && (b.user_name !== undefined || b.userName !== undefined)) {
+    updatePayload.user_name = toMaybeTrimmedString(b.user_name ?? b.userName) || 'Guest';
+  }
+  if (Object.keys(updatePayload).length === 0) {
+    const row = existingRows[0];
+    return res.status(200).json({ data: row });
+  }
+  const patchRes = await rest('PATCH', `/ratings?id=eq.${encodedId}`, {
+    headers: { Prefer: 'return=representation' },
+    body: JSON.stringify(updatePayload),
+  });
+  if (patchRes.status >= 400) {
+    return res.status(patchRes.status >= 500 ? 502 : patchRes.status).json(patchRes.body || { error: 'Update failed' });
+  }
+  const updatedRow = Array.isArray(patchRes.body) ? patchRes.body[0] : patchRes.body;
+  return res.status(200).json({ data: updatedRow || existingRows[0] });
+});
+
 // POST /api/guest-ratings/claim — auth required. Reassign guest-owned ratings to user; on conflict (same beer/venue) keep user rating, discard guest.
 app.post('/api/guest-ratings/claim', authMiddleware, async (req, res) => {
   const { sub, preferred_username } = req.claims;
