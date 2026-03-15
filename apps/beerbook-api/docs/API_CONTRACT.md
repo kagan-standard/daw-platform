@@ -1,6 +1,6 @@
 # BeerBook API Contract (Backend Source of Truth)
 
-Generated: 2026-03-09
+Generated: 2026-03-15
 Source: `daw-platform/apps/beerbook-api`
 Verification: Endpoint parity checked against `server.js` + `routes/*.js` (103 implemented / 103 documented)
 Process-event source: `lib/processEvent.js` + `lib/processEventEngine.js` + `routes/internal.js`

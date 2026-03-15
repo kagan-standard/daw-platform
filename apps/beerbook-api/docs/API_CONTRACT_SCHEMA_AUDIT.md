@@ -1,6 +1,6 @@
 # API Contract Schema Audit
 
-Generated: 2026-03-09  
+Generated: 2026-03-15  
 Scope: `apps/beerbook-api`  
 Baseline doc: `docs/API_CONTRACT.md`
 
@@ -23,11 +23,15 @@ Baseline doc: `docs/API_CONTRACT.md`
 
 ---
 
-## Verified New / Updated Endpoints (2026-03-09)
+## Verified New / Updated Endpoints (2026-03-15)
 
 - **Crews:** `GET /api/crews/:id/challenge`, `GET /api/crews/:id/milestones`, `GET /api/crews/:id/trending`, `GET /api/crews/:id/style-counts` — implemented in `routes/crews.js`; require crew membership (403 if not member). Documented in `API_CONTRACT.md` under Crews.
 - **Crew detail:** `GET /api/crews/:id` now returns `stats` (including `venues_visited_count`, `members_on_streak_count`, `favorite_style_name`) and `weekly_challenge: { challenge, progress }`.
-- **Leaderboard:** `GET /api/leaderboard` accepts optional `crew_id`; response includes `truncated` and `pagination`; DB aggregation via `leaderboard_aggregate` RPC.
+- **Leaderboard:** `GET /api/leaderboard` and `GET /api/tabs/leaderboard` accept optional `crew_id`; responses include `truncated` and `pagination` where applicable; DB aggregation via `leaderboard_aggregate` RPC.
+- **Profile & cosmetics:** Profile responses include `equipped_avatar_id`, `equipped_avatar_asset_url`, `equipped_border_fit`; cosmetics equip supports `slot: 'avatar'`; catalog/inventory list avatar cosmetics with `type: 'avatar'`. Documented in `API_CONTRACT.md`.
+- **Catalog/beer:** Browse, search, validate-new, and single beer include `style_category` (canonical family); browse `style` param filters by style family. Documented in `API_CONTRACT.md`.
+- **Guest ratings:** `POST /api/ratings` and `DELETE /api/ratings` accept guest actor via `X-Guest-Id` when `ENABLE_GUEST_RATINGS` is set; `POST /api/guest-ratings/claim` documented. Auth matrix in `API_CONTRACT.md`.
+- **Border fit:** Cosmetics support `border_fit` and profile/tabs responses include `equipped_border_fit`. Documented in `API_CONTRACT.md` (Cosmetics, Profile, Tabs leaderboard).
 
 ---
 
@@ -122,4 +126,4 @@ No medium-priority drift found in this pass after regeneration.
 
 ## Result
 
-`API_CONTRACT.md`, `DATABASE_SCHEMAS_OVERVIEW.md`, and this audit are aligned to the current API (including crew challenge, milestones, trending, style-counts, leaderboard crew scoping) and to migrations through `crew_milestones` and `weekly_challenges`.
+`API_CONTRACT.md`, `DATABASE_SCHEMAS_OVERVIEW.md`, and this audit are aligned to the current API (including crew challenge, milestones, trending, style-counts, leaderboard crew scoping, avatars/cosmetics, style_category, border_fit, guest ratings) and to migrations through `crew_milestones` and `weekly_challenges`. Re-verified 2026-03-15.
