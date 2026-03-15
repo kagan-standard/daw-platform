@@ -121,6 +121,32 @@ function totalFromContentRange(contentRange) {
   return m ? parseInt(m[1], 10) : null;
 }
 
+/**
+ * Overlay catalog (beers) name, brewery_name, style, abv on ratings when beer_id is set.
+ * Ensures one source of truth: admin edits to beers reflect everywhere.
+ */
+async function overlayCatalogBeerOnRatings(ratings, restFn) {
+  if (!Array.isArray(ratings) || !ratings.length || !restFn) return ratings;
+  const beerIds = [...new Set(ratings.map((r) => r?.beer_id).filter(Boolean))];
+  if (!beerIds.length) return ratings;
+  const idList = beerIds.map((id) => encodeURIComponent(id)).join(',');
+  const beersRes = await restFn('GET', `/beers?id=in.(${idList})&select=id,name,brewery_name,style,abv`);
+  if (beersRes.status >= 400) return ratings;
+  const beers = Array.isArray(beersRes.body) ? beersRes.body : [];
+  const byId = Object.fromEntries(beers.map((b) => [b.id, b]));
+  return ratings.map((r) => {
+    const beer = r.beer_id ? byId[r.beer_id] : null;
+    if (!beer) return r;
+    return {
+      ...r,
+      beer_name: beer.name ?? r.beer_name,
+      brewery: beer.brewery_name ?? r.brewery,
+      style: beer.style ?? r.style,
+      abv: beer.abv != null ? Number(beer.abv) : r.abv,
+    };
+  });
+}
+
 async function attachCheersDataToRatings(ratings, requester = null) {
   if (!Array.isArray(ratings) || !ratings.length) return ratings;
   const ratingIds = [...new Set(ratings.map((r) => String(r?.id || '').trim()).filter(Boolean))];
@@ -1238,7 +1264,8 @@ app.get('/api/ratings', softAuthMiddleware, validateSort, async (req, res) => {
     }
     const total = filtered.length;
     const page = filtered.slice(offset, offset + limit);
-    const withCheers = await attachCheersDataToRatings(page, requester);
+    const withCatalog = await overlayCatalogBeerOnRatings(page, rest);
+    const withCheers = await attachCheersDataToRatings(withCatalog, requester);
     const data = await attachRatingAchievementDataToRatings(withCheers);
     return res.json({
       data,
@@ -1253,7 +1280,9 @@ app.get('/api/ratings', softAuthMiddleware, validateSort, async (req, res) => {
   if (status >= 400) {
     return res.status(status).json(body || { error: 'Upstream error' });
   }
-  const withCheers = await attachCheersDataToRatings(Array.isArray(body) ? body : [], requester);
+  const rawRatings = Array.isArray(body) ? body : [];
+  const withCatalog = await overlayCatalogBeerOnRatings(rawRatings, rest);
+  const withCheers = await attachCheersDataToRatings(withCatalog, requester);
   const enriched = await attachRatingAchievementDataToRatings(withCheers);
   res.json({
     data: enriched,
@@ -1274,7 +1303,9 @@ app.get('/api/ratings/user/:id', softAuthMiddleware, validateSort, async (req, r
   if (status >= 400) {
     return res.status(status).json(body || { error: 'Upstream error' });
   }
-  const withCheers = await attachCheersDataToRatings(Array.isArray(body) ? body : [], requester);
+  const rawRatings = Array.isArray(body) ? body : [];
+  const withCatalog = await overlayCatalogBeerOnRatings(rawRatings, rest);
+  const withCheers = await attachCheersDataToRatings(withCatalog, requester);
   const enriched = await attachRatingAchievementDataToRatings(withCheers);
   res.json({
     data: enriched,
@@ -1499,6 +1530,8 @@ app.post('/api/ratings', softAuthMiddleware, actorMiddleware, async (req, res) =
         source: 'user_submitted',
         submitted_by: isUser ? sub : actor.guest_id,
         verified: false,
+        flagged_for_review: true,
+        flagged_at: new Date().toISOString(),
       }),
     });
     if (createBeerRes.status >= 400) {
@@ -1679,8 +1712,12 @@ app.post('/api/ratings', softAuthMiddleware, actorMiddleware, async (req, res) =
     }).catch((err) => console.error('emitMilestonesAfterRating:', err?.message || err));
   }
 
+  const returnedRating = row || record;
+  const withCatalogRating = returnedRating
+    ? (await overlayCatalogBeerOnRatings([returnedRating], rest))[0] || returnedRating
+    : returnedRating;
   res.status(201).json({
-    data: row || record,
+    data: withCatalogRating,
     updated: false,
     tabs_earned: tabsEarned,
     tabs_breakdown: breakdown,
@@ -1844,7 +1881,8 @@ app.patch('/api/ratings/:id', softAuthMiddleware, actorMiddleware, async (req, r
   }
   if (Object.keys(updatePayload).length === 0) {
     const row = existingRows[0];
-    return res.status(200).json({ data: row });
+    const [overlaid] = await overlayCatalogBeerOnRatings([row], rest);
+    return res.status(200).json({ data: overlaid || row });
   }
   const patchRes = await rest('PATCH', `/ratings?id=eq.${encodedId}`, {
     headers: { Prefer: 'return=representation' },
@@ -1854,7 +1892,10 @@ app.patch('/api/ratings/:id', softAuthMiddleware, actorMiddleware, async (req, r
     return res.status(patchRes.status >= 500 ? 502 : patchRes.status).json(patchRes.body || { error: 'Update failed' });
   }
   const updatedRow = Array.isArray(patchRes.body) ? patchRes.body[0] : patchRes.body;
-  return res.status(200).json({ data: updatedRow || existingRows[0] });
+  const withCatalogRow = updatedRow
+    ? (await overlayCatalogBeerOnRatings([updatedRow], rest))[0] || updatedRow
+    : updatedRow;
+  return res.status(200).json({ data: withCatalogRow || existingRows[0] });
 });
 
 // POST /api/guest-ratings/claim — auth required. Reassign guest-owned ratings to user; on conflict (same beer/venue) keep user rating, discard guest.
@@ -2271,7 +2312,9 @@ app.get('/review/:ratingId', reviewLinkLimiter, async (req, res) => {
       return res.status(404).type('html').send(renderReviewNotFoundPage());
     }
 
-    const rating = body[0];
+    const rawRating = body[0];
+    const [overlaid] = await overlayCatalogBeerOnRatings([rawRating], rest);
+    const rating = overlaid || rawRating;
     const beerId = rating.beer_id || null;
     const appUrl = beerId
       ? `${APP_SCHEME}://beer/${encodeURIComponent(beerId)}`

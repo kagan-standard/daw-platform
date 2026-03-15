@@ -459,6 +459,38 @@ async function validateCosmeticPatch(body) {
   return { valid: true, data };
 }
 
+/**
+ * Admin PATCH beer (catalog): name, brewery_name, style, abv.
+ * All fields optional; name non-empty if provided; abv 0–30 if present.
+ * @returns {{ valid: boolean, error?: string, data?: object }}
+ */
+function validateBeerPatch(body) {
+  const data = {};
+  if (body.name !== undefined) {
+    const name = String(body.name || '').trim();
+    if (!name) return { valid: false, error: 'name cannot be empty' };
+    data.name = name;
+  }
+  if (body.brewery_name !== undefined) {
+    data.brewery_name = body.brewery_name === '' || body.brewery_name == null ? null : String(body.brewery_name).trim();
+  }
+  if (body.style !== undefined) {
+    data.style = body.style === '' || body.style == null ? null : String(body.style).trim();
+  }
+  if (body.abv !== undefined) {
+    if (body.abv === '' || body.abv == null) {
+      data.abv = null;
+    } else {
+      const abv = Number(body.abv);
+      if (!Number.isFinite(abv) || abv < 0 || abv > 30) {
+        return { valid: false, error: 'abv must be a number between 0 and 30' };
+      }
+      data.abv = abv;
+    }
+  }
+  return { valid: true, data };
+}
+
 module.exports = {
   validateChallengeCreate,
   validateChallengePatch,
@@ -470,4 +502,5 @@ module.exports = {
   validateFeaturedBeerPatch,
   validateCosmeticCreate,
   validateCosmeticPatch,
+  validateBeerPatch,
 };

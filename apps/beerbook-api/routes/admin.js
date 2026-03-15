@@ -667,6 +667,48 @@ module.exports = function adminRoutes(opts) {
     }
   });
 
+  // ---------- Catalog beers for review (flag new beers, admin edit) ----------
+  // GET /api/admin/beers/for-review — list beers flagged for admin review (paginated)
+  router.get('/beers/for-review', async (req, res, next) => {
+    try {
+      const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 200);
+      const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
+      const path = `/beers?flagged_for_review=eq.true&order=flagged_at.desc.nullslast,created_at.desc&limit=${limit}&offset=${offset}&select=id,name,brewery_name,style,abv,source,created_at,flagged_at`;
+      const out = await rest('GET', path, { headers: { Prefer: 'count=exact' } });
+      if (out.status >= 400) return res.status(out.status).json(out.body || { error: 'Failed to fetch beers for review' });
+      res.json({
+        data: Array.isArray(out.body) ? out.body : [],
+        pagination: { limit, offset, total: totalFromContentRange(out.headers['content-range']) ?? 0 },
+      });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // PATCH /api/admin/beers/:id — admin edit catalog beer (name, brewery_name, style, abv); clear flag on save
+  router.patch('/beers/:id', async (req, res, next) => {
+    try {
+      const v = adminValidation.validateBeerPatch(req.body || {});
+      if (!v.valid) return res.status(400).json({ error: v.error });
+      if (Object.keys(v.data).length === 0) return res.status(400).json({ error: 'No fields to update' });
+      const id = encodeURIComponent(req.params.id);
+      const payload = {
+        ...v.data,
+        flagged_for_review: false,
+        flagged_at: null,
+      };
+      const out = await rest('PATCH', `/beers?id=eq.${id}`, {
+        headers: { 'Content-Type': 'application/json', Prefer: 'return=representation' },
+        body: JSON.stringify(payload),
+      });
+      if (out.status >= 400) return res.status(out.status).json(out.body || { error: 'Failed to update beer' });
+      const row = Array.isArray(out.body) && out.body.length ? out.body[0] : out.body;
+      res.json({ data: row });
+    } catch (e) {
+      next(e);
+    }
+  });
+
   // ---------- Cosmetics CRUD ----------
   router.get('/cosmetics', async (req, res, next) => {
     try {

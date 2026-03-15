@@ -3811,6 +3811,26 @@ All admin routes require `authMiddleware` + `adminMiddleware`.
 
 ---
 
+#### GET /api/admin/beers/for-review
+
+- **File:** `routes/admin.js`
+- **Auth:** `authMiddleware` + `adminMiddleware`
+- **Query:** `limit` (default 50, max 200), `offset` (default 0)
+- **Success Response (200):** `{ "data": [ beer rows ], "pagination": { "limit", "offset", "total" } }`. Each beer has `id`, `name`, `brewery_name`, `style`, `abv`, `source`, `created_at`, `flagged_at`. Lists beers with `flagged_for_review = true` (new user-submitted beers) for admin catalog review.
+
+---
+
+#### PATCH /api/admin/beers/:id
+
+- **File:** `routes/admin.js`
+- **Auth:** `authMiddleware` + `adminMiddleware`
+- **URL Params:** `id` — beer UUID
+- **Body (all optional):** `name`, `brewery_name`, `style`, `abv`. Validation: name non-empty if provided; abv 0–30 if present. On success, backend sets `flagged_for_review = false` and `flagged_at = null` so the beer drops off the for-review list.
+- **Success Response (200):** `{ "data": Beer }` (updated catalog row).
+- **400:** Validation error or no fields to update.
+
+---
+
 #### GET /api/admin/cosmetics
 
 - **File:** `routes/admin.js`
@@ -4205,6 +4225,8 @@ All admin routes require `authMiddleware` + `adminMiddleware`.
 | `POST /api/cosmetics/equip` | `profiles` (equipped IDs) | None | No |
 | `POST /api/tabs/submissions` | `beer_submissions` | None | No |
 | `PATCH /api/admin/tabs/submissions/:id` (approve) | `beer_submissions`, `tabs_ledger`, `user_tabs_profile` | Yes | Yes |
+| `GET /api/admin/beers/for-review` | `beers` (read) | Yes | No |
+| `PATCH /api/admin/beers/:id` | `beers` (name, brewery_name, style, abv; clear flagged_for_review) | Yes | No |
 | `PATCH /api/admin/tabs/users/:userId/seeder` | `user_tabs_profile` | Yes (if granting) | No |
 | `PATCH /api/admin/tabs/users/:userId/tier` | `user_tabs_profile` | Yes | No |
 | `POST /api/admin/tabs/users/:userId/adjust` | `tabs_ledger`, `user_tabs_profile` | None | Yes |
@@ -4271,6 +4293,9 @@ All admin routes require `authMiddleware` + `adminMiddleware`.
 
 ### 12. `PATCH /api/admin/tabs/submissions/:id` Has Top-Level `tabs_awarded`
 - Response shape: `{ data: {...}, tabs_awarded: 3 }` — the `tabs_awarded` is a sibling of `data`, not inside it
+
+### 13. Rating display: catalog as source of truth when `beer_id` is set
+- For any API that returns a rating (e.g. `GET /api/ratings`, `GET /api/ratings/user/:id`, `POST /api/ratings`, `PATCH /api/ratings/:id`, share page), when the rating has `beer_id` set, the response fields `beer_name`, `brewery`, `style`, and `abv` are **overlaid from the catalog** (`beers` table), not from the denormalized `ratings` columns. One admin edit to the catalog beer reflects everywhere.
 
 ### 13. Tabs Architecture Is Single-Ledger
 - `tabs_ledger` is the sole source of truth for tab movements (rating awards, cheers, admin grants, achievement unlock rewards, spends).
