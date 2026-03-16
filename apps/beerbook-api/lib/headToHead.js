@@ -4,8 +4,11 @@
  * Used by POST /api/ratings (when to attach head_to_head) and by complete/skip handlers.
  */
 
+const { styleToFamily } = require('./styleFamily');
+
 const HEAD_TO_HEAD_REWARD_TABS = Number(process.env.HEAD_TO_HEAD_REWARD_TABS) || 2;
-const HEAD_TO_HEAD_COOLDOWN_HOURS = Number(process.env.HEAD_TO_HEAD_COOLDOWN_HOURS) || 24;
+const HEAD_TO_HEAD_COOLDOWN_HOURS = Number(process.env.HEAD_TO_HEAD_COOLDOWN_HOURS) || 1;
+const HEAD_TO_HEAD_YG_TOLERANCE = 2;
 
 /**
  * Build the minimal beer object for head-to-head prompt (no YG value).
@@ -42,35 +45,39 @@ async function isHeadToHeadCooldownActive(rest, userId) {
 }
 
 /**
- * Find a challenger rating for head-to-head: same user, same style (or same beer_id), different rating, older than current.
+ * Find a challenger rating for head-to-head: same user, same style family (or same beer_id),
+ * different rating, YG within HEAD_TO_HEAD_YG_TOLERANCE.
  * @param {function} rest - (method, path, opts) => Promise<{ status, body }>
  * @param {string} userId - user_id
- * @param {object} currentRating - current rating row (id, style, beer_id, created_at)
+ * @param {object} currentRating - current rating row (id, style, beer_id, yg_value, created_at, ...)
  * @returns {Promise<object|null>} challenger rating row or null
  */
 async function getChallengerRating(rest, userId, currentRating) {
   if (!userId || !currentRating?.id) return null;
   const style = (currentRating.style || '').trim();
   const beerId = currentRating.beer_id || null;
+  const currentYg = currentRating.yg_value != null && Number.isFinite(Number(currentRating.yg_value)) ? Number(currentRating.yg_value) : null;
   if (!style && !beerId) return null;
 
-  // Same user, exclude current rating. Match same style or same beer_id.
-  let filter = `user_id=eq.${encodeURIComponent(userId)}&id=neq.${encodeURIComponent(currentRating.id)}`;
-  if (style && beerId) {
-    filter += `&or=(style.eq.${encodeURIComponent(style)},beer_id.eq.${encodeURIComponent(beerId)})`;
-  } else if (beerId) {
-    filter += `&beer_id=eq.${encodeURIComponent(beerId)}`;
-  } else {
-    filter += `&style=eq.${encodeURIComponent(style)}`;
-  }
-  const path = `/ratings?${filter}&select=id,beer_name,brewery,style,location_name,created_at,photo_url,beer_id&order=created_at.desc&limit=20`;
+  const filter = `user_id=eq.${encodeURIComponent(userId)}&id=neq.${encodeURIComponent(currentRating.id)}`;
+  const path = `/ratings?${filter}&select=id,beer_name,brewery,style,location_name,created_at,photo_url,beer_id,yg_value&order=created_at.desc&limit=80`;
   const res = await rest('GET', path);
   if (res.status >= 400) return null;
   const rows = Array.isArray(res.body) ? res.body : [];
   if (rows.length === 0) return null;
-  // Pick one at random among recent same-style ratings for variety
-  const idx = Math.floor(Math.random() * Math.min(rows.length, 5));
-  return rows[idx] || null;
+
+  const currentFamily = style ? styleToFamily(style) : null;
+  const candidates = rows.filter((r) => {
+    const sameBeer = beerId && r.beer_id === beerId;
+    const sameFamily = currentFamily && (r.style || '').trim() && styleToFamily((r.style || '').trim()) === currentFamily;
+    if (!sameBeer && !sameFamily) return false;
+    const candidateYg = r.yg_value != null && Number.isFinite(Number(r.yg_value)) ? Number(r.yg_value) : null;
+    if (currentYg == null || candidateYg == null) return true;
+    return Math.abs(currentYg - candidateYg) <= HEAD_TO_HEAD_YG_TOLERANCE;
+  });
+  if (candidates.length === 0) return null;
+  const idx = Math.floor(Math.random() * Math.min(candidates.length, 5));
+  return candidates[idx] || null;
 }
 
 /**
