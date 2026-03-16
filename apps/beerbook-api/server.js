@@ -59,7 +59,7 @@ const ADMIN_USER_IDS = new Set(
 const SORT_WHITELIST = ['created_at', 'rating', 'beer_name'];
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
-const CATALOG_SORT_WHITELIST = ['name', 'abv', 'review_overall', 'review_count', 'power_score'];
+const CATALOG_SORT_WHITELIST = ['name', 'abv', 'review_overall', 'review_count', 'power_score', 'style_elo'];
 
 function isAdmin(sub) {
   return ADMIN_USER_IDS.has(String(sub || '').trim());
@@ -923,9 +923,11 @@ app.get('/api/catalog/browse', async (req, res) => {
   const like = encodeURIComponent(`*${q}*`);
 
   // Phase 5: sort by power_score uses beers_with_elo and orders by global_elo
+  // style_elo: whitelisted for UI; DB does not expose style_elo yet, so order by review_count until a view/column exists
   const useEloView = sort === 'power_score';
+  const effectiveSort = sort === 'style_elo' ? 'review_count' : sort;
   const basePath = useEloView ? '/beers_with_elo?' : '/beers?';
-  const orderColumn = useEloView ? (order === 'desc' ? 'global_elo.desc.nullslast' : 'global_elo.asc.nullsfirst') : `${sort}.${order}`;
+  const orderColumn = useEloView ? (order === 'desc' ? 'global_elo.desc.nullslast' : 'global_elo.asc.nullsfirst') : `${effectiveSort}.${order}`;
 
   let path = basePath;
   path += 'select=id,name,brewery_name,style,style_category,abv,description,ibu_min,ibu_max,';

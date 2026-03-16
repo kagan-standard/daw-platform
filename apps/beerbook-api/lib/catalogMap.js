@@ -50,6 +50,8 @@ function mapCatalogBeer(row) {
     // Phase 5 discovery: Power Score (Elo) when available
     power_score: row.global_elo != null ? toNumberOrNull(row.global_elo) : null,
     comparison_count: row.comparison_count != null ? toNumberOrNull(row.comparison_count) : null,
+    // Style-scoped Elo when upstream view/table provides it (for sort=style_elo)
+    style_elo: row.style_elo != null ? toNumberOrNull(row.style_elo) : null,
   };
 }
 
