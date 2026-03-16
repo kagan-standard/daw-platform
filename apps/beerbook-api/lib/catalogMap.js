@@ -47,6 +47,9 @@ function mapCatalogBeer(row) {
     review_taste: reviews.taste,
     review_overall: reviews.overall ?? toNumberOrNull(row.review_overall),
     review_count: reviews.count,
+    // Phase 5 discovery: Power Score (Elo) when available
+    power_score: row.global_elo != null ? toNumberOrNull(row.global_elo) : null,
+    comparison_count: row.comparison_count != null ? toNumberOrNull(row.comparison_count) : null,
   };
 }
 

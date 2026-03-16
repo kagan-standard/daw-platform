@@ -22,6 +22,8 @@ const { validateYgValue, ygValueToStarRating } = require('./lib/ratingsValidatio
 const { actorMiddleware, ENABLE_GUEST_RATINGS, validateGuestId } = require('./lib/actorIdentity');
 const { CANONICAL_FAMILIES, styleDistributionToFamilies, styleToFamily } = require('./lib/styleFamily');
 const { mapCatalogBeer } = require('./lib/catalogMap');
+const { maybeOfferHeadToHead } = require('./lib/headToHead');
+const { updateEloAfterComparison } = require('./lib/elo');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -57,7 +59,7 @@ const ADMIN_USER_IDS = new Set(
 const SORT_WHITELIST = ['created_at', 'rating', 'beer_name'];
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
-const CATALOG_SORT_WHITELIST = ['name', 'abv', 'review_overall', 'review_count'];
+const CATALOG_SORT_WHITELIST = ['name', 'abv', 'review_overall', 'review_count', 'power_score'];
 
 function isAdmin(sub) {
   return ADMIN_USER_IDS.has(String(sub || '').trim());
@@ -896,6 +898,8 @@ app.get('/api/catalog/search', async (req, res) => {
       description: r.description ?? null,
       review_overall: r.review_overall != null ? Number(r.review_overall) : null,
       review_count: r.review_count != null ? Number(r.review_count) : null,
+      power_score: r.global_elo != null ? Number(r.global_elo) : null,
+      comparison_count: r.comparison_count != null ? Number(r.comparison_count) : null,
     }));
     res.json({ data });
   } catch (e) {
@@ -918,12 +922,18 @@ app.get('/api/catalog/browse', async (req, res) => {
   const q = (req.query.q || '').trim().replace(/%/g, '');
   const like = encodeURIComponent(`*${q}*`);
 
-  let path = '/beers?';
+  // Phase 5: sort by power_score uses beers_with_elo and orders by global_elo
+  const useEloView = sort === 'power_score';
+  const basePath = useEloView ? '/beers_with_elo?' : '/beers?';
+  const orderColumn = useEloView ? (order === 'desc' ? 'global_elo.desc.nullslast' : 'global_elo.asc.nullsfirst') : `${sort}.${order}`;
+
+  let path = basePath;
   path += 'select=id,name,brewery_name,style,style_category,abv,description,ibu_min,ibu_max,';
   path += 'flavor_astringency,flavor_body,flavor_alcohol,flavor_bitter,flavor_sweet,flavor_sour,';
   path += 'flavor_salty,flavor_fruity,flavor_hoppy,flavor_spicy,flavor_malty,';
   path += 'review_aroma,review_appearance,review_palate,review_taste,review_overall,review_count';
-  path += `&limit=${limit}&offset=${offset}&order=${sort}.${order}`;
+  if (useEloView) path += ',global_elo,comparison_count';
+  path += `&limit=${limit}&offset=${offset}&order=${orderColumn}`;
 
   if (style) {
     path += `&style_category=eq.${encodeURIComponent(style)}`;
@@ -1011,13 +1021,13 @@ app.get('/api/catalog/validate-new', async (req, res) => {
   }
 });
 
-// GET /api/catalog/beer/:id — single catalog beer (expanded detail)
+// GET /api/catalog/beer/:id — single catalog beer (expanded detail); includes power_score when available (Phase 5)
 app.get('/api/catalog/beer/:id', async (req, res) => {
   const id = encodeURIComponent((req.params.id || '').trim());
   try {
     const { status, body } = await rest(
       'GET',
-      `/beers?id=eq.${id}&select=id,name,brewery_name,style,style_category,abv,description,ibu_min,ibu_max,flavor_astringency,flavor_body,flavor_alcohol,flavor_bitter,flavor_sweet,flavor_sour,flavor_salty,flavor_fruity,flavor_hoppy,flavor_spicy,flavor_malty,review_aroma,review_appearance,review_palate,review_taste,review_overall,review_count&limit=1`
+      `/beers_with_elo?id=eq.${id}&select=id,name,brewery_name,style,style_category,abv,description,ibu_min,ibu_max,flavor_astringency,flavor_body,flavor_alcohol,flavor_bitter,flavor_sweet,flavor_sour,flavor_salty,flavor_fruity,flavor_hoppy,flavor_spicy,flavor_malty,review_aroma,review_appearance,review_palate,review_taste,review_overall,review_count,global_elo,comparison_count&limit=1`
     );
     if (status >= 400) {
       return res.status(status >= 500 ? 502 : status).json(body || { error: 'Upstream error' });
@@ -1696,7 +1706,18 @@ app.post('/api/ratings', softAuthMiddleware, actorMiddleware, async (req, res) =
   const withCatalogRating = returnedRating
     ? (await overlayCatalogBeerOnRatings([returnedRating], rest))[0] || returnedRating
     : returnedRating;
-  res.status(201).json({
+
+  // Phase 1 head-to-head: optional prompt for authenticated users (match-quality and cooldown in lib).
+  let headToHead = null;
+  if (isUser && sub && withCatalogRating?.id) {
+    try {
+      headToHead = await maybeOfferHeadToHead(rest, sub, withCatalogRating);
+    } catch (err) {
+      console.error('head-to-head offer failed (non-blocking):', err?.message || err);
+    }
+  }
+
+  const responsePayload = {
     data: withCatalogRating,
     updated: false,
     tabs_earned: tabsEarned,
@@ -1711,7 +1732,11 @@ app.post('/api/ratings', softAuthMiddleware, actorMiddleware, async (req, res) =
     longest_streak_weeks: longestStreakWeeks,
     weekly_count: weeklyCount,
     weekly_cap: weeklyCap,
-  });
+  };
+  if (headToHead != null) {
+    responsePayload.head_to_head = headToHead;
+  }
+  res.status(201).json(responsePayload);
 });
 
 // DELETE /api/ratings/:id — user (JWT) or guest (X-Guest-Id), ownership check
@@ -1935,6 +1960,105 @@ app.post('/api/guest-ratings/claim', authMiddleware, async (req, res) => {
   }
 
   res.status(200).json({ claimed, discarded });
+});
+
+// ---------- Head-to-head (Phase 1): complete and skip; auth required, idempotent ----------
+// POST /api/head-to-head/:id/complete — body { winner_rating_id }; records result, marks prompt completed.
+app.post('/api/head-to-head/:id/complete', authMiddleware, async (req, res) => {
+  const promptId = (req.params.id || '').trim();
+  const winnerRatingId = req.body?.winner_rating_id ?? req.body?.winnerRatingId ?? null;
+  if (!promptId) {
+    return res.status(400).json({ error: 'Head-to-head prompt id is required' });
+  }
+  if (!winnerRatingId || typeof winnerRatingId !== 'string' || !winnerRatingId.trim()) {
+    return res.status(400).json({ error: 'winner_rating_id is required' });
+  }
+  const sub = req.claims?.sub;
+  if (!sub) return res.status(401).json({ error: 'Authentication required' });
+
+  const getRes = await rest('GET', `/head_to_head_prompts?id=eq.${encodeURIComponent(promptId)}&user_id=eq.${encodeURIComponent(sub)}&limit=1`);
+  if (getRes.status >= 400) {
+    return res.status(getRes.status >= 500 ? 502 : getRes.status).json(getRes.body || { error: 'Failed to fetch prompt' });
+  }
+  const prompts = Array.isArray(getRes.body) ? getRes.body : [];
+  const prompt = prompts[0];
+  if (!prompt) {
+    return res.status(404).json({ error: 'Head-to-head prompt not found' });
+  }
+  if (prompt.status !== 'pending') {
+    return res.status(200).json({ success: true, message: 'Already completed or skipped' });
+  }
+  const wid = String(winnerRatingId).trim();
+  const currentId = String(prompt.current_rating_id || '').trim();
+  const challengerId = String(prompt.challenger_rating_id || '').trim();
+  if (wid !== currentId && wid !== challengerId) {
+    return res.status(400).json({ error: 'winner_rating_id must be one of the two ratings in this prompt' });
+  }
+  const loserRatingId = wid === currentId ? challengerId : currentId;
+  // Resolve beer_ids for result row
+  const ratingsRes = await rest('GET', `/ratings?id=in.(${encodeURIComponent(wid)},${encodeURIComponent(loserRatingId)})&select=id,beer_id&limit=2`);
+  const ratingRows = Array.isArray(ratingsRes.body) ? ratingsRes.body : [];
+  const winnerBeerId = ratingRows.find((r) => r.id === wid)?.beer_id ?? null;
+  const loserBeerId = ratingRows.find((r) => r.id === loserRatingId)?.beer_id ?? null;
+  const resultInsertRes = await rest('POST', '/head_to_head_results', {
+    headers: { 'Content-Type': 'application/json', 'Prefer': 'return=representation' },
+    body: JSON.stringify({
+      user_id: sub,
+      winner_beer_id: winnerBeerId,
+      loser_beer_id: loserBeerId,
+      winner_rating_id: wid,
+      loser_rating_id: loserRatingId,
+      comparison_type: 'post_rating',
+      prompt_id: promptId,
+    }),
+  });
+  const resultRow = Array.isArray(resultInsertRes.body) ? resultInsertRes.body[0] : resultInsertRes.body;
+  const resultId = resultRow?.id ?? null;
+  if (resultId && (winnerBeerId || loserBeerId)) {
+    try {
+      await updateEloAfterComparison(rest, winnerBeerId, loserBeerId, resultId);
+    } catch (err) {
+      console.error('head-to-head Elo update failed (non-blocking):', err?.message || err);
+    }
+  }
+  await rest('PATCH', `/head_to_head_prompts?id=eq.${encodeURIComponent(promptId)}`, {
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status: 'completed' }),
+  });
+  const rewardTabs = prompt.reward_tabs ?? 0;
+  return res.status(200).json({
+    success: true,
+    reward_tabs: rewardTabs,
+    tabs_earned: rewardTabs,
+  });
+});
+
+// POST /api/head-to-head/:id/skip — no body; marks prompt skipped, idempotent.
+app.post('/api/head-to-head/:id/skip', authMiddleware, async (req, res) => {
+  const promptId = (req.params.id || '').trim();
+  if (!promptId) {
+    return res.status(400).json({ error: 'Head-to-head prompt id is required' });
+  }
+  const sub = req.claims?.sub;
+  if (!sub) return res.status(401).json({ error: 'Authentication required' });
+
+  const getRes = await rest('GET', `/head_to_head_prompts?id=eq.${encodeURIComponent(promptId)}&user_id=eq.${encodeURIComponent(sub)}&limit=1`);
+  if (getRes.status >= 400) {
+    return res.status(getRes.status >= 500 ? 502 : getRes.status).json(getRes.body || { error: 'Failed to fetch prompt' });
+  }
+  const prompts = Array.isArray(getRes.body) ? getRes.body : [];
+  const prompt = prompts[0];
+  if (!prompt) {
+    return res.status(404).json({ error: 'Head-to-head prompt not found' });
+  }
+  if (prompt.status !== 'pending') {
+    return res.status(200).json({ success: true, message: 'Already completed or skipped' });
+  }
+  await rest('PATCH', `/head_to_head_prompts?id=eq.${encodeURIComponent(promptId)}`, {
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status: 'skipped' }),
+  });
+  return res.status(200).json({ success: true });
 });
 
 // GET /api/ratings/:id/comments — public, paginated, newest first

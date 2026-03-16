@@ -298,7 +298,7 @@ This applies to crew operations, follow operations, and any other proxied writes
 | `q` | string | — | Required; returns `{ data: [] }` if < 2 chars |
 | `limit` | number | 10 | Clamped 1–50 |
 
-**Success Response (200):** Each item includes `style_category` (canonical family or null).
+**Success Response (200):** Each item includes `style_category` (canonical family or null). Phase 5 discovery: when the beer has Elo data, `power_score` (global Elo) and `comparison_count` are included; otherwise `null`.
 
 ```json
 {
@@ -312,7 +312,9 @@ This applies to crew operations, follow operations, and any other proxied writes
       "abv": 5.5,
       "description": "string",
       "review_overall": 4.2,
-      "review_count": 12
+      "review_count": 12,
+      "power_score": 1520,
+      "comparison_count": 42
     }
   ]
 }
@@ -334,12 +336,12 @@ This applies to crew operations, follow operations, and any other proxied writes
 |-------|------|---------|------------|
 | `limit` | number | 30 | Clamped 1–100 |
 | `offset` | number | 0 | >= 0 |
-| `sort` | string | `"name"` | One of: `name`, `abv`, `review_overall`, `review_count` |
+| `sort` | string | `"name"` | One of: `name`, `abv`, `review_overall`, `review_count`, `power_score` (Power Score / Elo; nulls last when desc) |
 | `order` | string | `"asc"` | `"asc"` or `"desc"` |
 | `style` | string | — | Optional; filters by **style family** (`style_category`), e.g. `Lager` returns all beers whose family is Lager (Light Lager, American Lager, etc.) |
 | `q` | string | — | Optional; `%` characters stripped |
 
-**Success Response (200):** Each item includes `style` (specific name) and `style_category` (canonical family or null).
+**Success Response (200):** Each item includes `style` (specific name) and `style_category` (canonical family or null). Phase 5 discovery: `power_score` (global Elo) and `comparison_count` are present when the beer has Elo data; otherwise `null`.
 
 ```json
 {
@@ -366,7 +368,9 @@ This applies to crew operations, follow operations, and any other proxied writes
       "review_palate": 0,
       "review_taste": 0,
       "review_overall": 4.2,
-      "review_count": 12
+      "review_count": 12,
+      "power_score": 1520,
+      "comparison_count": 42
     }
   ],
   "pagination": { "limit": 30, "offset": 0, "total": 500 }
@@ -442,7 +446,7 @@ On upstream error: returns `{ "data": [] }` (does NOT propagate errors).
 
 **URL Params:** `id` — beer UUID
 
-**Success Response (200):** Single `mapCatalogBeer` object (same shape as browse items including `style_category`, NOT wrapped in `data`).
+**Success Response (200):** Single `mapCatalogBeer` object (same shape as browse items including `style_category`, `power_score`, `comparison_count` when available; NOT wrapped in `data`).
 
 **Error Responses:**
 - 404: `{ "error": "Beer not found" }`
@@ -805,6 +809,18 @@ Note: Accepts both `snake_case` and `camelCase` for most fields.
 | `current_streak_weeks` | number | Current weekly rating streak from real-time profile cache refresh after `rating_award`. |
 | `longest_streak_weeks` | number | Longest weekly rating streak from real-time profile cache refresh after `rating_award`. |
 
+**Head-to-head (optional, authenticated users only):** When the backend decides to offer a head-to-head comparison after this rating, the 201 response includes a top-level `head_to_head` object. When absent or null, clients behave as today (no head-to-head step). Shape:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `head_to_head` | `object \| null` | Omitted or `null` when no prompt is offered. When present: `{ id: string, reward_tabs: number, current_beer: HeadToHeadBeer, challenger_beer: HeadToHeadBeer }`. |
+| `head_to_head.id` | string | UUID of the prompt; use for complete/skip endpoints. |
+| `head_to_head.reward_tabs` | number | Bonus tabs awarded when user completes the comparison (optional to show). |
+| `head_to_head.current_beer` | object | The beer just rated: `{ rating_id, beer_name, brewery?, style?, venue_name?, location_name?, created_at?, photo_url? }` (no YG value). |
+| `head_to_head.challenger_beer` | object | A past rating to compare: same shape as `current_beer`. |
+
+Match quality and when to prompt are backend-owned (e.g. same user history, same style or YG band, cooldowns). Guests never receive `head_to_head`.
+
 **Success Response — UPDATE EXISTING RATING (200):**
 
 ```json
@@ -937,6 +953,71 @@ Response does **not** include tabs_earned, tabs_breakdown, achievements_unlocked
 - 502: `{ "error": "Delete failed" }`
 
 **Side Effects:** Deletes from `ratings`. Does NOT reverse tab awards.
+
+---
+
+### Head-to-head (Phase 1)
+
+Optional comparison prompt after a rating. Only offered to authenticated users when backend match-quality and cooldown rules allow. Clients use the prompt `id` from the create response to call complete or skip.
+
+#### POST /api/head-to-head/:id/complete
+
+- **Auth:** Required (JWT). Prompt must belong to the authenticated user.
+- **File:** `server.js`
+
+**URL Params:** `id` — head-to-head prompt UUID (from `head_to_head.id` in POST /api/ratings response).
+
+**Request Body:**
+
+| Field | Type | Required | Validation |
+|-------|------|----------|------------|
+| `winner_rating_id` / `winnerRatingId` | string | yes | Must be one of the two rating IDs in this prompt (current or challenger). |
+
+**Success Response (200):**
+
+```json
+{
+  "success": true,
+  "reward_tabs": 2,
+  "tabs_earned": 2
+}
+```
+
+- Idempotent: if the prompt was already completed or skipped, returns 200 with `{ "success": true, "message": "Already completed or skipped" }`.
+- `reward_tabs` / `tabs_earned`: Bonus tabs for completing the comparison (same value; client may show "+N Tabs").
+
+**Error Responses:**
+- 400: `{ "error": "Head-to-head prompt id is required" }` or `{ "error": "winner_rating_id is required" }` or `{ "error": "winner_rating_id must be one of the two ratings in this prompt" }`
+- 401: `{ "error": "Authentication required" }`
+- 404: `{ "error": "Head-to-head prompt not found" }`
+
+**Side Effects:** Inserts into `head_to_head_results` (winner/loser beer and rating IDs). Updates `beer_elo_ratings` for winner and loser beers when both have catalog `beer_id` (Phase 3 Elo). Updates `head_to_head_prompts` row to `status = 'completed'`.
+
+#### POST /api/head-to-head/:id/skip
+
+- **Auth:** Required (JWT). Prompt must belong to the authenticated user.
+- **File:** `server.js`
+
+**URL Params:** `id` — head-to-head prompt UUID.
+
+**Request Body:** None.
+
+**Success Response (200):**
+
+```json
+{
+  "success": true
+}
+```
+
+- Idempotent: if already completed or skipped, returns 200 with `{ "success": true, "message": "Already completed or skipped" }`.
+
+**Error Responses:**
+- 400: `{ "error": "Head-to-head prompt id is required" }`
+- 401: `{ "error": "Authentication required" }`
+- 404: `{ "error": "Head-to-head prompt not found" }`
+
+**Side Effects:** Updates `head_to_head_prompts` row to `status = 'skipped'`. No result row is inserted.
 
 ---
 
@@ -2351,12 +2432,18 @@ Both routes are identical.
     "review_count": 5,
     "avg_rating": 4.4,
     "first_reviewed": "ISO8601",
-    "first_rated_by": { "user_id": "string", "display_name": "string" } | null
+    "first_rated_by": { "user_id": "string", "display_name": "string" } | null,
+    "source": "admin" | "auto",
+    "headline": "string | null",
+    "body": "string | null",
+    "photo_url": "string | null",
+    "power_score": 1520,
+    "comparison_count": 42
   }
 }
 ```
 
-`first_rated_by` is present when the first rater for the selected beer (in the feature window) can be resolved; otherwise `null` (e.g. no ratings, guest-only, or profile unavailable).
+`first_rated_by` is present when the first rater for the selected beer (in the feature window) can be resolved; otherwise `null` (e.g. no ratings, guest-only, or profile unavailable). `source` is `"admin"` when from curated featured_beers, `"auto"` when computed from recent ratings. Phase 5 discovery: `power_score` (global Elo) and `comparison_count` are included when the beer can be matched to the catalog and has Elo data; otherwise `null`.
 
 **Success Response (200) — no qualifying beer:**
 

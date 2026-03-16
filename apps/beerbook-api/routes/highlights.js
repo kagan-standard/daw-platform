@@ -28,6 +28,26 @@ async function resolveFirstRater(rest, userId) {
   return { user_id: row.id, display_name: row.display_name || 'Beer Lover' };
 }
 
+/** Phase 5: Fetch power_score and comparison_count for a beer (by beer_id or by name/brewery/style). */
+async function fetchPowerScore(rest, { beer_id, beer_name, brewery, style }) {
+  let catalogId = beer_id && typeof beer_id === 'string' ? beer_id.trim() : null;
+  if (!catalogId && beer_name) {
+    const name = encodeURIComponent(String(beer_name).trim());
+    const breweryName = encodeURIComponent(String(brewery || '').trim());
+    const styleVal = encodeURIComponent(String(style || '').trim());
+    const { status, body } = await rest('GET', `/beers?name=eq.${name}&brewery_name=eq.${breweryName}&style=eq.${styleVal}&select=id&limit=1`);
+    if (status < 400 && Array.isArray(body) && body.length > 0) catalogId = body[0].id;
+  }
+  if (!catalogId) return null;
+  const { status, body } = await rest('GET', `/beer_elo_ratings?beer_id=eq.${encodeURIComponent(catalogId)}&select=global_elo,comparison_count&limit=1`);
+  if (status >= 400 || !Array.isArray(body) || body.length === 0) return null;
+  const row = body[0];
+  return {
+    power_score: row.global_elo != null ? Number(row.global_elo) : null,
+    comparison_count: row.comparison_count != null ? Number(row.comparison_count) : null,
+  };
+}
+
 module.exports = function (opts) {
   const { rest } = opts;
   const router = express.Router();
@@ -48,6 +68,7 @@ module.exports = function (opts) {
           const firstUserId = firstRatingRes.body[0].user_id;
           first_rated_by = await resolveFirstRater(rest, firstUserId);
         }
+        const elo = await fetchPowerScore(rest, { beer_id: pick.beer_id, beer_name: pick.beer_name, brewery: pick.brewery, style: pick.style });
         return res.json({
           beer: {
             beer_name: pick.beer_name,
@@ -61,6 +82,8 @@ module.exports = function (opts) {
             body: pick.body || null,
             photo_url: pick.photo_url || null,
             source: 'admin',
+            power_score: elo ? elo.power_score : null,
+            comparison_count: elo ? elo.comparison_count : null,
           },
         });
       }
@@ -88,6 +111,7 @@ module.exports = function (opts) {
       const top = sorted[0];
       const avgRating = top.ratings.reduce((s, r) => s + (Number(r.rating) || 0), 0) / top.ratings.length;
       const first_rated_by = await resolveFirstRater(rest, top.first_user_id);
+      const elo = await fetchPowerScore(rest, { beer_name: top.beer_name, brewery: top.brewery, style: top.style });
       res.json({
         beer: {
           beer_name: top.beer_name,
@@ -98,6 +122,8 @@ module.exports = function (opts) {
           first_reviewed: top.first_at,
           first_rated_by,
           source: 'auto',
+          power_score: elo ? elo.power_score : null,
+          comparison_count: elo ? elo.comparison_count : null,
         },
       });
     } catch (e) {
