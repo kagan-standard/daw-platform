@@ -916,11 +916,17 @@ app.get('/api/catalog/browse', async (req, res) => {
   const rawOffset = parseInt(req.query.offset, 10);
   const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 100) : 30;
   const offset = Number.isFinite(rawOffset) && rawOffset >= 0 ? rawOffset : 0;
-  const sort = CATALOG_SORT_WHITELIST.includes(req.query.sort) ? req.query.sort : 'name';
-  const order = req.query.order === 'desc' ? 'desc' : 'asc';
+  let sort = CATALOG_SORT_WHITELIST.includes(req.query.sort) ? req.query.sort : 'name';
+  let order = req.query.order === 'desc' ? 'desc' : 'asc';
   const style = (req.query.style || '').trim();
   const q = (req.query.q || '').trim().replace(/%/g, '');
   const like = encodeURIComponent(`*${q}*`);
+
+  // Style-filtered browse (e.g. iOS Discover by style): always sort by popularity so clients get "top by style" without sending sort params
+  if (style) {
+    sort = 'review_count';
+    order = 'desc';
+  }
 
   // Phase 5: sort by power_score uses beers_with_elo and orders by global_elo
   // style_elo: whitelisted for UI; DB does not expose style_elo yet, so order by review_count until a view/column exists
