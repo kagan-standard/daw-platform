@@ -19,6 +19,7 @@ This file outlines the current BeerBook database schema state after applying the
 - `apps/beerbook-api/supabase/migrations/20260314000000_weekly_challenges.sql`
 - `apps/beerbook-api/supabase/migrations/20260320100000_admin_featured_beers.sql`
 - `apps/beerbook-api/supabase/migrations/20260321100000_cosmetics_border_fit.sql`
+- `apps/beerbook-api/supabase/migrations/20260329100000_app_config.sql`
 
 ## Schemas
 
@@ -55,6 +56,13 @@ This file outlines the current BeerBook database schema state after applying the
 - **Columns:** `rating_id`, `user_id`, `reaction_type`, `created_at`
 - **Relationships:** `rating_id -> ratings.id` (cascade delete)
 - **Uniqueness:** `(rating_id, user_id, reaction_type)`
+
+## App Config
+
+### `app_config`
+- **Primary key:** `id` (text, default `'default'`) — single-row table for global app settings
+- **Columns:** `theme` (text, not null, default `'default'`; check: `'default'` | `'st_patricks_day'`)
+- **Usage:** GET /api/config (read), PATCH /api/admin/config (admin update)
 
 ## Venue and Pricing Tables
 

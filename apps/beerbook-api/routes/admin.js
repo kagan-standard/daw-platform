@@ -769,5 +769,22 @@ module.exports = function adminRoutes(opts) {
     }
   });
 
+  // PATCH /api/admin/config — update global app config (e.g. theme). Admin only.
+  router.patch('/config', async (req, res, next) => {
+    try {
+      const v = await adminValidation.validateConfigPatch(req.body || {});
+      if (!v.valid) return res.status(400).json({ error: v.error });
+      const out = await rest('PATCH', "/app_config?id=eq.default", {
+        headers: { 'Content-Type': 'application/json', Prefer: 'return=representation' },
+        body: JSON.stringify({ theme: v.data.theme }),
+      });
+      if (out.status >= 400) return res.status(out.status).json(out.body || { error: 'Failed to update config' });
+      const row = Array.isArray(out.body) && out.body.length ? out.body[0] : out.body;
+      res.json({ theme: (row && row.theme) ? row.theme : v.data.theme });
+    } catch (e) {
+      next(e);
+    }
+  });
+
   return router;
 };

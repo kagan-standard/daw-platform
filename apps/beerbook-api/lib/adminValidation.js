@@ -491,6 +491,19 @@ function validateBeerPatch(body) {
   return { valid: true, data };
 }
 
+const APP_THEMES = new Set(['default', 'st_patricks_day']);
+
+/** @returns {Promise<{ valid: boolean, error?: string, data?: { theme: string } }>} */
+async function validateConfigPatch(body) {
+  const theme = body.theme;
+  if (theme === undefined || theme === null) return { valid: false, error: 'theme is required' };
+  const themeStr = String(theme).trim();
+  if (!APP_THEMES.has(themeStr)) {
+    return { valid: false, error: 'theme must be one of: default, st_patricks_day' };
+  }
+  return { valid: true, data: { theme: themeStr } };
+}
+
 module.exports = {
   validateChallengeCreate,
   validateChallengePatch,
@@ -503,4 +516,5 @@ module.exports = {
   validateCosmeticCreate,
   validateCosmeticPatch,
   validateBeerPatch,
+  validateConfigPatch,
 };

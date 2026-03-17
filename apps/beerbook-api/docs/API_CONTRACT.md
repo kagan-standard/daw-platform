@@ -178,6 +178,7 @@ Most list endpoints use:
 - `GET /api/tabs/notifications` (limit max 200, plus `metadata.unread_count`)
 - `GET /api/follows/:userId/followers` (limit max 100)
 - `GET /api/follows/:userId/following` (limit max 100)
+- `GET /api/config` (public; returns `{ theme }`)
 - `GET /api/admin/users` (limit max 200)
 - `GET /api/admin/referrals` (limit max 200)
 - `GET /api/crews/:id/milestones` (limit max 100)
@@ -281,6 +282,21 @@ This applies to crew operations, follow operations, and any other proxied writes
 ```json
 { "status": "ok", "service": "beerbook-api" }
 ```
+
+---
+
+#### GET /api/config
+
+- **Auth:** none (optional; mobile may send auth when available)
+- **File:** `server.js`
+- **Request:** no params
+- **Success Response (200):**
+
+```json
+{ "theme": "default" }
+```
+
+or `{ "theme": "st_patricks_day" }`. Returns the current global app theme. If no stored value exists, returns `"theme": "default"`.
 
 ---
 
@@ -3756,6 +3772,16 @@ All admin routes require `authMiddleware` + `adminMiddleware`.
   ]
 }
 ```
+
+---
+
+#### PATCH /api/admin/config
+
+- **Auth:** required (admin only; same as other `/api/admin` routes)
+- **File:** `routes/admin.js`
+- **Body:** `{ "theme": "default" | "st_patricks_day" }`. `theme` is required and must be one of these two values.
+- **Validation:** 400 if `theme` is missing or not one of `default`, `st_patricks_day` (error message in `error`).
+- **Success Response (200):** Same shape as GET /api/config, e.g. `{ "theme": "default" }` or `{ "theme": "st_patricks_day" }`.
 
 ---
 

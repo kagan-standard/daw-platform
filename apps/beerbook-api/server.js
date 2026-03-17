@@ -1205,6 +1205,21 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', service: 'beerbook-api' });
 });
 
+// GET /api/config — public; returns global app config (e.g. theme for mobile). No auth required.
+app.get('/api/config', async (req, res, next) => {
+  try {
+    const out = await rest('GET', "/app_config?id=eq.default&select=theme&limit=1");
+    if (out.status >= 400) {
+      return res.status(out.status).json(out.body || { error: 'Failed to fetch config' });
+    }
+    const row = Array.isArray(out.body) && out.body.length ? out.body[0] : null;
+    const theme = (row && row.theme) ? row.theme : 'default';
+    res.json({ theme });
+  } catch (e) {
+    next(e);
+  }
+});
+
 // GET /api/ratings — public, paginated
 // BUG FIX #3: Added validateSort middleware
 app.get('/api/ratings', softAuthMiddleware, validateSort, async (req, res) => {
