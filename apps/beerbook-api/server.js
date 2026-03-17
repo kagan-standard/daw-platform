@@ -933,7 +933,7 @@ app.get('/api/catalog/browse', async (req, res) => {
   const useEloView = sort === 'power_score';
   const effectiveSort = sort === 'style_elo' ? 'review_count' : sort;
   const basePath = useEloView ? '/beers_with_elo?' : '/beers?';
-  const orderColumn = useEloView ? (order === 'desc' ? 'global_elo.desc.nullslast' : 'global_elo.asc.nullsfirst') : `${effectiveSort}.${order}`;
+  const orderColumn = useEloView ? (order === 'desc' ? 'global_elo.desc.nullslast' : 'global_elo.asc.nullsfirst') : `${effectiveSort}.${order}${order === 'desc' ? '.nullslast' : '.nullsfirst'}`;
 
   let path = basePath;
   path += 'select=id,name,brewery_name,style,style_category,abv,description,ibu_min,ibu_max,';

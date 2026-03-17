@@ -75,6 +75,8 @@ services:
     container_name: beerbook-api
     restart: unless-stopped
     volumes:
+      - /opt/daw-platform/apps/beerbook-api/public/images/avatars:/app/public/images/avatars:ro
+      - /opt/daw-platform/apps/beerbook-api/scripts:/app/scripts:ro
       - uploads_data:/data/uploads
     environment:
       KEYCLOAK_ISSUER: https://auth.drinksafterwork.net/realms/daw
