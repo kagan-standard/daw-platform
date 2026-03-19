@@ -156,4 +156,24 @@ async function sendVerificationEmail(adminToken, userId) {
   return true;
 }
 
-module.exports = { getAdminToken, createUser, getTokensForUser, refreshTokens, sendVerificationEmail };
+/**
+ * Delete a Keycloak user. Returns { ok: true } on success.
+ * Treat 404 as success (already deleted / idempotent behavior).
+ */
+async function deleteUser(adminToken, userId) {
+  const url = `${KEYCLOAK_URL}/admin/realms/${USER_REALM}/users/${encodeURIComponent(userId)}`;
+  const res = await fetch(url, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${adminToken}` },
+  });
+
+  if (res.status === 204 || res.status === 404) {
+    return { ok: true };
+  }
+
+  const body = await res.text().catch(() => '');
+  console.error('Keycloak user deletion failed:', res.status, body);
+  return { error: 'deletion_failed', message: 'Account deletion failed. Please try again.' };
+}
+
+module.exports = { getAdminToken, createUser, getTokensForUser, refreshTokens, sendVerificationEmail, deleteUser };

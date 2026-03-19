@@ -17,13 +17,14 @@ const {
 const { invokeProcessEvent } = require('./lib/processEvent');
 const { requireCrewMembership } = require('./lib/crewAuth');
 const { emitMilestonesAfterRating } = require('./lib/crewMilestones');
-const { getAdminToken, createUser, getTokensForUser, refreshTokens, sendVerificationEmail } = require('./lib/keycloakAdmin');
+const { getAdminToken, createUser, getTokensForUser, refreshTokens, sendVerificationEmail, deleteUser } = require('./lib/keycloakAdmin');
 const { validateYgValue, ygValueToStarRating } = require('./lib/ratingsValidation');
 const { actorMiddleware, ENABLE_GUEST_RATINGS, validateGuestId } = require('./lib/actorIdentity');
 const { CANONICAL_FAMILIES, styleDistributionToFamilies, styleToFamily } = require('./lib/styleFamily');
 const { mapCatalogBeer } = require('./lib/catalogMap');
 const { maybeOfferHeadToHead } = require('./lib/headToHead');
 const { updateEloAfterComparison } = require('./lib/elo');
+const { deleteAccountForUser } = require('./lib/deleteAccount');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -828,6 +829,51 @@ app.post('/api/auth/refresh', async (req, res) => {
     return res.status(500).json({
       error: 'server_error',
       message: 'Token refresh failed. Please try again later.',
+    });
+  }
+});
+
+// ---------- DELETE /api/account — auth required, deletes app data then Keycloak user ----------
+app.delete('/api/account', authMiddleware, async (req, res) => {
+  const sub = req.claims?.sub;
+  if (!sub || typeof sub !== 'string') {
+    return res.status(401).json({
+      error_code: 'TOKEN_INVALID',
+      error: 'Invalid token',
+      request_id: req.requestId || null,
+    });
+  }
+
+  if (isAdmin(sub)) {
+    return res.status(403).json({ error: 'Admin account deletion is not allowed via this endpoint' });
+  }
+
+  try {
+    await deleteAccountForUser(rest, sub);
+  } catch (err) {
+    console.error('Account data deletion failed:', err);
+    return res.status(502).json({
+      error: 'account_delete_failed',
+      message: 'Failed to delete account data. Please try again later.',
+    });
+  }
+
+  try {
+    const adminToken = await getAdminToken();
+    const result = await deleteUser(adminToken, sub);
+    if (result && result.error) {
+      console.error('Keycloak account deletion failed:', result);
+      return res.status(502).json({
+        error: 'account_delete_failed',
+        message: result.message || 'Failed to delete account. Please try again later.',
+      });
+    }
+    return res.status(204).end();
+  } catch (err) {
+    console.error('Keycloak account deletion error:', err);
+    return res.status(502).json({
+      error: 'account_delete_failed',
+      message: 'Failed to delete account. Please try again later.',
     });
   }
 });
