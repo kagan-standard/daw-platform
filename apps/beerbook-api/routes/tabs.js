@@ -214,6 +214,75 @@ module.exports = function tabsRoutes(opts) {
     }
   });
 
+  // GET /api/achievements/catalog — full list of all active achievements with user progress
+  // Hidden achievements show redacted name/description until unlocked
+  router.get('/achievements/catalog', authMiddleware, async (req, res, next) => {
+    try {
+      const userId = String(req.claims?.sub || '').trim();
+      if (!userId) return res.status(400).json({ error: 'Missing user id' });
+
+      // Fetch all active achievements + categories + user unlocks in parallel
+      const [allAchRes, catRes, uaRes] = await Promise.all([
+        rest('GET', '/achievements?active=eq.true&select=id,key,name,description,reward_tabs,category_key,difficulty,is_hidden,subtype,rules&order=category_key.asc,key.asc'),
+        rest('GET', '/achievement_categories?order=sort_order.asc,key.asc&select=key,name,icon'),
+        rest('GET', `/user_achievements?user_id=eq.${encodeURIComponent(userId)}&select=achievement_id,unlocked_at`),
+      ]);
+
+      if (allAchRes.status >= 400) return res.status(allAchRes.status).json(allAchRes.body || { error: 'Failed to fetch achievements' });
+
+      const achievements = Array.isArray(allAchRes.body) ? allAchRes.body : [];
+      const categories = Array.isArray(catRes.body) ? catRes.body : [];
+      const unlocks = Array.isArray(uaRes.body) ? uaRes.body : [];
+
+      const iconByCategory = Object.fromEntries(categories.map((c) => [c.key, c.icon || null]));
+      const categoryNameByKey = Object.fromEntries(categories.map((c) => [c.key, c.name || c.key]));
+      const unlockMap = Object.fromEntries(unlocks.map((u) => [u.achievement_id, u.unlocked_at]));
+
+      // Calculate progress for locked achievements (batch to avoid overwhelming upstream)
+      const progressMap = Object.create(null);
+      const locked = achievements.filter((a) => !unlockMap[a.id]);
+      for (const a of locked) {
+        try {
+          const result = await calculateAchievementProgress({
+            rest,
+            totalFromContentRange,
+            user_id: userId,
+            rules: a.rules,
+            subtype: a.subtype,
+          });
+          if (result) progressMap[a.id] = result;
+        } catch (_) { /* progress is best-effort */ }
+      }
+
+      const data = achievements.map((a) => {
+        const unlocked = !!unlockMap[a.id];
+        const isHidden = !!a.is_hidden && !unlocked;
+        const progress = progressMap[a.id] || null;
+
+        return {
+          id: a.id,
+          key: isHidden ? null : a.key,
+          name: isHidden ? '?????' : a.name,
+          description: isHidden ? '?????' : (a.description || ''),
+          tier: a.difficulty || null,
+          reward_tabs: Number(a.reward_tabs) || 0,
+          category_key: a.category_key || null,
+          category_name: categoryNameByKey[a.category_key] || null,
+          icon_url: iconByCategory[a.category_key] || null,
+          is_hidden: !!a.is_hidden,
+          unlocked: unlocked,
+          unlocked_at: unlocked ? (unlockMap[a.id] || null) : null,
+          progress_current: unlocked ? null : (progress?.progress_current ?? null),
+          progress_target: unlocked ? null : (progress?.progress_target ?? null),
+        };
+      });
+
+      res.json({ data });
+    } catch (e) {
+      next(e);
+    }
+  });
+
   // GET /api/achievements/next — optional next-achievement nudge data for current user
   router.get('/achievements/next', authMiddleware, async (req, res, next) => {
     try {
