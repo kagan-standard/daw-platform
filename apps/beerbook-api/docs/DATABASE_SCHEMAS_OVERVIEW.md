@@ -1,6 +1,6 @@
 # Database Schemas Overview
 
-Generated: 2026-03-09  
+Generated: 2026-03-20  
 Scope: `apps/beerbook-api/supabase/migrations`
 
 This file outlines the current BeerBook database schema state after applying the BeerBook API Supabase migrations in order.
@@ -20,6 +20,7 @@ This file outlines the current BeerBook database schema state after applying the
 - `apps/beerbook-api/supabase/migrations/20260320100000_admin_featured_beers.sql`
 - `apps/beerbook-api/supabase/migrations/20260321100000_cosmetics_border_fit.sql`
 - `apps/beerbook-api/supabase/migrations/20260329100000_app_config.sql`
+- `apps/beerbook-api/supabase/migrations/20260330100000_ratings_yg_value_canonical_half_steps.sql` (canonical YG: `-1` or `1`–`10` in `0.5` steps; backfill from legacy `-6..7` integer scale)
 
 ## Schemas
 
@@ -41,7 +42,7 @@ This file outlines the current BeerBook database schema state after applying the
 - **Constraints:**
   - `rating` in range 1-5
   - flavor fields in range 0-5
-  - `yg_value` in range -6 to 6 (nullable)
+  - `yg_value`: `NULL` or **canonical** `-1`, or `1`–`10` in **0.5** steps (`ratings_yg_value_check`; `0` invalid). Nullable for legacy/import; **POST /api/ratings** requires a value via BFF validation.
   - `rating_source` (`'user_submitted'` | `'import'`), default `'user_submitted'`
   - `serve_type` in (`draft`, `can`, `bottle`, `crowler`, `growler`, `nitro`)
 

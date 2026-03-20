@@ -59,7 +59,7 @@
 |--------|------|------|--------------|------------|
 | GET | `/api/ratings` | soft (optional) | none | `sort` in whitelist (created_at, rating, beer_name); `order` asc/desc; limit max 100; `is_new_beer` stripped from query (sanitize) |
 | GET | `/api/ratings/user/:id` | soft (optional) | none | same sort/order/limit |
-| POST | `/api/ratings` | actor (JWT or guest) | **ratings** (insert/update); **beers**/ **venues** when new beer/venue; **profiles**, **user_tabs_profile**, **tabs_ledger**, **user_achievements**, **user_cosmetics** for user path; process-event `rating_award` + `rating_submitted`; crew milestones; head-to-head optional | **yg_value** required (-6..7, no zero); guest: `X-Guest-Id` UUID v4 or body; new beer: brewery ≥2 chars, style, abv 0–30; lat/lng together; price_cents positive int; serve_type enum; 409 on similar beer |
+| POST | `/api/ratings` | actor (JWT or guest) | **ratings** (insert/update); **beers**/ **venues** when new beer/venue; **profiles**, **user_tabs_profile**, **tabs_ledger**, **user_achievements**, **user_cosmetics** for user path; process-event `rating_award` + `rating_submitted`; crew milestones; head-to-head optional | **yg_value** required (canonical: `-1` or `1`–`10` in `0.5` steps; `0` invalid); guest: `X-Guest-Id` UUID v4 or body; new beer: brewery ≥2 chars, style, abv 0–30; lat/lng together; price_cents positive int; serve_type enum; 409 on similar beer |
 | PATCH | `/api/ratings/:id` | actor (JWT or guest) | **ratings** only (content update); no tabs/achievements | ownership (user_id or guest_id); same body rules as POST where applicable |
 | DELETE | `/api/ratings/:id` | actor (JWT or guest) | **ratings** (delete); tabs NOT reversed | ownership |
 

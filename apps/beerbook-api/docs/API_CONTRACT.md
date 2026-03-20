@@ -1,6 +1,6 @@
 # BeerBook API Contract (Backend Source of Truth)
 
-Generated: 2026-03-15
+Generated: 2026-03-20
 Source: `daw-platform/apps/beerbook-api`
 Verification: Endpoint parity checked against `server.js` + `routes/*.js` (104 implemented / 104 documented)
 Process-event source: `lib/processEvent.js` + `lib/processEventEngine.js` + `routes/internal.js`
@@ -38,6 +38,7 @@ Process-event source: `lib/processEvent.js` + `lib/processEventEngine.js` + `rou
 - [Endpoints: Admin](#admin)
 - [Endpoints: Internal](#internal)
 - [Public Pages (Share URL)](#public-pages-share-url)
+- [Appendix: YG (`yg_value`) — validation, rounding, analytics](#appendix-yg-yg_value--validation-rounding-analytics)
 - [Side Effects Matrix](#side-effects-matrix)
 - [Known Inconsistencies & Gotchas](#known-inconsistencies--gotchas)
 
@@ -625,7 +626,7 @@ Max 500 breweries. `truncated` is `true` when total exceeds limit. Sorted by dis
       "style": "string",
       "abv": 5.5,
       "rating": 4,
-      "yg_value": 3,
+      "yg_value": 4.5,
       "notes": "string",
       "latitude": 40.123,
       "longitude": -74.456,
@@ -724,7 +725,7 @@ When unauthenticated, `you_cheered` is always `false`.
 |-------|------|----------|------------|
 | `guest_id` / `guestId` | string | no | Alternative to `X-Guest-Id` for guest actor; same UUID format. Prefer header for consistency. |
 | `user_name` / `userName` | string | no | Display name for **guest** ratings (e.g. beer-pun name). Ignored for authenticated users (uses token). Default `"Guest"` if omitted for guest. |
-| `yg_value` / `ygValue` | number | **yes** | Integer -6 to 7, zero not allowed (user-facing scale; internal star rating is derived, never exposed) |
+| `yg_value` / `ygValue` | number | **yes** | **Canonical YG:** `-1`, or any number in `[1, 10]` where `2x` is an integer (half-steps: `1`, `1.5`, …, `10`). **`0` is invalid.** Internal 1–5 star column is derived server-side for DB/legacy only; **do not infer stars from YG in clients.** See [Appendix: YG](#appendix-yg-yg_value--validation-rounding-analytics). |
 | `beer_name` / `beerName` | string | yes* | *Required unless `beer_id` resolves a name |
 | `brewery` | string | yes** | **Required for `is_new_beer` (min 2 chars) |
 | `style` | string | yes** | **Required for `is_new_beer` or when beer style is unknown |
@@ -766,7 +767,7 @@ Note: Accepts both `snake_case` and `camelCase` for most fields.
     "style": "string",
     "abv": 5.5,
     "rating": 4,
-    "yg_value": 3,
+    "yg_value": 4.5,
     "notes": "string",
     "latitude": 40.123,
     "longitude": -74.456,
@@ -855,10 +856,10 @@ Note: Update response does NOT include `tabs_earned`, `tabs_breakdown`, `tier_mu
 **Guest ratings (201 response):** When the request is authenticated as a guest (`X-Guest-Id`, no JWT), the response still returns 201 with `data` and the same top-level keys, but progression fields are zero/default: `tabs_earned` = 0, `tabs_breakdown` = {}, `tabs_reason` = `"weekly_cap"`, `achievements_unlocked` = [], `current_streak_weeks` = 0, `longest_streak_weeks` = 0, `weekly_count` = 0. No tabs or achievements are awarded for guest ratings.
 
 **Error Responses:**
-- 400: `{ "error": "yg_value is required (integer -6 to 7, zero not allowed)" }`
+- 400: `{ "error": "yg_value is required (-1 or 1–10 in steps of 0.5; 0 is not allowed)" }`
 - 400: `{ "error_code": "INVALID_GUEST_ID", "error": "guest_id must be a valid UUID (e.g. client-generated UUID v4)" }` (guest path, invalid or missing `X-Guest-Id` / `guest_id`)
 - 401: `{ "error_code": "AUTH_REQUIRED", "error": "Authentication required. Guest ratings are not enabled." }` (no JWT and guest path when `ENABLE_GUEST_RATINGS` is not set)
-- 400: `{ "error": "yg_value must be an integer from -6 to 7 (zero not allowed)" }`
+- 400: `{ "error": "yg_value must be -1 or a number from 1 to 10 in steps of 0.5 (0 is not allowed)" }`
 - 400: `{ "error": "latitude and longitude must be provided together" }`
 - 400: `{ "error": "latitude and longitude must be valid numbers" }`
 - 400: `{ "error": "price_cents must be a positive integer" }`
@@ -888,11 +889,11 @@ Note: Update response does NOT include `tabs_earned`, `tabs_breakdown`, `tier_mu
 
 **URL Params:** `id` — rating UUID. The rating must be owned by the authenticated user or the guest identified by `X-Guest-Id`.
 
-**Request Body:** Same fields as POST /api/ratings, **all optional** (partial update). Validation rules match POST where applicable (e.g. `yg_value` in allowed set -6..7 no zero, ABV 0–30, lat/lng together, `serve_type` enum, `price_cents` positive integer).
+**Request Body:** Same fields as POST /api/ratings, **all optional** (partial update). Validation rules match POST where applicable (e.g. `yg_value` canonical set: `-1` or `1`–`10` in `0.5` steps, no `0`; ABV 0–30; lat/lng together; `serve_type` enum; `price_cents` positive integer).
 
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
-| `yg_value` / `ygValue` | number | no | Integer -6 to 7 (zero not allowed) |
+| `yg_value` / `ygValue` | number | no | Same allowed set as POST (`-1` or half-steps `1`–`10`; `0` invalid) |
 | `beer_name` / `beerName` | string | no | — |
 | `brewery` | string | no | — |
 | `style` | string | no | — |
@@ -923,7 +924,7 @@ Note: Update response does NOT include `tabs_earned`, `tabs_breakdown`, `tier_mu
     "style": "string",
     "abv": 5.5,
     "rating": 4,
-    "yg_value": 3,
+    "yg_value": 4.5,
     "notes": "string",
     "latitude": 40.123,
     "longitude": -74.456,
@@ -1196,7 +1197,7 @@ Note: Returns 200 with `{ success: true }`, NOT 204.
       "brewery": "string",
       "style": "string",
       "rating": 4,
-      "yg_value": 3,
+      "yg_value": 4.5,
       "created_at": "ISO8601",
       "cheers_count": 2,
       "you_cheered": true,
@@ -4314,6 +4315,67 @@ All admin routes require `authMiddleware` + `adminMiddleware`.
 - 400: HTML "Review Not Found" page (missing `ratingId`)
 - 404: HTML "Review Not Found" page (rating not found)
 - 502: HTML "Review Not Found" page (upstream error)
+
+---
+
+## Appendix: YG (`yg_value`) — validation, rounding, analytics
+
+### Allowed values (write contract)
+
+- **Type:** JSON number (finite; `NaN` / `Infinity` rejected).
+- **Set:** `-1` **or** any `x` with `1 ≤ x ≤ 10` and **`2x ∈ ℤ`** (equivalently: half-step grid `1`, `1.5`, `2`, …, `10`).
+- **`0` is never allowed.** There is no “unset via zero” on create — omitting `yg_value` on **POST** yields a 400 (field required).
+
+**Backward compatibility:** All integers `1` … `10` and `-1` lie on the grid and remain valid. Clients that previously sent only integers can continue; clients that support half-steps should send decimals **as-is** (e.g. `4.5`, not rounded to `4` or `5` before send).
+
+### Validation vs rounding
+
+- The server checks membership on the half-step grid using a small epsilon on `value * 2` so benign float noise (e.g. from JSON parsing) does not false-reject values that are intentionally on the grid.
+- The server **does not** coerce arbitrary values onto the grid (e.g. `4.25` → `4.5`). Off-grid values receive **400** with the error string below.
+
+### Error strings (400)
+
+Responses use `{ "error": "<string>" }` unless otherwise noted.
+
+| Case | Exact `error` string (from `lib/ratingsValidation.js`) |
+|------|----------------------------------------------------------|
+| Missing `yg_value` on POST | `yg_value is required (-1 or 1–10 in steps of 0.5; 0 is not allowed)` |
+| Invalid / off-grid `yg_value` | `yg_value must be -1 or a number from 1 to 10 in steps of 0.5 (0 is not allowed)` |
+
+### Internal `rating` (1–5)
+
+The `ratings.rating` column is **derived** from canonical `yg_value` for legacy/internal use. Formula (server and migration-aligned): `clamp(1, round(1 + (yg + 1) * 4 / 11), 5)` for `yg ∈ [-1, 10]`. **Clients must not reverse-engineer or display this as the user-facing score.**
+
+### Direct DB / PostgREST
+
+Writers that bypass the Node BFF must satisfy the same values: PostgreSQL constraint `ratings_yg_value_check` on `ratings.yg_value` (see migration below).
+
+### Analytics & historical interpretation
+
+**Migration:** `apps/beerbook-api/supabase/migrations/20260330100000_ratings_yg_value_canonical_half_steps.sql`
+
+**Cutoff:** After this migration has been applied to an environment, stored `yg_value` rows are on the **canonical** scale. Pre-migration snapshots or exports that used the legacy integer scale should be interpreted using the backfill mapping below if you compare to current DB totals.
+
+**Legacy → canonical (row backfill applied in that migration):**
+
+| Legacy `yg_value` | Canonical `yg_value` |
+|-------------------|----------------------|
+| `-6`, `-5`, `-4`, `-3`, `-2` | `-1` |
+| `-1` | `-1` |
+| `1` | `1` |
+| `2` | `2.5` |
+| `3` | `4` |
+| `4` | `5.5` |
+| `5` | `7` |
+| `6` | `8.5` |
+| `7` | `10` |
+
+(Formula for old positives `1..7`: `1 + (old - 1) * 1.5`.)
+
+**Aggregates after migration**
+
+- **`total_yg` / leaderboard (`top_yg_values`):** Still **`sum(yg_value)`** per user (see `leaderboard_aggregate`). Sums are in **canonical** units; comparing a user’s total to a pre-migration historical number requires re-mapping old rows or restricting comparisons to post-cutoff data.
+- **`avg_yg_value` (beers, profiles, etc.):** Averages are numeric means of canonical `yg_value`; they may show one decimal (or more in JSON) and are comparable pre/post only after legacy data is backfilled (as in the migration).
 
 ---
 

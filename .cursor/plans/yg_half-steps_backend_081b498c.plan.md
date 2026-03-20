@@ -13,7 +13,7 @@ todos:
     status: completed
   - id: phase-3-docs
     content: "Phase 3: API_CONTRACT + architecture-scan + schema/decisions docs + analytics appendix"
-    status: pending
+    status: completed
 isProject: false
 ---
 

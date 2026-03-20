@@ -126,4 +126,4 @@ Log all assumptions in the **Agent Assumption Log** table at the bottom of the p
 
 ## BeerBook / YG Value
 
-- **YG value range:** 0–12, step 1, integer. The `yg_value` column and API validation accept integer values 0–12. Client-side validation and UI (beer glass slider) use this range; 0 means “not set” (submit as null).
+- **Canonical `yg_value` (API + DB after `20260330100000_ratings_yg_value_canonical_half_steps.sql`):** `-1` (negative review) **or** numbers from **1 to 10** in **0.5** steps (`1`, `1.5`, …, `10`). **`0` is invalid.** Column remains nullable for legacy/import; **POST /api/ratings** requires `yg_value`. Internal `ratings.rating` (1–5) is derived server-side — clients must not treat it as the user-facing YG score. Authoritative write contract and analytics notes: [apps/beerbook-api/docs/API_CONTRACT.md](apps/beerbook-api/docs/API_CONTRACT.md) (appendix **YG (`yg_value`)**).
