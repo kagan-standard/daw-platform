@@ -10,7 +10,7 @@ todos:
     status: completed
   - id: phase-2-api-tests
     content: "Phase 2: ratingsValidation + server.js + tests + aggregate smoke"
-    status: pending
+    status: completed
   - id: phase-3-docs
     content: "Phase 3: API_CONTRACT + architecture-scan + schema/decisions docs + analytics appendix"
     status: pending

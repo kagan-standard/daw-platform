@@ -18,7 +18,11 @@ const { invokeProcessEvent } = require('./lib/processEvent');
 const { requireCrewMembership } = require('./lib/crewAuth');
 const { emitMilestonesAfterRating } = require('./lib/crewMilestones');
 const { getAdminToken, createUser, getTokensForUser, refreshTokens, sendVerificationEmail, deleteUser } = require('./lib/keycloakAdmin');
-const { validateYgValue, ygValueToStarRating } = require('./lib/ratingsValidation');
+const {
+  validateYgValue,
+  ygValueToStarRating,
+  YG_REQUIRED_ERROR,
+} = require('./lib/ratingsValidation');
 const { actorMiddleware, ENABLE_GUEST_RATINGS, validateGuestId } = require('./lib/actorIdentity');
 const { CANONICAL_FAMILIES, styleDistributionToFamilies, styleToFamily } = require('./lib/styleFamily');
 const { mapCatalogBeer } = require('./lib/catalogMap');
@@ -1428,7 +1432,7 @@ app.post('/api/ratings', softAuthMiddleware, actorMiddleware, async (req, res) =
   }
   const ygValue = ygResult.value;
   if (ygValue == null) {
-    return res.status(400).json({ error: 'yg_value is required (integer -6 to 7, zero not allowed)' });
+    return res.status(400).json({ error: YG_REQUIRED_ERROR });
   }
   // Derive internal 1–5 star for DB/legacy only; never exposed to users.
   const rating = ygValueToStarRating(ygValue);

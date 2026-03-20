@@ -1,13 +1,23 @@
 /**
- * Unit tests for POST /api/ratings yg_value validation (bidirectional scale -6 to 6).
- * Phase 4 of yg_scale_bidirectional_ratings_migration_addendum.
+ * Unit tests for POST /api/ratings yg_value validation (canonical scale: -1 or 1–10 in 0.5 steps).
  */
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { validateYgValue, ygValueToStarRating, YG_ERROR } = require('../lib/ratingsValidation');
+const {
+  validateYgValue,
+  ygValueToStarRating,
+  YG_ERROR,
+  YG_GRID_EPS,
+} = require('../lib/ratingsValidation');
 
-test('validateYgValue accepts integers -6 to 7 except zero', () => {
-  for (const v of [-6, -5, -4, -3, -2, -1, 1, 2, 3, 4, 5, 6, 7]) {
+const validGrid = [];
+for (let i = 2; i <= 20; i += 1) {
+  validGrid.push(i / 2); // 1, 1.5, …, 10
+}
+const allValid = [-1, ...validGrid];
+
+test('validateYgValue accepts -1 and 1..10 in half steps', () => {
+  for (const v of allValid) {
     const result = validateYgValue(v);
     assert.equal(result.valid, true, `yg_value ${v} should be valid`);
     assert.equal(result.value, v);
@@ -18,15 +28,22 @@ test('validateYgValue rejects zero', () => {
   assert.deepEqual(validateYgValue(0), { valid: false, error: YG_ERROR });
 });
 
-test('validateYgValue rejects -7 and 8', () => {
-  assert.deepEqual(validateYgValue(-7), { valid: false, error: YG_ERROR });
-  assert.deepEqual(validateYgValue(8), { valid: false, error: YG_ERROR });
+test('validateYgValue rejects out-of-range and legacy negatives', () => {
+  assert.deepEqual(validateYgValue(-2), { valid: false, error: YG_ERROR });
+  assert.deepEqual(validateYgValue(-6), { valid: false, error: YG_ERROR });
+  assert.deepEqual(validateYgValue(10.5), { valid: false, error: YG_ERROR });
+  assert.deepEqual(validateYgValue(11), { valid: false, error: YG_ERROR });
 });
 
-test('validateYgValue rejects non-integers', () => {
-  assert.deepEqual(validateYgValue(3.5), { valid: false, error: YG_ERROR });
-  assert.deepEqual(validateYgValue(-2.1), { valid: false, error: YG_ERROR });
-  assert.deepEqual(validateYgValue(7.0), { valid: true, value: 7 }); // 7.0 is integer
+test('validateYgValue rejects values not on half-step grid', () => {
+  assert.deepEqual(validateYgValue(4.25), { valid: false, error: YG_ERROR });
+  assert.deepEqual(validateYgValue(3.14159), { valid: false, error: YG_ERROR });
+  assert.deepEqual(validateYgValue(-1.5), { valid: false, error: YG_ERROR });
+});
+
+test('validateYgValue accepts numeric strings on grid', () => {
+  assert.deepEqual(validateYgValue('4.5'), { valid: true, value: 4.5 });
+  assert.deepEqual(validateYgValue('-1'), { valid: true, value: -1 });
 });
 
 test('validateYgValue rejects non-numeric and invalid values', () => {
@@ -42,22 +59,38 @@ test('validateYgValue accepts null/undefined (optional field)', () => {
   assert.deepEqual(validateYgValue(undefined), { valid: true, value: null });
 });
 
-test('error message mentions -6 to 7 and zero not allowed', () => {
-  assert.ok(YG_ERROR.includes('-6') && YG_ERROR.includes('7'), 'error message must mention range');
-  assert.ok(YG_ERROR.includes('zero'), 'error message must mention zero not allowed');
-  const result = validateYgValue(0);
-  assert.equal(result.error, 'yg_value must be an integer from -6 to 7 (zero not allowed)');
+test('validateYgValue: epsilon — tiny float noise on grid is accepted', () => {
+  const jitter = YG_GRID_EPS / 4;
+  const result = validateYgValue(4.5 + jitter);
+  assert.equal(result.valid, true);
+  assert.equal(result.value, 4.5);
 });
 
-test('ygValueToStarRating: -6..-2 → 1, -1 → 2, 1..2 → 3, 3..6 → 4, 7 → 5', () => {
-  assert.equal(ygValueToStarRating(-6), 1);
-  assert.equal(ygValueToStarRating(-2), 1);
-  assert.equal(ygValueToStarRating(-1), 2);
-  assert.equal(ygValueToStarRating(1), 3);
-  assert.equal(ygValueToStarRating(2), 3);
-  assert.equal(ygValueToStarRating(3), 4);
-  assert.equal(ygValueToStarRating(6), 4);
-  assert.equal(ygValueToStarRating(7), 5);
+test('validateYgValue: epsilon — far from grid still rejected', () => {
+  const result = validateYgValue(4.5 + YG_GRID_EPS * 100);
+  assert.equal(result.valid, false);
+});
+
+test('error message describes canonical scale and zero', () => {
+  assert.ok(YG_ERROR.includes('-1'), 'error message must mention -1');
+  assert.ok(YG_ERROR.includes('10'), 'error message must mention 10');
+  assert.ok(YG_ERROR.includes('0.5'), 'half steps');
+  assert.ok(YG_ERROR.toLowerCase().includes('not allowed'), 'zero/disallowed');
+});
+
+test('ygValueToStarRating: linear map for canonical range', () => {
+  assert.equal(ygValueToStarRating(-1), 1);
+  assert.equal(ygValueToStarRating(10), 5);
+  assert.equal(ygValueToStarRating(4.5), 3);
+  assert.equal(ygValueToStarRating(1), 2);
+  assert.equal(ygValueToStarRating(7), 4);
+  assert.equal(ygValueToStarRating(9.5), 5);
+});
+
+test('ygValueToStarRating: out-of-range legacy returns 3', () => {
+  assert.equal(ygValueToStarRating(-6), 3);
+  assert.equal(ygValueToStarRating(10.5), 3);
+  assert.equal(ygValueToStarRating(11), 3);
 });
 
 test('ygValueToStarRating 0 returns 3 (invalid fallback)', () => {
