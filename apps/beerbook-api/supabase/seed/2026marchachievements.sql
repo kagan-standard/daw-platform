@@ -50,7 +50,7 @@ VALUES
 ('fifty_ratings', 'House Account', 'Log 50 ratings.', 'starter', 'progress', 'rating_submitted', '{"type":"count","entity":"ratings","gte":50}', false, 'medium', 20, true, 1),
 ('first_new_beer', 'Trailblazer', 'Rate a beer that is new to you.', 'starter', 'special', 'rating_submitted', '{"type":"flag_true","field":"is_new_beer"}', false, 'easy', 5, true, 1),
 ('first_five_star', 'Perfect Pour', 'Give your first top-tier YG rating (YG ≥ 5).', 'starter', 'special', 'rating_submitted', '{"type":"comparison","field":"yg_value","op":">=","value":5}', false, 'easy', 5, true, 1),
-('first_one_star', 'Brutal Honesty', 'Give your first low YG rating (YG ≤ -2).', 'starter', 'special', 'rating_submitted', '{"type":"comparison","field":"yg_value","op":"<=","value":-2}', false, 'easy', 3, true, 1)
+('first_one_star', 'Brutal Honesty', 'Give a negative review.', 'starter', 'special', 'rating_submitted', '{"type":"comparison","field":"yg_value","op":"eq","value":-1}', false, 'easy', 3, true, 2)
 ON CONFLICT (key) DO UPDATE
 SET name=EXCLUDED.name,
     description=EXCLUDED.description,
