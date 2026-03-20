@@ -9,7 +9,8 @@
       "Bash(grep -r \"issuer\\\\|authority\" /c/Users/kenyo/OneDrive/Desktop/daw-platform/daw-platform/apps --include=*.js --include=*.ts)",
       "Bash(find /c/Users/kenyo/OneDrive/Desktop/daw-platform/daw-platform -type f \\\\\\(-name README* -o -name *.md \\\\\\) ! -path *node_modules* ! -path *.git*)",
       "Bash(grep -l \"drinksafterwork\\\\|beerbookapp\" /c/Users/kenyo/OneDrive/Desktop/daw-platform/daw-platform/*.md)",
-      "Bash(grep -r well-known /c/Users/kenyo/OneDrive/Desktop/daw-platform/daw-platform --include=*.js --include=*.json --include=*.md)"
+      "Bash(grep -r well-known /c/Users/kenyo/OneDrive/Desktop/daw-platform/daw-platform --include=*.js --include=*.json --include=*.md)",
+      "Bash(grep -r \"landing\\\\|homepage\\\\|public\" /c/Users/kenyo/OneDrive/Desktop/daw-platform/daw-platform --include=*.json --include=*.js --exclude-dir=node_modules)"
     ]
   }
 }

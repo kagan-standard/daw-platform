@@ -1,0 +1,18 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "BeerBook API",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["server.js"],
+      "port": 3001,
+      "cwd": "apps/beerbook-api"
+    },
+    {
+      "name": "Docker Compose (Full Stack)",
+      "runtimeExecutable": "docker",
+      "runtimeArgs": ["compose", "-f", "infra/compose/docker-compose.yml", "--env-file", "infra/compose/.env", "up", "-d"],
+      "port": 8080
+    }
+  ]
+}

@@ -1,0 +1,953 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>BeerBook — Drinks After Work</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍺</text></svg>">
+    <meta name="description" content="Rate, review, and discover beers with your Drinks After Work community">
+    <meta property="og:title" content="BeerBook — Drinks After Work">
+    <meta property="og:description" content="Rate, review, and discover beers with your Drinks After Work community">
+    <meta property="og:type" content="website">
+    <meta property="og:image" content="https://beerbookapp.com/og-image.jpg">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="BeerBook — Drinks After Work">
+    <meta name="twitter:description" content="Rate, review, and discover beers with your Drinks After Work community">
+    <meta name="twitter:image" content="https://beerbookapp.com/og-image.jpg">
+    <meta name="theme-color" content="#1a1006">
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400&family=Source+Sans+3:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+    <!-- Leaflet -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- ==================== AUTH SCREEN ==================== -->
+    <div id="auth-screen" class="auth-screen">
+        <div class="auth-bg">
+            <div class="bubble"></div>
+            <div class="bubble"></div>
+            <div class="bubble"></div>
+            <div class="bubble"></div>
+            <div class="bubble"></div>
+            <div class="bubble"></div>
+            <div class="bubble"></div>
+            <div class="bubble"></div>
+        </div>
+
+        <div class="auth-container">
+            <div class="auth-logo">
+                <img src="top_bar_bb.png" alt="BeerBook" class="auth-logo-img">
+                <p class="auth-subtitle">by Drinks After Work</p>
+            </div>
+
+            <!-- Setup Config (Keycloak only; shown if not configured and no baked config) -->
+            <div id="setup-config" class="auth-card" style="display:none;">
+                <h2>Connect BeerBook</h2>
+                <p class="config-hint">Enter your Keycloak realm URL, or skip to demo mode.</p>
+                <form id="config-form">
+                    <div class="form-group">
+                        <label for="kc-authority">Keycloak Realm URL</label>
+                        <input type="url" id="kc-authority" placeholder="https://auth.beerbookapp.com/realms/daw" autocomplete="off">
+                    </div>
+                    <div class="form-group">
+                        <label for="kc-client-id">Client ID</label>
+                        <input type="text" id="kc-client-id" value="beerbook" placeholder="beerbook" autocomplete="off">
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-full">Save & Connect</button>
+                    <button type="button" id="skip-config" class="btn btn-ghost btn-full">Skip — Use Demo Mode</button>
+                </form>
+            </div>
+
+            <!-- SSO Login Card -->
+            <div id="login-card" class="auth-card">
+                <p class="sso-hint">Sign in with your Drinks After Work account — the same login you use for DAW Chat, Fantasy Football, and the website.</p>
+
+                <button id="sso-register" class="btn btn-primary btn-full btn-lg">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
+                    Create Account
+                </button>
+
+                <button id="sso-login" class="btn btn-secondary btn-full" style="margin-top: 0.75rem;">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+                    Sign In with DAW
+                </button>
+
+                <div class="auth-divider"><span>or</span></div>
+                <button id="guest-continue" class="btn btn-ghost btn-full">Continue as Guest</button>
+                <p class="auth-hint" style="margin-top:0.25rem;font-size:0.85rem;color:var(--text-muted, #666);">Rate beers without an account. Create an account later to keep your ratings.</p>
+                <button id="demo-login" class="btn btn-ghost btn-full">🍺 Try Demo Mode</button>
+
+                <button id="show-config" class="config-link">⚙ Configure connection</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== MAIN APP ==================== -->
+    <div id="app" class="app" style="display:none;">
+        <!-- Top Navigation -->
+        <header class="topbar top-bar">
+            <div class="topbar-left">
+                <img src="top_bar_bb.png" alt="BeerBook" class="topbar-logo">
+            </div>
+            <nav class="desktop-nav" aria-label="Desktop navigation">
+                <a class="desktop-nav-link active" data-view="dashboard" href="#">Home</a>
+                <a class="desktop-nav-link" data-view="browse" href="#">Browse Beers</a>
+                <a class="desktop-nav-link" data-view="rate" href="#">Rate</a>
+                <a class="desktop-nav-link" data-view="map" href="#">Map</a>
+                <a class="desktop-nav-link" data-view="profile" href="#">Profile</a>
+                <a class="desktop-nav-link admin-only" data-view="admin" id="nav-admin" href="#" style="display:none;">Admin</a>
+                <a class="desktop-nav-link" data-view="exchange" href="#">YG Exchange</a>
+                <a class="desktop-nav-link" data-view="leaderboard" href="#">Leaderboard</a>
+                <a class="desktop-nav-link" data-view="crews" href="#">Crews</a>
+            </nav>
+            <div class="top-bar__greeting">
+                <div id="user-greeting"></div>
+            </div>
+            <div class="topbar-right">
+                <div class="notification-bell" id="notification-bell" style="display:none;">
+                    <button class="notification-btn" id="notification-btn" type="button">
+                        🔔 <span class="notification-badge" id="notification-badge" style="display:none;">0</span>
+                    </button>
+                    <div class="notification-dropdown" id="notification-dropdown" style="display:none;">
+                        <div class="notification-header">
+                            <span>Notifications</span>
+                            <button class="btn btn-ghost btn-xs" id="mark-all-read" type="button">Mark all read</button>
+                        </div>
+                        <div class="notification-list" id="notification-list"></div>
+                    </div>
+                </div>
+                <button type="button" class="hamburger-btn" id="menu-toggle" aria-label="Menu" aria-expanded="false">
+                    <span class="hamburger-icon">☰</span>
+                    <span class="close-icon" style="display:none;">✕</span>
+                </button>
+                <div id="hamburger-menu" class="hamburger-dropdown" style="display:none;" aria-hidden="true">
+                    <nav class="hamburger-nav">
+                        <a class="ham-link" data-view="dashboard" href="#">📰 Activity Feed</a>
+                        <a class="ham-link" data-view="leaderboard" href="#">🏆 Leaderboard</a>
+                        <a class="ham-link" data-view="crews" href="#">👥 Crews</a>
+                        <a class="ham-link admin-only" data-view="admin" id="ham-admin" href="#" style="display:none;">🛠️ Admin</a>
+                        <a class="ham-link" data-view="exchange" href="#">💱 YG Exchange</a>
+                        <hr class="ham-divider">
+                        <a class="ham-link" data-view="profile" href="#">👤 Profile &amp; Stats</a>
+                        <a class="ham-link" id="ham-logout" href="#">🚪 Sign Out</a>
+                    </nav>
+                </div>
+            </div>
+        </header>
+
+        <!-- ========== DASHBOARD VIEW ========== -->
+        <main id="view-dashboard" class="view active">
+            <div class="view-header">
+                <h2>Dashboard</h2>
+                <p class="view-desc">Your community's beer journey at a glance</p>
+            </div>
+
+            <div class="stats-grid" id="stats-grid">
+                <div class="stat-tile">
+                    <span class="stat-tile__icon" aria-hidden="true">🍺</span>
+                    <span class="stat-tile__value" id="stat-beers">0</span>
+                    <span class="stat-tile__label">Beers Rated</span>
+                </div>
+                <div class="stat-tile">
+                    <span class="stat-tile__icon" aria-hidden="true">⭐</span>
+                    <span class="stat-tile__value" id="stat-avg">0.0</span>
+                    <span class="stat-tile__label">Avg Rating</span>
+                </div>
+                <div class="stat-tile">
+                    <span class="stat-tile__icon" aria-hidden="true">👥</span>
+                    <span class="stat-tile__value" id="stat-users">0</span>
+                    <span class="stat-tile__label">Reviewers</span>
+                </div>
+                <div class="stat-tile">
+                    <span class="stat-tile__icon" aria-hidden="true">📝</span>
+                    <span class="stat-tile__value" id="stat-reviews">0</span>
+                    <span class="stat-tile__label">Total Reviews</span>
+                </div>
+                <div class="stat-tile">
+                    <span class="stat-tile__icon" aria-hidden="true">📍</span>
+                    <span class="stat-tile__value" id="stat-venues">0</span>
+                    <span class="stat-tile__label">Venues Discovered</span>
+                </div>
+                <div class="stat-tile">
+                    <span class="stat-tile__icon" aria-hidden="true">🍻</span>
+                    <span class="stat-tile__value" id="stat-avg-yg">—</span>
+                    <span class="stat-tile__label">Community Avg YG</span>
+                </div>
+                <div class="stat-tile stat-tile--botw" id="stat-tile-botw">
+                    <span class="stat-tile__icon" aria-hidden="true">🏆</span>
+                    <span class="stat-tile__value stat-tile__value--botw" id="stat-botw">—</span>
+                    <span class="stat-tile__label">Beer of the Week</span>
+                </div>
+            </div>
+
+            <div class="tabs-widget" id="tabs-widget" style="display:none;">
+                <div class="tabs-widget-header">
+                    <div class="tabs-tier-badge" id="tabs-tier-badge"></div>
+                    <div class="tabs-balance" id="tabs-balance"></div>
+                </div>
+                <div class="tabs-widget-body">
+                    <div class="tabs-weekly-progress" id="tabs-weekly-progress"></div>
+                    <div class="tabs-streak" id="tabs-streak"></div>
+                    <div class="tabs-next-tier" id="tabs-next-tier"></div>
+                </div>
+            </div>
+
+            <div class="charts-list" id="dashboard-charts">
+                <div class="chart-card" data-chart-id="activity" id="chart-card-activity">
+                    <div class="chart-card__header">
+                        <div>
+                            <h3 class="chart-card__title">Recent Activity</h3>
+                            <p class="chart-card__summary" id="chart-summary-activity">—</p>
+                        </div>
+                        <span class="chart-card__chevron" aria-hidden="true">▸</span>
+                    </div>
+                    <div class="chart-card__body">
+                        <div class="chart-card__body-inner">
+                            <canvas id="chart-activity"></canvas>
+                        </div>
+                    </div>
+                </div>
+                <div class="chart-card" data-chart-id="topBeers" id="chart-card-top-beers">
+                    <div class="chart-card__header">
+                        <div>
+                            <h3 class="chart-card__title">Top Rated Beers</h3>
+                            <p class="chart-card__summary" id="chart-summary-top-beers">—</p>
+                        </div>
+                        <span class="chart-card__chevron" aria-hidden="true">▸</span>
+                    </div>
+                    <div class="chart-card__body">
+                        <div class="chart-card__body-inner">
+                            <canvas id="chart-top-beers"></canvas>
+                        </div>
+                    </div>
+                </div>
+                <div class="chart-card" data-chart-id="styles" id="chart-card-styles">
+                    <div class="chart-card__header">
+                        <div>
+                            <h3 class="chart-card__title">Ratings by Style</h3>
+                            <p class="chart-card__summary" id="chart-summary-styles">—</p>
+                        </div>
+                        <span class="chart-card__chevron" aria-hidden="true">▸</span>
+                    </div>
+                    <div class="chart-card__body">
+                        <div class="chart-card__body-inner">
+                            <canvas id="chart-styles"></canvas>
+                        </div>
+                    </div>
+                </div>
+                <div class="chart-card" data-chart-id="distribution" id="chart-card-distribution">
+                    <div class="chart-card__header">
+                        <div>
+                            <h3 class="chart-card__title">Rating Distribution</h3>
+                            <p class="chart-card__summary" id="chart-summary-distribution">—</p>
+                        </div>
+                        <span class="chart-card__chevron" aria-hidden="true">▸</span>
+                    </div>
+                    <div class="chart-card__body">
+                        <div class="chart-card__body-inner">
+                            <div class="chart-wrapper">
+                                <canvas id="chart-distribution"></canvas>
+                                <div class="chart-empty" id="chart-distribution-empty">📊 Not enough data for this chart yet.</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="chart-card" data-chart-id="ygDist" id="chart-card-yg">
+                    <div class="chart-card__header">
+                        <div>
+                            <h3 class="chart-card__title">YG Distribution</h3>
+                            <p class="chart-card__summary" id="chart-summary-yg">—</p>
+                        </div>
+                        <span class="chart-card__chevron" aria-hidden="true">▸</span>
+                    </div>
+                    <div class="chart-card__body">
+                        <div class="chart-card__body-inner">
+                            <div class="chart-wrapper">
+                                <canvas id="chart-yg"></canvas>
+                                <div class="chart-empty" id="chart-yg-empty">📈 No YG values yet. Start rating beers with YG values to see the exchange!</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="chart-card" data-chart-id="monthly" id="chart-card-monthly">
+                    <div class="chart-card__header">
+                        <div>
+                            <h3 class="chart-card__title">Monthly Activity</h3>
+                            <p class="chart-card__summary" id="chart-summary-monthly">—</p>
+                        </div>
+                        <span class="chart-card__chevron" aria-hidden="true">▸</span>
+                    </div>
+                    <div class="chart-card__body">
+                        <div class="chart-card__body-inner">
+                            <div class="chart-wrapper">
+                                <canvas id="chart-monthly"></canvas>
+                                <div class="chart-empty" id="chart-monthly-empty">📊 Not enough data for this chart yet.</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="activity-feed-section">
+                <h3>Recent Activity</h3>
+                <div id="activity-feed" class="activity-feed">
+                    <div class="activity-skeleton" id="activity-skeleton">
+                        <div class="skeleton" style="height:48px;margin-bottom:8px;"></div>
+                        <div class="skeleton" style="height:48px;margin-bottom:8px;"></div>
+                        <div class="skeleton" style="height:48px;"></div>
+                    </div>
+                </div>
+                <button type="button" id="activity-load-more" class="btn btn-ghost btn-load-more" style="display:none;">Load more</button>
+                <div id="activity-sentinel" class="infinite-scroll-sentinel" aria-hidden="true"></div>
+                <div id="activity-loading" class="infinite-scroll-loading" style="display:none;">Loading…</div>
+            </div>
+
+            <div class="recent-section">
+                <h3>Recent Reviews</h3>
+                <div id="recent-reviews" class="reviews-list">
+                    <p class="empty-state">No reviews yet. Be the first to rate a beer!</p>
+                </div>
+            </div>
+        </main>
+
+        <!-- ========== RATE A BEER VIEW ========== -->
+        <main id="view-rate" class="view">
+            <div class="view-header">
+                <h2>Rate a Beer</h2>
+                <p class="view-desc">Share your thoughts on what you're drinking</p>
+            </div>
+
+            <form id="rating-form" class="rating-form">
+                <div class="form-row">
+                    <div class="form-group flex-2 beer-autocomplete-wrap">
+                        <label for="beer-name">Beer Name *</label>
+                        <input type="text" id="beer-name" placeholder="e.g. Pliny the Elder" required autocomplete="off">
+                        <input type="hidden" id="rating-beer-id" value="">
+                        <div id="beer-autocomplete" class="autocomplete-dropdown" aria-hidden="true"></div>
+                        <div id="autocomplete-hint" class="autocomplete-hint" aria-live="polite" style="display:none;">Don't see your beer? Just type the name — you can rate anything!</div>
+                    </div>
+                </div>
+
+                <div id="new-beer-helper-banner" class="new-beer-helper-banner" style="display:none;">
+                    🆕 Adding a new beer requires Brewery, Style, and ABV so others can find it. You'll earn 1.5x tabs for contributing! 🍺
+                </div>
+
+                <div class="form-row">
+                    <div id="beer-brewery-group" class="form-group flex-1 brewery-autocomplete-wrap">
+                        <label for="beer-brewery">Brewery <span class="new-beer-required-indicator" style="display:none;">*</span></label>
+                        <input type="text" id="beer-brewery" placeholder="e.g. Russian River" autocomplete="off">
+                        <div id="brewery-autocomplete" class="autocomplete-dropdown" aria-hidden="true"></div>
+                    </div>
+                    <div id="beer-style-group" class="form-group flex-1">
+                        <label for="beer-style">Style <span class="new-beer-required-indicator" style="display:none;">*</span></label>
+                        <select id="beer-style">
+                            <option value="">Select style...</option>
+                            <option value="IPA">IPA</option>
+                            <option value="Double IPA">Double IPA</option>
+                            <option value="Hazy IPA">Hazy IPA</option>
+                            <option value="Pale Ale">Pale Ale</option>
+                            <option value="Stout">Stout</option>
+                            <option value="Imperial Stout">Imperial Stout</option>
+                            <option value="Porter">Porter</option>
+                            <option value="Pilsner">Pilsner</option>
+                            <option value="Lager">Lager</option>
+                            <option value="Wheat Beer">Wheat Beer</option>
+                            <option value="Belgian">Belgian</option>
+                            <option value="Saison">Saison</option>
+                            <option value="Sour">Sour</option>
+                            <option value="Amber Ale">Amber Ale</option>
+                            <option value="Brown Ale">Brown Ale</option>
+                            <option value="Red Ale">Red Ale</option>
+                            <option value="Barleywine">Barleywine</option>
+                            <option value="Scotch Ale">Scotch Ale</option>
+                            <option value="Kolsch">Kölsch</option>
+                            <option value="Hefeweizen">Hefeweizen</option>
+                            <option value="Bock">Bock</option>
+                            <option value="Dunkel">Dunkel</option>
+                            <option value="Gose">Gose</option>
+                            <option value="Berliner Weisse">Berliner Weisse</option>
+                            <option value="Cream Ale">Cream Ale</option>
+                            <option value="Cider">Cider</option>
+                            <option value="Mead">Mead</option>
+                            <option value="Other">Other</option>
+                        </select>
+                    </div>
+                    <div id="beer-abv-group" class="form-group flex-1">
+                        <label for="beer-abv">ABV % <span class="new-beer-required-indicator" style="display:none;">*</span></label>
+                        <input type="number" id="beer-abv" placeholder="6.5" min="0" max="30" step="0.1">
+                    </div>
+                </div>
+
+                <div id="new-beer-match-check" class="new-beer-match-check" style="display:none;"></div>
+
+                <div class="rating-stars-section" style="display:none;" aria-hidden="true">
+                    <label>Overall Rating *</label>
+                    <div class="star-rating" id="star-rating">
+                        <button type="button" class="star" data-value="1">★</button>
+                        <button type="button" class="star" data-value="2">★</button>
+                        <button type="button" class="star" data-value="3">★</button>
+                        <button type="button" class="star" data-value="4">★</button>
+                        <button type="button" class="star" data-value="5">★</button>
+                    </div>
+                    <span class="rating-label" id="rating-label">Select a rating</span>
+                    <input type="hidden" id="beer-rating" value="3">
+                </div>
+
+                <div class="form-group yg-slider-group">
+                    <label>YG Value * <span class="label-hint">How many Yuengling Golden Pilsners is this worth? (-6 to +7, zero not an option)</span></label>
+                    <input type="hidden" id="yg-value" name="yg_value" value="7">
+                    <div class="yg-track-wrap">
+                        <div class="yg-track" id="yg-track" role="slider" aria-valuemin="1" aria-valuemax="13" aria-valuenow="7" aria-label="YG value" tabindex="0">
+                            <div class="yg-glasses" id="yg-glasses" aria-live="polite"></div>
+                        </div>
+                    </div>
+                    <div class="yg-hint-row">
+                        <span class="yg-context" id="yg-context">Tap a glass to rate in YGs</span>
+                        <span class="yg-display-wrap">
+                            <span class="yg-display" id="yg-display">+1 YG</span>
+                            <button type="button" class="yg-clear btn btn-ghost btn-sm" id="yg-clear" aria-label="Clear YG value" style="display:none;">Clear</button>
+                        </span>
+                    </div>
+                </div>
+
+                <div class="form-group serve-type-group">
+                    <label>Serve type <span class="label-hint">Optional</span></label>
+                    <div class="serve-type-picker" id="serve-type-picker" role="group" aria-label="How was it served?">
+                        <button type="button" class="serve-type-opt" data-serve-type="draft"><span class="serve-type-pill">Draft</span></button>
+                        <button type="button" class="serve-type-opt" data-serve-type="can"><span class="serve-type-pill">Can</span></button>
+                        <button type="button" class="serve-type-opt" data-serve-type="bottle"><span class="serve-type-pill">Bottle</span></button>
+                        <button type="button" class="serve-type-opt" data-serve-type="crowler"><span class="serve-type-pill">Crowler</span></button>
+                        <button type="button" class="serve-type-opt" data-serve-type="growler"><span class="serve-type-pill">Growler</span></button>
+                        <button type="button" class="serve-type-opt" data-serve-type="nitro"><span class="serve-type-pill">Nitro</span></button>
+                    </div>
+                    <input type="hidden" id="rating-serve-type" name="serve_type" value="">
+                </div>
+
+                <div class="flavor-sliders">
+                    <label>Flavor Profile</label>
+                    <div class="slider-group">
+                        <div class="slider-row">
+                            <span class="slider-name">Hoppy</span>
+                            <input type="range" id="flavor-hoppy" min="0" max="5" value="0" step="1">
+                            <span class="slider-val" id="val-hoppy">0</span>
+                        </div>
+                        <div class="slider-row">
+                            <span class="slider-name">Malty</span>
+                            <input type="range" id="flavor-malty" min="0" max="5" value="0" step="1">
+                            <span class="slider-val" id="val-malty">0</span>
+                        </div>
+                        <div class="slider-row">
+                            <span class="slider-name">Bitter</span>
+                            <input type="range" id="flavor-bitter" min="0" max="5" value="0" step="1">
+                            <span class="slider-val" id="val-bitter">0</span>
+                        </div>
+                        <div class="slider-row">
+                            <span class="slider-name">Sweet</span>
+                            <input type="range" id="flavor-sweet" min="0" max="5" value="0" step="1">
+                            <span class="slider-val" id="val-sweet">0</span>
+                        </div>
+                        <div class="slider-row">
+                            <span class="slider-name">Fruity</span>
+                            <input type="range" id="flavor-fruity" min="0" max="5" value="0" step="1">
+                            <span class="slider-val" id="val-fruity">0</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-group location-group">
+                    <label>Location</label>
+                    <div class="location-row">
+                        <button type="button" id="btn-add-location" class="btn btn-ghost">📍 Add Location</button>
+                        <input type="text" id="location-manual" class="location-manual" placeholder="Or type location manually" autocomplete="off">
+                    </div>
+                    <div id="location-chip" class="location-chip" style="display:none;">
+                        <span id="location-chip-text"></span>
+                        <button type="button" id="location-chip-remove" class="location-chip-remove" aria-label="Remove location">✕</button>
+                    </div>
+                    <div id="venue-type-picker" class="venue-type-picker" style="display:none;">
+                        <p class="venue-type-picker__label">What kind of place?</p>
+                        <div class="venue-type-picker__options">
+                            <button type="button" class="venue-type-opt" data-type="brewery">
+                                <span class="venue-type-pill venue-type-pill--brewery">Brewery</span>
+                            </button>
+                            <button type="button" class="venue-type-opt" data-type="bar">
+                                <span class="venue-type-pill venue-type-pill--bar">Bar &amp; Pub</span>
+                            </button>
+                            <button type="button" class="venue-type-opt" data-type="restaurant">
+                                <span class="venue-type-pill venue-type-pill--restaurant">Restaurant</span>
+                            </button>
+                        </div>
+                    </div>
+                    <input type="hidden" id="rating-venue-type" value="">
+                    <div id="venue-picker" class="venue-picker" style="display:none;">
+                        <label>Where are you drinking?</label>
+                        <div id="venue-suggestions" class="venue-suggestions">
+                            <div class="venue-suggestion-skeleton">
+                                <div class="skeleton" style="height:40px;margin-bottom:6px;"></div>
+                                <div class="skeleton" style="height:40px;margin-bottom:6px;"></div>
+                            </div>
+                        </div>
+                        <button type="button" class="btn btn-ghost btn-sm" id="btn-custom-venue">
+                            + Add a different place
+                        </button>
+                    </div>
+                    <div id="venue-chip" class="venue-chip" style="display:none;">
+                        <span id="venue-chip-text"></span>
+                        <button type="button" id="venue-chip-remove" class="venue-chip-remove" aria-label="Remove venue">✕</button>
+                    </div>
+                    <input type="hidden" id="rating-lat">
+                    <input type="hidden" id="rating-lng">
+                    <input type="hidden" id="rating-location-name">
+                    <input type="hidden" id="rating-venue-id">
+                </div>
+
+                <div id="price-log-section" class="price-log-section" style="display:none;">
+                    <button type="button" class="price-log-toggle" id="price-log-toggle" aria-expanded="false">
+                        <span class="price-log-toggle-text">💰 Log a Price</span>
+                        <span class="price-log-chevron price-log-chevron-down" aria-hidden="true">▾</span>
+                        <span class="price-log-chevron price-log-chevron-up" aria-hidden="true">▴</span>
+                    </button>
+                    <div class="price-log-fields" id="price-log-fields">
+                        <div class="price-log-inline">
+                            <input type="text" id="price-amount" class="price-input-compact" placeholder="$6.50" inputmode="decimal" aria-label="Price">
+                            <label class="checkbox-label happy-hour-label">
+                                <input type="checkbox" id="price-happy-hour" class="happy-hour-checkbox">
+                                <span class="toggle-pill" aria-hidden="true"><span class="toggle-pill-thumb"></span></span>
+                                <span class="toggle-pill-on-label">HH</span>
+                                <span class="happy-hour-text">Happy Hour?</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-group photo-group">
+                    <label>Photo</label>
+                    <input type="file" id="photo-input" accept="image/jpeg,image/png,image/webp" capture="environment" class="photo-input-hidden" tabindex="-1" aria-hidden="true">
+                    <button type="button" class="btn btn-ghost" id="btn-add-photo">📷 Add Photo</button>
+                    <div id="photo-preview" class="photo-preview"></div>
+                    <div id="upload-progress" style="display:none; color: var(--amber); font-size: 0.85rem; margin-top: 0.5rem;"></div>
+                </div>
+
+                <div class="form-group">
+                    <label for="beer-notes">Tasting Notes</label>
+                    <textarea id="beer-notes" rows="3" placeholder="What did you think? Aroma, taste, mouthfeel..."></textarea>
+                </div>
+
+                <button type="submit" class="btn btn-primary btn-full btn-lg rate-submit-btn">
+                    <span class="btn-text">🍺 Submit Rating</span>
+                    <span class="btn-loader" style="display:none;">Saving...</span>
+                </button>
+                <div id="rating-validation-msg" class="rating-validation-msg" aria-live="polite"></div>
+            </form>
+        </main>
+
+        <!-- ========== EXCHANGE VIEW ========== -->
+        <main id="view-exchange" class="view">
+            <div class="view-header">
+                <h2>📈 The YG Exchange</h2>
+                <p class="view-desc">Trade rates in Yuengling Golden Pilsner units</p>
+            </div>
+            <div id="exchange-table-wrap" class="exchange-table-wrap">
+                <div class="exchange-skeleton" id="exchange-skeleton">
+                    <div class="skeleton" style="height: 32px; margin-bottom: 8px;"></div>
+                    <div class="skeleton" style="height: 32px; margin-bottom: 8px;"></div>
+                    <div class="skeleton" style="height: 32px;"></div>
+                </div>
+                <div id="exchange-empty" class="exchange-empty" style="display:none;"></div>
+                <table id="exchange-table" class="exchange-table" aria-hidden="true">
+                    <thead>
+                        <tr>
+                            <th data-sort="beer_name">Beer</th>
+                            <th data-sort="yg_rate">YG Rate</th>
+                            <th data-sort="avg_stars">⭐</th>
+                            <th data-sort="trend">Trend</th>
+                            <th data-sort="rating_count"># Rated</th>
+                        </tr>
+                    </thead>
+                    <tbody id="exchange-tbody"></tbody>
+                </table>
+            </div>
+            <div id="exchange-cross-rate" class="exchange-cross-rate-card">
+                <h3>Cross-Rate Calculator</h3>
+                <div class="cross-rate-row">
+                    <select id="cross-beer-a" class="filter-select"></select>
+                    <span class="cross-rate-equals">1 … =</span>
+                    <span id="cross-rate-value" class="cross-rate-value">—</span>
+                    <select id="cross-beer-b" class="filter-select"></select>
+                </div>
+                <p id="cross-rate-reverse" class="cross-rate-reverse"></p>
+            </div>
+            <div id="exchange-parity" class="exchange-parity-card">
+                <h3>YG Parity Index</h3>
+                <p id="exchange-parity-text" class="exchange-parity-text">Add beer prices to unlock the YG Parity Index!</p>
+            </div>
+        </main>
+
+        <!-- ========== MAP VIEW ========== -->
+        <main id="view-map" class="view view-map">
+            <div class="view-header view-map-header view-map-header-breathe">
+                <h2 class="view-map-title">Beer Map</h2>
+                <p class="view-map-subheader">Discover what the crew is drinking</p>
+            </div>
+            <div class="map-toggle-row">
+                <div class="map-toggle-group" role="group" aria-label="Map mode">
+                    <button type="button" class="map-toggle-btn active" data-layer="discover" aria-pressed="true">Discover</button>
+                    <button type="button" class="map-toggle-btn" data-layer="mymap" aria-pressed="false">My Map</button>
+                </div>
+                <button id="map-nearme-btn" class="map-nearme-btn" title="Near Me" aria-label="Find venues near me">
+                    📍 Near Me
+                </button>
+            </div>
+            <div class="map-controls">
+                <button class="btn btn-primary" id="btn-near-me">🍺 Best Beer Near Me</button>
+                <button class="btn btn-ghost" id="btn-my-trail" style="display:none;">My Trail</button>
+                <select id="map-filter-style" class="filter-select">
+                    <option value="">All Styles</option>
+                </select>
+            </div>
+            <div class="map-wrapper">
+                <div id="beer-map" class="beer-map-container"></div>
+            </div>
+            <div id="bb-sheet-root" class="bb-sheet-root" data-state="MIN">
+                <div class="bb-sheet-backdrop" id="bb-sheet-backdrop"></div>
+                <section class="bb-sheet" id="bb-sheet" role="dialog" aria-modal="false">
+                    <div class="bb-sheet-chrome" id="bb-sheet-chrome">
+                        <div class="bb-sheet-header" id="bb-sheet-header">
+                            <div class="bb-sheet-handle">
+                                <span class="bb-sheet-handle-bar"></span>
+                            </div>
+                            <div class="bb-sheet-chevron" id="bb-sheet-chevron" aria-hidden="true">
+                                <span class="bb-sheet-chevron-icon">︿</span>
+                            </div>
+                            <div class="bb-sheet-title-row">
+                                <h3 id="bb-sheet-title" class="bb-sheet-title">Discover Venues</h3>
+                                <p id="bb-sheet-subtitle" class="bb-sheet-subtitle"></p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="bb-sheet-body" id="bb-sheet-body">
+                        <div class="bb-sheet-min-preview" id="bb-sheet-min-preview"></div>
+                        <div class="bb-sheet-detail" id="bb-sheet-detail" style="display:none;">
+                            <button class="bb-sheet-back" id="bb-sheet-back" type="button">← Back to list</button>
+                            <div id="bb-sheet-detail-body"></div>
+                        </div>
+                        <div class="bb-sheet-scroll" id="bb-sheet-scroll"></div>
+                    </div>
+                </section>
+            </div>
+            <div id="map-sidebar" class="map-sidebar"></div>
+        </main>
+
+        <!-- ========== BROWSE VIEW ========== -->
+        <main id="view-browse" class="view">
+            <div class="browse-tabs" role="tablist" aria-label="Browse mode">
+                <button type="button" class="browse-tab active" data-tab="community" role="tab" aria-selected="true">Community Ratings</button>
+                <button type="button" class="browse-tab" data-tab="catalog" role="tab" aria-selected="false">Beer Catalog</button>
+            </div>
+
+            <div class="browse-filter-bar">
+                <div class="browse-search">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="8"/>
+                        <path d="m21 21-4.3-4.3"/>
+                    </svg>
+                    <input type="text" id="search-input" placeholder="Search beers, breweries…" autocomplete="off">
+                </div>
+                <button class="browse-chip" id="btn-open-filters">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M4 6h16M7 12h10M10 18h4"/>
+                    </svg>
+                    Filters
+                </button>
+                <button class="browse-chip browse-chip--active" id="sort-label">Most Recent</button>
+            </div>
+
+            <div id="beer-feed" class="beer-feed">
+                <p class="empty-state">No beers found. Start rating!</p>
+            </div>
+            <div style="display:none;" aria-hidden="true">
+                <select id="filter-style" class="filter-select"><option value="">All Styles</option></select>
+                <select id="sort-by" class="filter-select">
+                    <option value="recent">Most Recent</option>
+                    <option value="highest">Highest Rated</option>
+                    <option value="lowest">Lowest Rated</option>
+                    <option value="name">Alphabetical</option>
+                </select>
+            </div>
+            <div id="catalog-grid" class="beer-grid catalog-grid" style="display:none;"></div>
+            <div id="browse-sentinel" class="infinite-scroll-sentinel" aria-hidden="true"></div>
+            <div id="browse-loading" class="infinite-scroll-loading" style="display:none;">Loading…</div>
+        </main>
+
+        <!-- ========== LEADERBOARD VIEW ========== -->
+        <main id="view-leaderboard" class="view">
+            <div class="view-header">
+                <h2>Leaderboard</h2>
+                <p class="view-desc">Who's the biggest beer connoisseur?</p>
+            </div>
+
+            <div class="leaderboard-tabs" role="tablist">
+                <button type="button" class="lb-tab active" data-period="alltime" role="tab">All Time</button>
+                <button type="button" class="lb-tab" data-period="monthly" role="tab">This Month</button>
+                <button type="button" class="lb-tab" data-period="weekly" role="tab">This Week</button>
+            </div>
+
+            <div class="leaderboard-grid">
+                <div class="lb-card">
+                    <h3>🏆 Top Reviewers</h3>
+                    <div id="lb-reviewers" class="lb-list"></div>
+                </div>
+                <div class="lb-card">
+                    <h3>⭐ Highest Rated Beers</h3>
+                    <div id="lb-beers" class="lb-list"></div>
+                </div>
+                <div class="lb-card">
+                    <h3>🏅 Style Champions</h3>
+                    <div id="lb-styles" class="lb-list"></div>
+                </div>
+                <div class="lb-card">
+                    <h3>🍺 Most Reviewed</h3>
+                    <div id="lb-popular" class="lb-list"></div>
+                </div>
+                <div class="lb-card">
+                    <h3>🍻 Most Cheered</h3>
+                    <div id="lb-cheers" class="lb-list"></div>
+                </div>
+                <div class="lb-card">
+                    <h3>🪙 Tabs Leaderboard</h3>
+                    <div id="lb-tabs" class="lb-list"></div>
+                </div>
+            </div>
+        </main>
+
+        <!-- ========== ADMIN VIEW ========== -->
+        <main id="view-admin" class="view admin-only" style="display:none;">
+            <div class="view-header">
+                <h2>⚙️ Admin Panel</h2>
+                <p class="view-desc">Manage Tabs economy and users</p>
+            </div>
+            <div class="admin-tabs" id="admin-tabs">
+                <button class="admin-tab active" data-admin-view="users" type="button">👥 Users &amp; Tabs</button>
+                <button class="admin-tab" data-admin-view="submissions" type="button">📌 Submissions (Future)</button>
+                <button class="admin-tab" data-admin-view="economy" type="button">📊 Economy Stats</button>
+                <button class="admin-tab" data-admin-view="challenges" type="button">🏆 Challenges</button>
+                <button class="admin-tab" data-admin-view="achievements" type="button">🎖️ Achievements</button>
+                <button class="admin-tab" data-admin-view="featured" type="button">🍺 Featured Beers</button>
+                <button class="admin-tab" data-admin-view="cosmetics" type="button">✨ Cosmetics</button>
+            </div>
+
+            <div id="admin-users" class="admin-panel active"></div>
+            <div id="admin-submissions" class="admin-panel" style="display:none;"></div>
+            <div id="admin-economy" class="admin-panel" style="display:none;"></div>
+            <div id="admin-challenges" class="admin-panel" style="display:none;"></div>
+            <div id="admin-achievements" class="admin-panel" style="display:none;"></div>
+            <div id="admin-featured" class="admin-panel" style="display:none;"></div>
+            <div id="admin-cosmetics" class="admin-panel" style="display:none;"></div>
+        </main>
+
+        <!-- ========== CREWS VIEW ========== -->
+        <main id="view-crews" class="view">
+            <div class="view-header">
+                <h2>My Crews</h2>
+                <p class="view-desc">Create crews, join by invite code, and manage your members</p>
+            </div>
+            <div class="crew-toolbar">
+                <button type="button" class="btn btn-primary" id="create-crew-btn">+ Create Crew</button>
+                <button type="button" class="btn btn-ghost" id="join-crew-btn">Join with Code</button>
+            </div>
+            <div id="crews-list" class="reviews-list">
+                <p class="empty-state">No crews yet. Create one or join with a code.</p>
+            </div>
+            <div id="crew-detail" style="display:none;"></div>
+        </main>
+
+        <!-- ========== PROFILE VIEW ========== -->
+        <main id="view-profile" class="view">
+            <div class="view-header">
+                <h2>My Profile</h2>
+                <p class="view-desc">Your beer journey</p>
+            </div>
+
+            <div class="profile-header-card">
+                <div class="profile-avatar" id="profile-avatar">🍺</div>
+                <div class="profile-info">
+                    <h3 id="profile-name">Beer Lover</h3>
+                    <p id="profile-email" class="profile-email"></p>
+                    <div class="profile-badges">
+                        <span class="badge" id="badge-count">0 reviews</span>
+                        <span class="badge" id="badge-joined">Joined today</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="profile-stats-grid">
+                <div class="pstat">
+                    <span class="pstat-val" id="pstat-total">0</span>
+                    <span class="pstat-label">Beers Rated</span>
+                </div>
+                <div class="pstat">
+                    <span class="pstat-val" id="pstat-avg">—</span>
+                    <span class="pstat-label">Avg Rating</span>
+                </div>
+                <div class="pstat">
+                    <span class="pstat-val" id="pstat-fav">—</span>
+                    <span class="pstat-label">Fav Style</span>
+                </div>
+            </div>
+
+            <div class="profile-tabs-card" id="profile-tabs-card" style="display:none;">
+                <h3>🪙 Tabs</h3>
+                <div id="profile-tabs-summary"></div>
+            </div>
+
+            <div class="profile-chart-card">
+                <h3>My Rating History</h3>
+                <canvas id="chart-my-ratings"></canvas>
+            </div>
+
+            <div class="profile-reviews-section">
+                <h3>My Reviews</h3>
+                <div id="my-reviews" class="reviews-list"></div>
+            </div>
+        </main>
+
+        <nav class="bottom-tab-nav" id="bottom-tab-nav" aria-label="Main navigation">
+            <button type="button" class="tab-item active" data-view="dashboard">
+                <span class="tab-icon"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></span>
+                <span class="tab-label">Home</span>
+            </button>
+            <button type="button" class="tab-item" data-view="browse">
+                <span class="tab-icon"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>
+                <span class="tab-label">Browse</span>
+            </button>
+            <button type="button" class="tab-item tab-rate" data-view="rate">
+                <span class="tab-icon">+</span>
+                <span class="tab-label">Rate</span>
+            </button>
+            <button type="button" class="tab-item" data-view="map">
+                <span class="tab-icon">🗺️</span>
+                <span class="tab-label">Map</span>
+            </button>
+            <button type="button" class="tab-item" data-view="profile">
+                <span class="tab-icon"><svg viewBox="0 0 24 24"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
+                <span class="tab-label">Profile</span>
+            </button>
+        </nav>
+
+        <!-- Browse Filter Sheet -->
+        <div class="filter-sheet-overlay" id="browse-filter-sheet">
+            <div class="filter-sheet" role="dialog" aria-label="Filter and sort">
+                <div class="filter-sheet__handle"></div>
+                <h3 class="filter-sheet__title">Filter & Sort</h3>
+
+                <div class="filter-sheet__group">
+                    <div class="filter-sheet__label">Sort By</div>
+                    <div class="filter-sheet__options" data-filter="sort">
+                        <button class="filter-sheet__opt active" data-value="recent">Most Recent</button>
+                        <button class="filter-sheet__opt" data-value="highest">Highest Rated</button>
+                        <button class="filter-sheet__opt" data-value="lowest">Lowest Rated</button>
+                        <button class="filter-sheet__opt" data-value="name">Alphabetical</button>
+                    </div>
+                </div>
+
+                <div class="filter-sheet__group">
+                    <div class="filter-sheet__label">Style</div>
+                    <div class="filter-sheet__options" id="filter-style-options" data-filter="style">
+                        <button class="filter-sheet__opt active" data-value="">All Styles</button>
+                    </div>
+                </div>
+
+                <button class="filter-sheet__apply" id="btn-apply-filters">
+                    Apply Filters
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast container -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <!-- Style tooltip (hover over style names) -->
+    <div id="style-tooltip" class="style-tooltip-popup" role="tooltip" aria-hidden="true"></div>
+
+    <!-- Venue detail modal -->
+    <div id="venue-modal" class="modal-overlay venue-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="venue-modal-title" style="display:none;">
+        <div class="modal-content venue-modal-content">
+            <div id="venue-modal-body"></div>
+            <button type="button" id="venue-modal-close" class="btn btn-ghost venue-modal-close" aria-label="Close">✕</button>
+        </div>
+    </div>
+
+    <!-- Delete rating modal -->
+    <div id="delete-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="delete-modal-title" style="display:none;">
+        <div class="modal-content">
+            <h3 id="delete-modal-title">Delete rating?</h3>
+            <p id="delete-modal-message">This can't be undone.</p>
+            <div class="modal-actions">
+                <button type="button" id="delete-modal-cancel" class="btn btn-ghost">Cancel</button>
+                <button type="button" id="delete-modal-confirm" class="btn btn-primary">Delete</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Keyboard shortcuts modal -->
+    <div id="shortcuts-modal" class="modal-overlay" role="dialog" aria-labelledby="shortcuts-modal-title" style="display:none;">
+        <div class="modal-content shortcuts-modal-content">
+            <h3 id="shortcuts-modal-title">Keyboard Shortcuts</h3>
+            <ul class="shortcuts-list">
+                <li><kbd>D</kbd> Dashboard</li>
+                <li><kbd>N</kbd> Rate a Beer</li>
+                <li><kbd>B</kbd> Browse</li>
+                <li><kbd>E</kbd> Exchange</li>
+                <li><kbd>M</kbd> Map</li>
+                <li><kbd>L</kbd> Leaderboard</li>
+                <li><kbd>/</kbd> Search (focus browse search)</li>
+                <li><kbd>Esc</kbd> Close modal or go back</li>
+                <li><kbd>?</kbd> This help</li>
+            </ul>
+            <button type="button" class="btn btn-ghost" id="shortcuts-modal-close">Close</button>
+        </div>
+    </div>
+
+    <!-- Beer detail modal -->
+    <div id="beer-detail-modal" class="modal-overlay beer-detail-modal" role="dialog" aria-modal="true" style="display:none;">
+        <div class="modal-content modal-content-beer-detail">
+            <button type="button" class="beer-detail-back" id="beer-detail-back" aria-label="Close">← Back</button>
+            <div id="beer-detail-body" class="beer-detail-body"></div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+    <script src="utils.js"></script>
+    <script src="config.js"></script>
+    <script src="supabase.js"></script>
+    <script src="charts.js"></script>
+    <script src="tabs.js"></script>
+    <script src="tab-burst.js"></script>
+    <script src="tab-burst-admin.js"></script>
+    <script src="admin.js"></script>
+    <script src="app.js"></script>
+    <script src="exchange.js"></script>
+    <script src="ui/bottomSheet.js"></script>
+    <script src="map.js"></script>
+    <script src="venues.js"></script>
+    <script src="sample-data.js"></script>
+    <script src="social.js"></script>
+    <script src="crews.js"></script>
+</body>
+</html>

@@ -2,952 +2,1179 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>BeerBook — Drinks After Work</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BeerBook — Rate Smarter. Drink Better.</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍺</text></svg>">
-    <meta name="description" content="Rate, review, and discover beers with your Drinks After Work community">
-    <meta property="og:title" content="BeerBook — Drinks After Work">
-    <meta property="og:description" content="Rate, review, and discover beers with your Drinks After Work community">
+    <meta name="description" content="BeerBook uses a wider scoring scale and head-to-head rankings to build a true beer hierarchy. Not just stars — real rankings.">
+    <meta property="og:title" content="BeerBook — Rate Smarter. Drink Better.">
+    <meta property="og:description" content="BeerBook uses a wider scoring scale and head-to-head rankings to build a true beer hierarchy.">
     <meta property="og:type" content="website">
     <meta property="og:image" content="https://beerbookapp.com/og-image.jpg">
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
     <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="BeerBook — Drinks After Work">
-    <meta name="twitter:description" content="Rate, review, and discover beers with your Drinks After Work community">
+    <meta name="twitter:title" content="BeerBook — Rate Smarter. Drink Better.">
+    <meta name="twitter:description" content="BeerBook uses a wider scoring scale and head-to-head rankings to build a true beer hierarchy.">
     <meta name="twitter:image" content="https://beerbookapp.com/og-image.jpg">
-    <meta name="theme-color" content="#1a1006">
+    <meta name="theme-color" content="#0B1320">
 
-    <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400&family=Source+Sans+3:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400&family=Source+Sans+3:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 
-    <!-- Chart.js -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <style>
+        /* ── Reset ── */
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-    <!-- Leaflet -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
-    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+        :root {
+            --bg-base: #0B1320;
+            --bg-surface: #111C2E;
+            --bg-elevated: #1A2940;
+            --gold: #F4B223;
+            --gold-hover: #F5BE45;
+            --gold-pressed: #D99D1E;
+            --gold-subtle: rgba(244, 178, 35, 0.15);
+            --amber: #FF9F1C;
+            --amber-glow: rgba(255, 159, 28, 0.25);
+            --foam: #FFD166;
+            --text-primary: #F8FAFC;
+            --text-secondary: #B0BEC5;
+            --text-muted: #7B8FA3;
+            --text-inverse: #0B1320;
+            --border-subtle: rgba(255, 255, 255, 0.06);
+            --border-default: rgba(255, 255, 255, 0.10);
+            --font-display: 'Playfair Display', Georgia, serif;
+            --font-body: 'Source Sans 3', system-ui, sans-serif;
+        }
 
-    <link rel="stylesheet" href="styles.css">
+        html {
+            font-size: 16px;
+            scroll-behavior: smooth;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        body {
+            font-family: var(--font-body);
+            background: var(--bg-base);
+            color: var(--text-primary);
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+
+        /* ── Utility ── */
+        .container {
+            max-width: 1120px;
+            margin: 0 auto;
+            padding: 0 24px;
+        }
+
+        /* ── Scroll reveal ── */
+        .reveal {
+            opacity: 0;
+            transform: translateY(40px);
+            transition: opacity 0.8s cubic-bezier(0.33, 1, 0.68, 1),
+                        transform 0.8s cubic-bezier(0.33, 1, 0.68, 1);
+        }
+        .reveal.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        .reveal-delay-1 { transition-delay: 0.1s; }
+        .reveal-delay-2 { transition-delay: 0.2s; }
+        .reveal-delay-3 { transition-delay: 0.3s; }
+        .reveal-delay-4 { transition-delay: 0.4s; }
+
+        /* ══════════════════════════════════════
+           NAV
+           ══════════════════════════════════════ */
+        .nav {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 100;
+            padding: 20px 0;
+            transition: background 0.4s ease, padding 0.4s ease, box-shadow 0.4s ease;
+        }
+        .nav.scrolled {
+            background: rgba(11, 19, 32, 0.95);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            padding: 12px 0;
+            box-shadow: 0 1px 0 var(--border-subtle);
+        }
+        .nav-inner {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .nav-logo {
+            height: 36px;
+            width: auto;
+        }
+        .nav-links {
+            display: flex;
+            align-items: center;
+            gap: 32px;
+            list-style: none;
+        }
+        .nav-links a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.9rem;
+            font-weight: 500;
+            letter-spacing: 0.02em;
+            transition: color 0.25s ease;
+        }
+        .nav-links a:hover { color: var(--text-primary); }
+        .nav-cta {
+            background: transparent;
+            color: var(--gold) !important;
+            border: 1.5px solid rgba(244, 178, 35, 0.4);
+            padding: 8px 20px;
+            border-radius: 9999px;
+            font-weight: 600 !important;
+            transition: all 0.25s ease !important;
+        }
+        .nav-cta:hover {
+            background: var(--gold-subtle) !important;
+            border-color: var(--gold) !important;
+        }
+
+        /* Mobile nav toggle */
+        .nav-toggle {
+            display: none;
+            background: none;
+            border: none;
+            color: var(--text-primary);
+            font-size: 1.5rem;
+            cursor: pointer;
+            padding: 4px;
+        }
+
+        /* ══════════════════════════════════════
+           HERO
+           ══════════════════════════════════════ */
+        .hero {
+            position: relative;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 120px 24px 80px;
+            overflow: hidden;
+        }
+
+        /* Ambient orbs */
+        .hero::before,
+        .hero::after {
+            content: '';
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(120px);
+            pointer-events: none;
+            animation: pulse 8s ease-in-out infinite alternate;
+        }
+        .hero::before {
+            width: 600px;
+            height: 600px;
+            background: radial-gradient(circle, rgba(244, 178, 35, 0.12), transparent 70%);
+            top: -200px;
+            right: -100px;
+        }
+        .hero::after {
+            width: 500px;
+            height: 500px;
+            background: radial-gradient(circle, rgba(255, 159, 28, 0.08), transparent 70%);
+            bottom: -150px;
+            left: -100px;
+            animation-delay: -4s;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 0.6; transform: scale(1); }
+            100% { opacity: 1; transform: scale(1.15); }
+        }
+
+        .hero-content {
+            position: relative;
+            z-index: 1;
+            max-width: 800px;
+        }
+
+        .hero-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 16px;
+            border-radius: 9999px;
+            background: var(--gold-subtle);
+            border: 1px solid rgba(244, 178, 35, 0.2);
+            color: var(--gold);
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin-bottom: 32px;
+            animation: fadeDown 0.8s cubic-bezier(0.33, 1, 0.68, 1) 0.2s both;
+        }
+        .hero-badge-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--gold);
+            animation: blink 2s ease-in-out infinite;
+        }
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        @keyframes fadeDown {
+            from { opacity: 0; transform: translateY(-20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .hero h1 {
+            font-family: var(--font-display);
+            font-size: clamp(2.8rem, 7vw, 5rem);
+            font-weight: 900;
+            line-height: 1.08;
+            letter-spacing: -0.02em;
+            margin-bottom: 24px;
+            animation: fadeUp 0.8s cubic-bezier(0.33, 1, 0.68, 1) 0.4s both;
+        }
+        .hero h1 .gold { color: var(--gold); }
+
+        .hero-sub {
+            font-size: clamp(1.05rem, 2.5vw, 1.25rem);
+            color: var(--text-secondary);
+            max-width: 560px;
+            margin: 0 auto 48px;
+            font-weight: 300;
+            line-height: 1.7;
+            animation: fadeUp 0.8s cubic-bezier(0.33, 1, 0.68, 1) 0.6s both;
+        }
+
+        @keyframes fadeUp {
+            from { opacity: 0; transform: translateY(30px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .hero-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+            justify-content: center;
+            animation: fadeUp 0.8s cubic-bezier(0.33, 1, 0.68, 1) 0.8s both;
+        }
+
+        .btn-download {
+            display: inline-flex;
+            align-items: center;
+            gap: 12px;
+            padding: 14px 28px;
+            border-radius: 14px;
+            background: var(--bg-surface);
+            border: 1px solid var(--border-default);
+            color: var(--text-primary);
+            text-decoration: none;
+            font-size: 0.95rem;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+        .btn-download:hover {
+            background: var(--bg-elevated);
+            border-color: rgba(255,255,255,0.15);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 30px rgba(0,0,0,0.3);
+        }
+        .btn-download svg {
+            width: 24px;
+            height: 24px;
+            flex-shrink: 0;
+        }
+        .btn-download-text {
+            text-align: left;
+            line-height: 1.2;
+        }
+        .btn-download-label {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        .btn-download-store {
+            font-size: 1.05rem;
+            font-weight: 600;
+        }
+
+        /* Scroll indicator */
+        .scroll-hint {
+            position: absolute;
+            bottom: 32px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            color: var(--text-muted);
+            font-size: 0.75rem;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            animation: fadeUp 0.8s cubic-bezier(0.33, 1, 0.68, 1) 1.2s both;
+        }
+        .scroll-arrow {
+            width: 24px;
+            height: 24px;
+            border-right: 2px solid var(--text-muted);
+            border-bottom: 2px solid var(--text-muted);
+            transform: rotate(45deg);
+            animation: scrollBounce 2s ease-in-out infinite;
+        }
+        @keyframes scrollBounce {
+            0%, 100% { transform: rotate(45deg) translateY(0); opacity: 0.5; }
+            50% { transform: rotate(45deg) translateY(6px); opacity: 1; }
+        }
+
+        /* ══════════════════════════════════════
+           SECTION BASE
+           ══════════════════════════════════════ */
+        section {
+            padding: 100px 0;
+        }
+        .section-label {
+            font-size: 0.8rem;
+            font-weight: 600;
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            color: var(--gold);
+            margin-bottom: 16px;
+        }
+        .section-title {
+            font-family: var(--font-display);
+            font-size: clamp(2rem, 4vw, 3rem);
+            font-weight: 700;
+            line-height: 1.15;
+            letter-spacing: -0.01em;
+            margin-bottom: 20px;
+        }
+        .section-desc {
+            font-size: 1.1rem;
+            color: var(--text-secondary);
+            max-width: 600px;
+            font-weight: 300;
+            line-height: 1.7;
+        }
+        .section-desc.centered {
+            margin: 0 auto;
+        }
+
+        /* ══════════════════════════════════════
+           THE PROBLEM
+           ══════════════════════════════════════ */
+        .problem {
+            text-align: center;
+            position: relative;
+        }
+        .problem-visual {
+            margin: 60px auto 0;
+            max-width: 700px;
+        }
+
+        /* Star rating demo */
+        .star-demo {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+        .star-row {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 16px 24px;
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
+            border-radius: 12px;
+        }
+        .star-row-name {
+            flex: 1;
+            text-align: left;
+            font-weight: 500;
+        }
+        .star-row-stars {
+            color: var(--foam);
+            font-size: 1.1rem;
+            letter-spacing: 2px;
+        }
+        .star-row-score {
+            font-weight: 700;
+            color: var(--text-muted);
+            min-width: 40px;
+            text-align: right;
+        }
+        .problem-punchline {
+            margin-top: 40px;
+            font-family: var(--font-display);
+            font-size: 1.4rem;
+            font-style: italic;
+            color: var(--text-secondary);
+        }
+        .problem-punchline em {
+            color: var(--gold);
+            font-style: italic;
+        }
+
+        /* ══════════════════════════════════════
+           SCORING EXPLAINED
+           ══════════════════════════════════════ */
+        .scoring {
+            background: linear-gradient(180deg, var(--bg-base) 0%, var(--bg-surface) 50%, var(--bg-base) 100%);
+        }
+        .scoring-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 64px;
+            align-items: center;
+            margin-top: 60px;
+        }
+
+        /* Animated scale */
+        .scale-visual {
+            position: relative;
+        }
+        .scale-track {
+            position: relative;
+            height: 8px;
+            background: var(--bg-elevated);
+            border-radius: 4px;
+            margin: 40px 0;
+            overflow: visible;
+        }
+        .scale-fill {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 100%;
+            border-radius: 4px;
+            background: linear-gradient(90deg, #EF4444, var(--text-muted), var(--gold), var(--amber));
+            opacity: 0;
+            transition: opacity 1s ease 0.5s;
+        }
+        .visible .scale-fill {
+            opacity: 1;
+        }
+        .scale-labels {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin-top: 8px;
+        }
+        .scale-labels span:first-child { color: #EF4444; }
+        .scale-labels span:last-child { color: var(--amber); }
+
+        .scale-marker {
+            position: absolute;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: var(--gold);
+            box-shadow: 0 0 20px var(--amber-glow);
+            opacity: 0;
+            transition: opacity 0.6s ease 1s, left 1.5s cubic-bezier(0.34, 1.56, 0.64, 1) 1s;
+        }
+        .visible .scale-marker {
+            opacity: 1;
+        }
+        .scale-marker::after {
+            content: attr(data-label);
+            position: absolute;
+            top: -32px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--gold);
+            white-space: nowrap;
+        }
+
+        .scale-example-label {
+            text-align: center;
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            margin-top: 24px;
+        }
+
+        /* Feature cards */
+        .scoring-features {
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+        .feature-card {
+            padding: 28px;
+            background: linear-gradient(135deg, var(--bg-surface), rgba(17, 28, 46, 0.7));
+            border: 1px solid var(--border-subtle);
+            border-radius: 16px;
+            transition: border-color 0.3s ease, transform 0.3s ease;
+        }
+        .feature-card:hover {
+            border-color: var(--border-default);
+            transform: translateY(-2px);
+        }
+        .feature-icon {
+            font-size: 1.5rem;
+            margin-bottom: 12px;
+        }
+        .feature-card h3 {
+            font-family: var(--font-display);
+            font-size: 1.15rem;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+        .feature-card p {
+            font-size: 0.95rem;
+            color: var(--text-secondary);
+            line-height: 1.6;
+        }
+
+        /* ══════════════════════════════════════
+           HOW IT WORKS
+           ══════════════════════════════════════ */
+        .how-it-works {
+            text-align: center;
+        }
+        .steps {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 32px;
+            margin-top: 64px;
+        }
+        .step {
+            position: relative;
+            padding: 40px 28px;
+            background: linear-gradient(180deg, var(--bg-surface), rgba(17, 28, 46, 0.6));
+            border: 1px solid var(--border-subtle);
+            border-radius: 20px;
+            transition: border-color 0.3s ease, transform 0.3s ease;
+        }
+        .step:hover {
+            border-color: rgba(244, 178, 35, 0.2);
+            transform: translateY(-4px);
+        }
+        .step-number {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 48px;
+            height: 48px;
+            border-radius: 14px;
+            background: linear-gradient(135deg, var(--gold), var(--amber));
+            color: var(--text-inverse);
+            font-family: var(--font-display);
+            font-size: 1.3rem;
+            font-weight: 900;
+            margin-bottom: 24px;
+        }
+        .step h3 {
+            font-family: var(--font-display);
+            font-size: 1.2rem;
+            font-weight: 700;
+            margin-bottom: 12px;
+        }
+        .step p {
+            font-size: 0.95rem;
+            color: var(--text-secondary);
+            line-height: 1.6;
+        }
+
+        /* Connector lines between steps */
+        .step:not(:last-child)::after {
+            content: '';
+            position: absolute;
+            top: 64px;
+            right: -16px;
+            width: 32px;
+            height: 2px;
+            background: linear-gradient(90deg, var(--gold), transparent);
+            opacity: 0.3;
+        }
+
+        /* ══════════════════════════════════════
+           COMPARISON
+           ══════════════════════════════════════ */
+        .comparison {
+            background: linear-gradient(180deg, var(--bg-base) 0%, var(--bg-surface) 50%, var(--bg-base) 100%);
+            text-align: center;
+        }
+        .comparison-table {
+            margin: 64px auto 0;
+            max-width: 800px;
+            border-collapse: separate;
+            border-spacing: 0;
+            width: 100%;
+        }
+        .comparison-table thead th {
+            padding: 20px 16px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            text-align: center;
+            color: var(--text-secondary);
+            border-bottom: 1px solid var(--border-default);
+        }
+        .comparison-table thead th:first-child {
+            text-align: left;
+        }
+        .comparison-table thead th.highlight {
+            color: var(--gold);
+            position: relative;
+        }
+        .comparison-table thead th.highlight::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 4px;
+            right: 4px;
+            bottom: -1px;
+            background: var(--gold-subtle);
+            border-radius: 12px 12px 0 0;
+            z-index: -1;
+        }
+        .comparison-table tbody td {
+            padding: 18px 16px;
+            text-align: center;
+            border-bottom: 1px solid var(--border-subtle);
+            font-size: 0.95rem;
+            color: var(--text-secondary);
+        }
+        .comparison-table tbody td:first-child {
+            text-align: left;
+            font-weight: 500;
+            color: var(--text-primary);
+        }
+        .comparison-table tbody td.highlight {
+            position: relative;
+        }
+        .comparison-table tbody td.highlight::before {
+            content: '';
+            position: absolute;
+            top: -1px;
+            left: 4px;
+            right: 4px;
+            bottom: -1px;
+            background: var(--gold-subtle);
+            z-index: -1;
+        }
+        .comparison-table tbody tr:last-child td.highlight::before {
+            border-radius: 0 0 12px 12px;
+        }
+        .check {
+            color: var(--gold);
+            font-size: 1.2rem;
+        }
+        .cross {
+            color: var(--text-muted);
+            opacity: 0.4;
+            font-size: 1.2rem;
+        }
+        .partial {
+            color: var(--text-muted);
+            font-size: 0.85rem;
+        }
+
+        /* ══════════════════════════════════════
+           DOWNLOAD CTA
+           ══════════════════════════════════════ */
+        .cta-section {
+            text-align: center;
+            padding: 120px 0;
+            position: relative;
+            overflow: hidden;
+        }
+        .cta-section::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 800px;
+            height: 800px;
+            background: radial-gradient(circle, rgba(244, 178, 35, 0.06), transparent 70%);
+            pointer-events: none;
+        }
+        .cta-section .section-title {
+            font-size: clamp(2.2rem, 5vw, 3.5rem);
+        }
+        .cta-section .section-desc {
+            margin: 0 auto 48px;
+        }
+        .cta-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+            justify-content: center;
+        }
+        .cta-coming-soon {
+            margin-top: 24px;
+            font-size: 0.9rem;
+            color: var(--text-muted);
+        }
+
+        /* ══════════════════════════════════════
+           FOOTER
+           ══════════════════════════════════════ */
+        footer {
+            padding: 48px 0;
+            border-top: 1px solid var(--border-subtle);
+            text-align: center;
+        }
+        .footer-inner {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .footer-logo {
+            height: 28px;
+            opacity: 0.6;
+        }
+        .footer-text {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+        .footer-links {
+            display: flex;
+            gap: 24px;
+            list-style: none;
+        }
+        .footer-links a {
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 0.85rem;
+            transition: color 0.25s ease;
+        }
+        .footer-links a:hover { color: var(--text-secondary); }
+
+        /* ══════════════════════════════════════
+           RESPONSIVE
+           ══════════════════════════════════════ */
+        @media (max-width: 1024px) {
+            .scoring-grid {
+                grid-template-columns: 1fr;
+                gap: 48px;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .nav-links { display: none; }
+            .nav-links.open {
+                display: flex;
+                flex-direction: column;
+                position: absolute;
+                top: 100%;
+                left: 0;
+                right: 0;
+                background: rgba(11, 19, 32, 0.98);
+                backdrop-filter: blur(20px);
+                padding: 24px;
+                gap: 16px;
+                border-bottom: 1px solid var(--border-subtle);
+            }
+            .nav-toggle { display: block; }
+
+            .steps {
+                grid-template-columns: 1fr;
+                max-width: 400px;
+                margin: 64px auto 0;
+            }
+            .step:not(:last-child)::after { display: none; }
+
+            .comparison-table {
+                font-size: 0.85rem;
+            }
+            .comparison-table thead th,
+            .comparison-table tbody td {
+                padding: 14px 10px;
+            }
+
+            .footer-inner {
+                flex-direction: column;
+                gap: 20px;
+            }
+
+            section { padding: 72px 0; }
+        }
+
+        @media (max-width: 480px) {
+            .hero { padding: 100px 20px 60px; }
+            .hero-actions { flex-direction: column; align-items: center; }
+            .btn-download { width: 100%; max-width: 280px; justify-content: center; }
+            .star-row { padding: 12px 16px; gap: 10px; font-size: 0.9rem; }
+            .comparison-table thead th:first-child,
+            .comparison-table tbody td:first-child {
+                min-width: 100px;
+            }
+        }
+    </style>
 </head>
 <body>
-    <!-- ==================== AUTH SCREEN ==================== -->
-    <div id="auth-screen" class="auth-screen">
-        <div class="auth-bg">
-            <div class="bubble"></div>
-            <div class="bubble"></div>
-            <div class="bubble"></div>
-            <div class="bubble"></div>
-            <div class="bubble"></div>
-            <div class="bubble"></div>
-            <div class="bubble"></div>
-            <div class="bubble"></div>
-        </div>
 
-        <div class="auth-container">
-            <div class="auth-logo">
-                <img src="top_bar_bb.png" alt="BeerBook" class="auth-logo-img">
-                <p class="auth-subtitle">by Drinks After Work</p>
-            </div>
-
-            <!-- Setup Config (Keycloak only; shown if not configured and no baked config) -->
-            <div id="setup-config" class="auth-card" style="display:none;">
-                <h2>Connect BeerBook</h2>
-                <p class="config-hint">Enter your Keycloak realm URL, or skip to demo mode.</p>
-                <form id="config-form">
-                    <div class="form-group">
-                        <label for="kc-authority">Keycloak Realm URL</label>
-                        <input type="url" id="kc-authority" placeholder="https://auth.beerbookapp.com/realms/daw" autocomplete="off">
-                    </div>
-                    <div class="form-group">
-                        <label for="kc-client-id">Client ID</label>
-                        <input type="text" id="kc-client-id" value="beerbook" placeholder="beerbook" autocomplete="off">
-                    </div>
-                    <button type="submit" class="btn btn-primary btn-full">Save & Connect</button>
-                    <button type="button" id="skip-config" class="btn btn-ghost btn-full">Skip — Use Demo Mode</button>
-                </form>
-            </div>
-
-            <!-- SSO Login Card -->
-            <div id="login-card" class="auth-card">
-                <p class="sso-hint">Sign in with your Drinks After Work account — the same login you use for DAW Chat, Fantasy Football, and the website.</p>
-
-                <button id="sso-register" class="btn btn-primary btn-full btn-lg">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
-                    Create Account
-                </button>
-
-                <button id="sso-login" class="btn btn-secondary btn-full" style="margin-top: 0.75rem;">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
-                    Sign In with DAW
-                </button>
-
-                <div class="auth-divider"><span>or</span></div>
-                <button id="guest-continue" class="btn btn-ghost btn-full">Continue as Guest</button>
-                <p class="auth-hint" style="margin-top:0.25rem;font-size:0.85rem;color:var(--text-muted, #666);">Rate beers without an account. Create an account later to keep your ratings.</p>
-                <button id="demo-login" class="btn btn-ghost btn-full">🍺 Try Demo Mode</button>
-
-                <button id="show-config" class="config-link">⚙ Configure connection</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- ==================== MAIN APP ==================== -->
-    <div id="app" class="app" style="display:none;">
-        <!-- Top Navigation -->
-        <header class="topbar top-bar">
-            <div class="topbar-left">
-                <img src="top_bar_bb.png" alt="BeerBook" class="topbar-logo">
-            </div>
-            <nav class="desktop-nav" aria-label="Desktop navigation">
-                <a class="desktop-nav-link active" data-view="dashboard" href="#">Home</a>
-                <a class="desktop-nav-link" data-view="browse" href="#">Browse Beers</a>
-                <a class="desktop-nav-link" data-view="rate" href="#">Rate</a>
-                <a class="desktop-nav-link" data-view="map" href="#">Map</a>
-                <a class="desktop-nav-link" data-view="profile" href="#">Profile</a>
-                <a class="desktop-nav-link admin-only" data-view="admin" id="nav-admin" href="#" style="display:none;">Admin</a>
-                <a class="desktop-nav-link" data-view="exchange" href="#">YG Exchange</a>
-                <a class="desktop-nav-link" data-view="leaderboard" href="#">Leaderboard</a>
-                <a class="desktop-nav-link" data-view="crews" href="#">Crews</a>
-            </nav>
-            <div class="top-bar__greeting">
-                <div id="user-greeting"></div>
-            </div>
-            <div class="topbar-right">
-                <div class="notification-bell" id="notification-bell" style="display:none;">
-                    <button class="notification-btn" id="notification-btn" type="button">
-                        🔔 <span class="notification-badge" id="notification-badge" style="display:none;">0</span>
-                    </button>
-                    <div class="notification-dropdown" id="notification-dropdown" style="display:none;">
-                        <div class="notification-header">
-                            <span>Notifications</span>
-                            <button class="btn btn-ghost btn-xs" id="mark-all-read" type="button">Mark all read</button>
-                        </div>
-                        <div class="notification-list" id="notification-list"></div>
-                    </div>
-                </div>
-                <button type="button" class="hamburger-btn" id="menu-toggle" aria-label="Menu" aria-expanded="false">
-                    <span class="hamburger-icon">☰</span>
-                    <span class="close-icon" style="display:none;">✕</span>
-                </button>
-                <div id="hamburger-menu" class="hamburger-dropdown" style="display:none;" aria-hidden="true">
-                    <nav class="hamburger-nav">
-                        <a class="ham-link" data-view="dashboard" href="#">📰 Activity Feed</a>
-                        <a class="ham-link" data-view="leaderboard" href="#">🏆 Leaderboard</a>
-                        <a class="ham-link" data-view="crews" href="#">👥 Crews</a>
-                        <a class="ham-link admin-only" data-view="admin" id="ham-admin" href="#" style="display:none;">🛠️ Admin</a>
-                        <a class="ham-link" data-view="exchange" href="#">💱 YG Exchange</a>
-                        <hr class="ham-divider">
-                        <a class="ham-link" data-view="profile" href="#">👤 Profile &amp; Stats</a>
-                        <a class="ham-link" id="ham-logout" href="#">🚪 Sign Out</a>
-                    </nav>
-                </div>
-            </div>
-        </header>
-
-        <!-- ========== DASHBOARD VIEW ========== -->
-        <main id="view-dashboard" class="view active">
-            <div class="view-header">
-                <h2>Dashboard</h2>
-                <p class="view-desc">Your community's beer journey at a glance</p>
-            </div>
-
-            <div class="stats-grid" id="stats-grid">
-                <div class="stat-tile">
-                    <span class="stat-tile__icon" aria-hidden="true">🍺</span>
-                    <span class="stat-tile__value" id="stat-beers">0</span>
-                    <span class="stat-tile__label">Beers Rated</span>
-                </div>
-                <div class="stat-tile">
-                    <span class="stat-tile__icon" aria-hidden="true">⭐</span>
-                    <span class="stat-tile__value" id="stat-avg">0.0</span>
-                    <span class="stat-tile__label">Avg Rating</span>
-                </div>
-                <div class="stat-tile">
-                    <span class="stat-tile__icon" aria-hidden="true">👥</span>
-                    <span class="stat-tile__value" id="stat-users">0</span>
-                    <span class="stat-tile__label">Reviewers</span>
-                </div>
-                <div class="stat-tile">
-                    <span class="stat-tile__icon" aria-hidden="true">📝</span>
-                    <span class="stat-tile__value" id="stat-reviews">0</span>
-                    <span class="stat-tile__label">Total Reviews</span>
-                </div>
-                <div class="stat-tile">
-                    <span class="stat-tile__icon" aria-hidden="true">📍</span>
-                    <span class="stat-tile__value" id="stat-venues">0</span>
-                    <span class="stat-tile__label">Venues Discovered</span>
-                </div>
-                <div class="stat-tile">
-                    <span class="stat-tile__icon" aria-hidden="true">🍻</span>
-                    <span class="stat-tile__value" id="stat-avg-yg">—</span>
-                    <span class="stat-tile__label">Community Avg YG</span>
-                </div>
-                <div class="stat-tile stat-tile--botw" id="stat-tile-botw">
-                    <span class="stat-tile__icon" aria-hidden="true">🏆</span>
-                    <span class="stat-tile__value stat-tile__value--botw" id="stat-botw">—</span>
-                    <span class="stat-tile__label">Beer of the Week</span>
-                </div>
-            </div>
-
-            <div class="tabs-widget" id="tabs-widget" style="display:none;">
-                <div class="tabs-widget-header">
-                    <div class="tabs-tier-badge" id="tabs-tier-badge"></div>
-                    <div class="tabs-balance" id="tabs-balance"></div>
-                </div>
-                <div class="tabs-widget-body">
-                    <div class="tabs-weekly-progress" id="tabs-weekly-progress"></div>
-                    <div class="tabs-streak" id="tabs-streak"></div>
-                    <div class="tabs-next-tier" id="tabs-next-tier"></div>
-                </div>
-            </div>
-
-            <div class="charts-list" id="dashboard-charts">
-                <div class="chart-card" data-chart-id="activity" id="chart-card-activity">
-                    <div class="chart-card__header">
-                        <div>
-                            <h3 class="chart-card__title">Recent Activity</h3>
-                            <p class="chart-card__summary" id="chart-summary-activity">—</p>
-                        </div>
-                        <span class="chart-card__chevron" aria-hidden="true">▸</span>
-                    </div>
-                    <div class="chart-card__body">
-                        <div class="chart-card__body-inner">
-                            <canvas id="chart-activity"></canvas>
-                        </div>
-                    </div>
-                </div>
-                <div class="chart-card" data-chart-id="topBeers" id="chart-card-top-beers">
-                    <div class="chart-card__header">
-                        <div>
-                            <h3 class="chart-card__title">Top Rated Beers</h3>
-                            <p class="chart-card__summary" id="chart-summary-top-beers">—</p>
-                        </div>
-                        <span class="chart-card__chevron" aria-hidden="true">▸</span>
-                    </div>
-                    <div class="chart-card__body">
-                        <div class="chart-card__body-inner">
-                            <canvas id="chart-top-beers"></canvas>
-                        </div>
-                    </div>
-                </div>
-                <div class="chart-card" data-chart-id="styles" id="chart-card-styles">
-                    <div class="chart-card__header">
-                        <div>
-                            <h3 class="chart-card__title">Ratings by Style</h3>
-                            <p class="chart-card__summary" id="chart-summary-styles">—</p>
-                        </div>
-                        <span class="chart-card__chevron" aria-hidden="true">▸</span>
-                    </div>
-                    <div class="chart-card__body">
-                        <div class="chart-card__body-inner">
-                            <canvas id="chart-styles"></canvas>
-                        </div>
-                    </div>
-                </div>
-                <div class="chart-card" data-chart-id="distribution" id="chart-card-distribution">
-                    <div class="chart-card__header">
-                        <div>
-                            <h3 class="chart-card__title">Rating Distribution</h3>
-                            <p class="chart-card__summary" id="chart-summary-distribution">—</p>
-                        </div>
-                        <span class="chart-card__chevron" aria-hidden="true">▸</span>
-                    </div>
-                    <div class="chart-card__body">
-                        <div class="chart-card__body-inner">
-                            <div class="chart-wrapper">
-                                <canvas id="chart-distribution"></canvas>
-                                <div class="chart-empty" id="chart-distribution-empty">📊 Not enough data for this chart yet.</div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="chart-card" data-chart-id="ygDist" id="chart-card-yg">
-                    <div class="chart-card__header">
-                        <div>
-                            <h3 class="chart-card__title">YG Distribution</h3>
-                            <p class="chart-card__summary" id="chart-summary-yg">—</p>
-                        </div>
-                        <span class="chart-card__chevron" aria-hidden="true">▸</span>
-                    </div>
-                    <div class="chart-card__body">
-                        <div class="chart-card__body-inner">
-                            <div class="chart-wrapper">
-                                <canvas id="chart-yg"></canvas>
-                                <div class="chart-empty" id="chart-yg-empty">📈 No YG values yet. Start rating beers with YG values to see the exchange!</div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="chart-card" data-chart-id="monthly" id="chart-card-monthly">
-                    <div class="chart-card__header">
-                        <div>
-                            <h3 class="chart-card__title">Monthly Activity</h3>
-                            <p class="chart-card__summary" id="chart-summary-monthly">—</p>
-                        </div>
-                        <span class="chart-card__chevron" aria-hidden="true">▸</span>
-                    </div>
-                    <div class="chart-card__body">
-                        <div class="chart-card__body-inner">
-                            <div class="chart-wrapper">
-                                <canvas id="chart-monthly"></canvas>
-                                <div class="chart-empty" id="chart-monthly-empty">📊 Not enough data for this chart yet.</div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="activity-feed-section">
-                <h3>Recent Activity</h3>
-                <div id="activity-feed" class="activity-feed">
-                    <div class="activity-skeleton" id="activity-skeleton">
-                        <div class="skeleton" style="height:48px;margin-bottom:8px;"></div>
-                        <div class="skeleton" style="height:48px;margin-bottom:8px;"></div>
-                        <div class="skeleton" style="height:48px;"></div>
-                    </div>
-                </div>
-                <button type="button" id="activity-load-more" class="btn btn-ghost btn-load-more" style="display:none;">Load more</button>
-                <div id="activity-sentinel" class="infinite-scroll-sentinel" aria-hidden="true"></div>
-                <div id="activity-loading" class="infinite-scroll-loading" style="display:none;">Loading…</div>
-            </div>
-
-            <div class="recent-section">
-                <h3>Recent Reviews</h3>
-                <div id="recent-reviews" class="reviews-list">
-                    <p class="empty-state">No reviews yet. Be the first to rate a beer!</p>
-                </div>
-            </div>
-        </main>
-
-        <!-- ========== RATE A BEER VIEW ========== -->
-        <main id="view-rate" class="view">
-            <div class="view-header">
-                <h2>Rate a Beer</h2>
-                <p class="view-desc">Share your thoughts on what you're drinking</p>
-            </div>
-
-            <form id="rating-form" class="rating-form">
-                <div class="form-row">
-                    <div class="form-group flex-2 beer-autocomplete-wrap">
-                        <label for="beer-name">Beer Name *</label>
-                        <input type="text" id="beer-name" placeholder="e.g. Pliny the Elder" required autocomplete="off">
-                        <input type="hidden" id="rating-beer-id" value="">
-                        <div id="beer-autocomplete" class="autocomplete-dropdown" aria-hidden="true"></div>
-                        <div id="autocomplete-hint" class="autocomplete-hint" aria-live="polite" style="display:none;">Don't see your beer? Just type the name — you can rate anything!</div>
-                    </div>
-                </div>
-
-                <div id="new-beer-helper-banner" class="new-beer-helper-banner" style="display:none;">
-                    🆕 Adding a new beer requires Brewery, Style, and ABV so others can find it. You'll earn 1.5x tabs for contributing! 🍺
-                </div>
-
-                <div class="form-row">
-                    <div id="beer-brewery-group" class="form-group flex-1 brewery-autocomplete-wrap">
-                        <label for="beer-brewery">Brewery <span class="new-beer-required-indicator" style="display:none;">*</span></label>
-                        <input type="text" id="beer-brewery" placeholder="e.g. Russian River" autocomplete="off">
-                        <div id="brewery-autocomplete" class="autocomplete-dropdown" aria-hidden="true"></div>
-                    </div>
-                    <div id="beer-style-group" class="form-group flex-1">
-                        <label for="beer-style">Style <span class="new-beer-required-indicator" style="display:none;">*</span></label>
-                        <select id="beer-style">
-                            <option value="">Select style...</option>
-                            <option value="IPA">IPA</option>
-                            <option value="Double IPA">Double IPA</option>
-                            <option value="Hazy IPA">Hazy IPA</option>
-                            <option value="Pale Ale">Pale Ale</option>
-                            <option value="Stout">Stout</option>
-                            <option value="Imperial Stout">Imperial Stout</option>
-                            <option value="Porter">Porter</option>
-                            <option value="Pilsner">Pilsner</option>
-                            <option value="Lager">Lager</option>
-                            <option value="Wheat Beer">Wheat Beer</option>
-                            <option value="Belgian">Belgian</option>
-                            <option value="Saison">Saison</option>
-                            <option value="Sour">Sour</option>
-                            <option value="Amber Ale">Amber Ale</option>
-                            <option value="Brown Ale">Brown Ale</option>
-                            <option value="Red Ale">Red Ale</option>
-                            <option value="Barleywine">Barleywine</option>
-                            <option value="Scotch Ale">Scotch Ale</option>
-                            <option value="Kolsch">Kölsch</option>
-                            <option value="Hefeweizen">Hefeweizen</option>
-                            <option value="Bock">Bock</option>
-                            <option value="Dunkel">Dunkel</option>
-                            <option value="Gose">Gose</option>
-                            <option value="Berliner Weisse">Berliner Weisse</option>
-                            <option value="Cream Ale">Cream Ale</option>
-                            <option value="Cider">Cider</option>
-                            <option value="Mead">Mead</option>
-                            <option value="Other">Other</option>
-                        </select>
-                    </div>
-                    <div id="beer-abv-group" class="form-group flex-1">
-                        <label for="beer-abv">ABV % <span class="new-beer-required-indicator" style="display:none;">*</span></label>
-                        <input type="number" id="beer-abv" placeholder="6.5" min="0" max="30" step="0.1">
-                    </div>
-                </div>
-
-                <div id="new-beer-match-check" class="new-beer-match-check" style="display:none;"></div>
-
-                <div class="rating-stars-section" style="display:none;" aria-hidden="true">
-                    <label>Overall Rating *</label>
-                    <div class="star-rating" id="star-rating">
-                        <button type="button" class="star" data-value="1">★</button>
-                        <button type="button" class="star" data-value="2">★</button>
-                        <button type="button" class="star" data-value="3">★</button>
-                        <button type="button" class="star" data-value="4">★</button>
-                        <button type="button" class="star" data-value="5">★</button>
-                    </div>
-                    <span class="rating-label" id="rating-label">Select a rating</span>
-                    <input type="hidden" id="beer-rating" value="3">
-                </div>
-
-                <div class="form-group yg-slider-group">
-                    <label>YG Value * <span class="label-hint">How many Yuengling Golden Pilsners is this worth? (-6 to +7, zero not an option)</span></label>
-                    <input type="hidden" id="yg-value" name="yg_value" value="7">
-                    <div class="yg-track-wrap">
-                        <div class="yg-track" id="yg-track" role="slider" aria-valuemin="1" aria-valuemax="13" aria-valuenow="7" aria-label="YG value" tabindex="0">
-                            <div class="yg-glasses" id="yg-glasses" aria-live="polite"></div>
-                        </div>
-                    </div>
-                    <div class="yg-hint-row">
-                        <span class="yg-context" id="yg-context">Tap a glass to rate in YGs</span>
-                        <span class="yg-display-wrap">
-                            <span class="yg-display" id="yg-display">+1 YG</span>
-                            <button type="button" class="yg-clear btn btn-ghost btn-sm" id="yg-clear" aria-label="Clear YG value" style="display:none;">Clear</button>
-                        </span>
-                    </div>
-                </div>
-
-                <div class="form-group serve-type-group">
-                    <label>Serve type <span class="label-hint">Optional</span></label>
-                    <div class="serve-type-picker" id="serve-type-picker" role="group" aria-label="How was it served?">
-                        <button type="button" class="serve-type-opt" data-serve-type="draft"><span class="serve-type-pill">Draft</span></button>
-                        <button type="button" class="serve-type-opt" data-serve-type="can"><span class="serve-type-pill">Can</span></button>
-                        <button type="button" class="serve-type-opt" data-serve-type="bottle"><span class="serve-type-pill">Bottle</span></button>
-                        <button type="button" class="serve-type-opt" data-serve-type="crowler"><span class="serve-type-pill">Crowler</span></button>
-                        <button type="button" class="serve-type-opt" data-serve-type="growler"><span class="serve-type-pill">Growler</span></button>
-                        <button type="button" class="serve-type-opt" data-serve-type="nitro"><span class="serve-type-pill">Nitro</span></button>
-                    </div>
-                    <input type="hidden" id="rating-serve-type" name="serve_type" value="">
-                </div>
-
-                <div class="flavor-sliders">
-                    <label>Flavor Profile</label>
-                    <div class="slider-group">
-                        <div class="slider-row">
-                            <span class="slider-name">Hoppy</span>
-                            <input type="range" id="flavor-hoppy" min="0" max="5" value="0" step="1">
-                            <span class="slider-val" id="val-hoppy">0</span>
-                        </div>
-                        <div class="slider-row">
-                            <span class="slider-name">Malty</span>
-                            <input type="range" id="flavor-malty" min="0" max="5" value="0" step="1">
-                            <span class="slider-val" id="val-malty">0</span>
-                        </div>
-                        <div class="slider-row">
-                            <span class="slider-name">Bitter</span>
-                            <input type="range" id="flavor-bitter" min="0" max="5" value="0" step="1">
-                            <span class="slider-val" id="val-bitter">0</span>
-                        </div>
-                        <div class="slider-row">
-                            <span class="slider-name">Sweet</span>
-                            <input type="range" id="flavor-sweet" min="0" max="5" value="0" step="1">
-                            <span class="slider-val" id="val-sweet">0</span>
-                        </div>
-                        <div class="slider-row">
-                            <span class="slider-name">Fruity</span>
-                            <input type="range" id="flavor-fruity" min="0" max="5" value="0" step="1">
-                            <span class="slider-val" id="val-fruity">0</span>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="form-group location-group">
-                    <label>Location</label>
-                    <div class="location-row">
-                        <button type="button" id="btn-add-location" class="btn btn-ghost">📍 Add Location</button>
-                        <input type="text" id="location-manual" class="location-manual" placeholder="Or type location manually" autocomplete="off">
-                    </div>
-                    <div id="location-chip" class="location-chip" style="display:none;">
-                        <span id="location-chip-text"></span>
-                        <button type="button" id="location-chip-remove" class="location-chip-remove" aria-label="Remove location">✕</button>
-                    </div>
-                    <div id="venue-type-picker" class="venue-type-picker" style="display:none;">
-                        <p class="venue-type-picker__label">What kind of place?</p>
-                        <div class="venue-type-picker__options">
-                            <button type="button" class="venue-type-opt" data-type="brewery">
-                                <span class="venue-type-pill venue-type-pill--brewery">Brewery</span>
-                            </button>
-                            <button type="button" class="venue-type-opt" data-type="bar">
-                                <span class="venue-type-pill venue-type-pill--bar">Bar &amp; Pub</span>
-                            </button>
-                            <button type="button" class="venue-type-opt" data-type="restaurant">
-                                <span class="venue-type-pill venue-type-pill--restaurant">Restaurant</span>
-                            </button>
-                        </div>
-                    </div>
-                    <input type="hidden" id="rating-venue-type" value="">
-                    <div id="venue-picker" class="venue-picker" style="display:none;">
-                        <label>Where are you drinking?</label>
-                        <div id="venue-suggestions" class="venue-suggestions">
-                            <div class="venue-suggestion-skeleton">
-                                <div class="skeleton" style="height:40px;margin-bottom:6px;"></div>
-                                <div class="skeleton" style="height:40px;margin-bottom:6px;"></div>
-                            </div>
-                        </div>
-                        <button type="button" class="btn btn-ghost btn-sm" id="btn-custom-venue">
-                            + Add a different place
-                        </button>
-                    </div>
-                    <div id="venue-chip" class="venue-chip" style="display:none;">
-                        <span id="venue-chip-text"></span>
-                        <button type="button" id="venue-chip-remove" class="venue-chip-remove" aria-label="Remove venue">✕</button>
-                    </div>
-                    <input type="hidden" id="rating-lat">
-                    <input type="hidden" id="rating-lng">
-                    <input type="hidden" id="rating-location-name">
-                    <input type="hidden" id="rating-venue-id">
-                </div>
-
-                <div id="price-log-section" class="price-log-section" style="display:none;">
-                    <button type="button" class="price-log-toggle" id="price-log-toggle" aria-expanded="false">
-                        <span class="price-log-toggle-text">💰 Log a Price</span>
-                        <span class="price-log-chevron price-log-chevron-down" aria-hidden="true">▾</span>
-                        <span class="price-log-chevron price-log-chevron-up" aria-hidden="true">▴</span>
-                    </button>
-                    <div class="price-log-fields" id="price-log-fields">
-                        <div class="price-log-inline">
-                            <input type="text" id="price-amount" class="price-input-compact" placeholder="$6.50" inputmode="decimal" aria-label="Price">
-                            <label class="checkbox-label happy-hour-label">
-                                <input type="checkbox" id="price-happy-hour" class="happy-hour-checkbox">
-                                <span class="toggle-pill" aria-hidden="true"><span class="toggle-pill-thumb"></span></span>
-                                <span class="toggle-pill-on-label">HH</span>
-                                <span class="happy-hour-text">Happy Hour?</span>
-                            </label>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="form-group photo-group">
-                    <label>Photo</label>
-                    <input type="file" id="photo-input" accept="image/jpeg,image/png,image/webp" capture="environment" class="photo-input-hidden" tabindex="-1" aria-hidden="true">
-                    <button type="button" class="btn btn-ghost" id="btn-add-photo">📷 Add Photo</button>
-                    <div id="photo-preview" class="photo-preview"></div>
-                    <div id="upload-progress" style="display:none; color: var(--amber); font-size: 0.85rem; margin-top: 0.5rem;"></div>
-                </div>
-
-                <div class="form-group">
-                    <label for="beer-notes">Tasting Notes</label>
-                    <textarea id="beer-notes" rows="3" placeholder="What did you think? Aroma, taste, mouthfeel..."></textarea>
-                </div>
-
-                <button type="submit" class="btn btn-primary btn-full btn-lg rate-submit-btn">
-                    <span class="btn-text">🍺 Submit Rating</span>
-                    <span class="btn-loader" style="display:none;">Saving...</span>
-                </button>
-                <div id="rating-validation-msg" class="rating-validation-msg" aria-live="polite"></div>
-            </form>
-        </main>
-
-        <!-- ========== EXCHANGE VIEW ========== -->
-        <main id="view-exchange" class="view">
-            <div class="view-header">
-                <h2>📈 The YG Exchange</h2>
-                <p class="view-desc">Trade rates in Yuengling Golden Pilsner units</p>
-            </div>
-            <div id="exchange-table-wrap" class="exchange-table-wrap">
-                <div class="exchange-skeleton" id="exchange-skeleton">
-                    <div class="skeleton" style="height: 32px; margin-bottom: 8px;"></div>
-                    <div class="skeleton" style="height: 32px; margin-bottom: 8px;"></div>
-                    <div class="skeleton" style="height: 32px;"></div>
-                </div>
-                <div id="exchange-empty" class="exchange-empty" style="display:none;"></div>
-                <table id="exchange-table" class="exchange-table" aria-hidden="true">
-                    <thead>
-                        <tr>
-                            <th data-sort="beer_name">Beer</th>
-                            <th data-sort="yg_rate">YG Rate</th>
-                            <th data-sort="avg_stars">⭐</th>
-                            <th data-sort="trend">Trend</th>
-                            <th data-sort="rating_count"># Rated</th>
-                        </tr>
-                    </thead>
-                    <tbody id="exchange-tbody"></tbody>
-                </table>
-            </div>
-            <div id="exchange-cross-rate" class="exchange-cross-rate-card">
-                <h3>Cross-Rate Calculator</h3>
-                <div class="cross-rate-row">
-                    <select id="cross-beer-a" class="filter-select"></select>
-                    <span class="cross-rate-equals">1 … =</span>
-                    <span id="cross-rate-value" class="cross-rate-value">—</span>
-                    <select id="cross-beer-b" class="filter-select"></select>
-                </div>
-                <p id="cross-rate-reverse" class="cross-rate-reverse"></p>
-            </div>
-            <div id="exchange-parity" class="exchange-parity-card">
-                <h3>YG Parity Index</h3>
-                <p id="exchange-parity-text" class="exchange-parity-text">Add beer prices to unlock the YG Parity Index!</p>
-            </div>
-        </main>
-
-        <!-- ========== MAP VIEW ========== -->
-        <main id="view-map" class="view view-map">
-            <div class="view-header view-map-header view-map-header-breathe">
-                <h2 class="view-map-title">Beer Map</h2>
-                <p class="view-map-subheader">Discover what the crew is drinking</p>
-            </div>
-            <div class="map-toggle-row">
-                <div class="map-toggle-group" role="group" aria-label="Map mode">
-                    <button type="button" class="map-toggle-btn active" data-layer="discover" aria-pressed="true">Discover</button>
-                    <button type="button" class="map-toggle-btn" data-layer="mymap" aria-pressed="false">My Map</button>
-                </div>
-                <button id="map-nearme-btn" class="map-nearme-btn" title="Near Me" aria-label="Find venues near me">
-                    📍 Near Me
-                </button>
-            </div>
-            <div class="map-controls">
-                <button class="btn btn-primary" id="btn-near-me">🍺 Best Beer Near Me</button>
-                <button class="btn btn-ghost" id="btn-my-trail" style="display:none;">My Trail</button>
-                <select id="map-filter-style" class="filter-select">
-                    <option value="">All Styles</option>
-                </select>
-            </div>
-            <div class="map-wrapper">
-                <div id="beer-map" class="beer-map-container"></div>
-            </div>
-            <div id="bb-sheet-root" class="bb-sheet-root" data-state="MIN">
-                <div class="bb-sheet-backdrop" id="bb-sheet-backdrop"></div>
-                <section class="bb-sheet" id="bb-sheet" role="dialog" aria-modal="false">
-                    <div class="bb-sheet-chrome" id="bb-sheet-chrome">
-                        <div class="bb-sheet-header" id="bb-sheet-header">
-                            <div class="bb-sheet-handle">
-                                <span class="bb-sheet-handle-bar"></span>
-                            </div>
-                            <div class="bb-sheet-chevron" id="bb-sheet-chevron" aria-hidden="true">
-                                <span class="bb-sheet-chevron-icon">︿</span>
-                            </div>
-                            <div class="bb-sheet-title-row">
-                                <h3 id="bb-sheet-title" class="bb-sheet-title">Discover Venues</h3>
-                                <p id="bb-sheet-subtitle" class="bb-sheet-subtitle"></p>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="bb-sheet-body" id="bb-sheet-body">
-                        <div class="bb-sheet-min-preview" id="bb-sheet-min-preview"></div>
-                        <div class="bb-sheet-detail" id="bb-sheet-detail" style="display:none;">
-                            <button class="bb-sheet-back" id="bb-sheet-back" type="button">← Back to list</button>
-                            <div id="bb-sheet-detail-body"></div>
-                        </div>
-                        <div class="bb-sheet-scroll" id="bb-sheet-scroll"></div>
-                    </div>
-                </section>
-            </div>
-            <div id="map-sidebar" class="map-sidebar"></div>
-        </main>
-
-        <!-- ========== BROWSE VIEW ========== -->
-        <main id="view-browse" class="view">
-            <div class="browse-tabs" role="tablist" aria-label="Browse mode">
-                <button type="button" class="browse-tab active" data-tab="community" role="tab" aria-selected="true">Community Ratings</button>
-                <button type="button" class="browse-tab" data-tab="catalog" role="tab" aria-selected="false">Beer Catalog</button>
-            </div>
-
-            <div class="browse-filter-bar">
-                <div class="browse-search">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <circle cx="11" cy="11" r="8"/>
-                        <path d="m21 21-4.3-4.3"/>
-                    </svg>
-                    <input type="text" id="search-input" placeholder="Search beers, breweries…" autocomplete="off">
-                </div>
-                <button class="browse-chip" id="btn-open-filters">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M4 6h16M7 12h10M10 18h4"/>
-                    </svg>
-                    Filters
-                </button>
-                <button class="browse-chip browse-chip--active" id="sort-label">Most Recent</button>
-            </div>
-
-            <div id="beer-feed" class="beer-feed">
-                <p class="empty-state">No beers found. Start rating!</p>
-            </div>
-            <div style="display:none;" aria-hidden="true">
-                <select id="filter-style" class="filter-select"><option value="">All Styles</option></select>
-                <select id="sort-by" class="filter-select">
-                    <option value="recent">Most Recent</option>
-                    <option value="highest">Highest Rated</option>
-                    <option value="lowest">Lowest Rated</option>
-                    <option value="name">Alphabetical</option>
-                </select>
-            </div>
-            <div id="catalog-grid" class="beer-grid catalog-grid" style="display:none;"></div>
-            <div id="browse-sentinel" class="infinite-scroll-sentinel" aria-hidden="true"></div>
-            <div id="browse-loading" class="infinite-scroll-loading" style="display:none;">Loading…</div>
-        </main>
-
-        <!-- ========== LEADERBOARD VIEW ========== -->
-        <main id="view-leaderboard" class="view">
-            <div class="view-header">
-                <h2>Leaderboard</h2>
-                <p class="view-desc">Who's the biggest beer connoisseur?</p>
-            </div>
-
-            <div class="leaderboard-tabs" role="tablist">
-                <button type="button" class="lb-tab active" data-period="alltime" role="tab">All Time</button>
-                <button type="button" class="lb-tab" data-period="monthly" role="tab">This Month</button>
-                <button type="button" class="lb-tab" data-period="weekly" role="tab">This Week</button>
-            </div>
-
-            <div class="leaderboard-grid">
-                <div class="lb-card">
-                    <h3>🏆 Top Reviewers</h3>
-                    <div id="lb-reviewers" class="lb-list"></div>
-                </div>
-                <div class="lb-card">
-                    <h3>⭐ Highest Rated Beers</h3>
-                    <div id="lb-beers" class="lb-list"></div>
-                </div>
-                <div class="lb-card">
-                    <h3>🏅 Style Champions</h3>
-                    <div id="lb-styles" class="lb-list"></div>
-                </div>
-                <div class="lb-card">
-                    <h3>🍺 Most Reviewed</h3>
-                    <div id="lb-popular" class="lb-list"></div>
-                </div>
-                <div class="lb-card">
-                    <h3>🍻 Most Cheered</h3>
-                    <div id="lb-cheers" class="lb-list"></div>
-                </div>
-                <div class="lb-card">
-                    <h3>🪙 Tabs Leaderboard</h3>
-                    <div id="lb-tabs" class="lb-list"></div>
-                </div>
-            </div>
-        </main>
-
-        <!-- ========== ADMIN VIEW ========== -->
-        <main id="view-admin" class="view admin-only" style="display:none;">
-            <div class="view-header">
-                <h2>⚙️ Admin Panel</h2>
-                <p class="view-desc">Manage Tabs economy and users</p>
-            </div>
-            <div class="admin-tabs" id="admin-tabs">
-                <button class="admin-tab active" data-admin-view="users" type="button">👥 Users &amp; Tabs</button>
-                <button class="admin-tab" data-admin-view="submissions" type="button">📌 Submissions (Future)</button>
-                <button class="admin-tab" data-admin-view="economy" type="button">📊 Economy Stats</button>
-                <button class="admin-tab" data-admin-view="challenges" type="button">🏆 Challenges</button>
-                <button class="admin-tab" data-admin-view="achievements" type="button">🎖️ Achievements</button>
-                <button class="admin-tab" data-admin-view="featured" type="button">🍺 Featured Beers</button>
-                <button class="admin-tab" data-admin-view="cosmetics" type="button">✨ Cosmetics</button>
-            </div>
-
-            <div id="admin-users" class="admin-panel active"></div>
-            <div id="admin-submissions" class="admin-panel" style="display:none;"></div>
-            <div id="admin-economy" class="admin-panel" style="display:none;"></div>
-            <div id="admin-challenges" class="admin-panel" style="display:none;"></div>
-            <div id="admin-achievements" class="admin-panel" style="display:none;"></div>
-            <div id="admin-featured" class="admin-panel" style="display:none;"></div>
-            <div id="admin-cosmetics" class="admin-panel" style="display:none;"></div>
-        </main>
-
-        <!-- ========== CREWS VIEW ========== -->
-        <main id="view-crews" class="view">
-            <div class="view-header">
-                <h2>My Crews</h2>
-                <p class="view-desc">Create crews, join by invite code, and manage your members</p>
-            </div>
-            <div class="crew-toolbar">
-                <button type="button" class="btn btn-primary" id="create-crew-btn">+ Create Crew</button>
-                <button type="button" class="btn btn-ghost" id="join-crew-btn">Join with Code</button>
-            </div>
-            <div id="crews-list" class="reviews-list">
-                <p class="empty-state">No crews yet. Create one or join with a code.</p>
-            </div>
-            <div id="crew-detail" style="display:none;"></div>
-        </main>
-
-        <!-- ========== PROFILE VIEW ========== -->
-        <main id="view-profile" class="view">
-            <div class="view-header">
-                <h2>My Profile</h2>
-                <p class="view-desc">Your beer journey</p>
-            </div>
-
-            <div class="profile-header-card">
-                <div class="profile-avatar" id="profile-avatar">🍺</div>
-                <div class="profile-info">
-                    <h3 id="profile-name">Beer Lover</h3>
-                    <p id="profile-email" class="profile-email"></p>
-                    <div class="profile-badges">
-                        <span class="badge" id="badge-count">0 reviews</span>
-                        <span class="badge" id="badge-joined">Joined today</span>
-                    </div>
-                </div>
-            </div>
-
-            <div class="profile-stats-grid">
-                <div class="pstat">
-                    <span class="pstat-val" id="pstat-total">0</span>
-                    <span class="pstat-label">Beers Rated</span>
-                </div>
-                <div class="pstat">
-                    <span class="pstat-val" id="pstat-avg">—</span>
-                    <span class="pstat-label">Avg Rating</span>
-                </div>
-                <div class="pstat">
-                    <span class="pstat-val" id="pstat-fav">—</span>
-                    <span class="pstat-label">Fav Style</span>
-                </div>
-            </div>
-
-            <div class="profile-tabs-card" id="profile-tabs-card" style="display:none;">
-                <h3>🪙 Tabs</h3>
-                <div id="profile-tabs-summary"></div>
-            </div>
-
-            <div class="profile-chart-card">
-                <h3>My Rating History</h3>
-                <canvas id="chart-my-ratings"></canvas>
-            </div>
-
-            <div class="profile-reviews-section">
-                <h3>My Reviews</h3>
-                <div id="my-reviews" class="reviews-list"></div>
-            </div>
-        </main>
-
-        <nav class="bottom-tab-nav" id="bottom-tab-nav" aria-label="Main navigation">
-            <button type="button" class="tab-item active" data-view="dashboard">
-                <span class="tab-icon"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></span>
-                <span class="tab-label">Home</span>
-            </button>
-            <button type="button" class="tab-item" data-view="browse">
-                <span class="tab-icon"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>
-                <span class="tab-label">Browse</span>
-            </button>
-            <button type="button" class="tab-item tab-rate" data-view="rate">
-                <span class="tab-icon">+</span>
-                <span class="tab-label">Rate</span>
-            </button>
-            <button type="button" class="tab-item" data-view="map">
-                <span class="tab-icon">🗺️</span>
-                <span class="tab-label">Map</span>
-            </button>
-            <button type="button" class="tab-item" data-view="profile">
-                <span class="tab-icon"><svg viewBox="0 0 24 24"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
-                <span class="tab-label">Profile</span>
-            </button>
-        </nav>
-
-        <!-- Browse Filter Sheet -->
-        <div class="filter-sheet-overlay" id="browse-filter-sheet">
-            <div class="filter-sheet" role="dialog" aria-label="Filter and sort">
-                <div class="filter-sheet__handle"></div>
-                <h3 class="filter-sheet__title">Filter & Sort</h3>
-
-                <div class="filter-sheet__group">
-                    <div class="filter-sheet__label">Sort By</div>
-                    <div class="filter-sheet__options" data-filter="sort">
-                        <button class="filter-sheet__opt active" data-value="recent">Most Recent</button>
-                        <button class="filter-sheet__opt" data-value="highest">Highest Rated</button>
-                        <button class="filter-sheet__opt" data-value="lowest">Lowest Rated</button>
-                        <button class="filter-sheet__opt" data-value="name">Alphabetical</button>
-                    </div>
-                </div>
-
-                <div class="filter-sheet__group">
-                    <div class="filter-sheet__label">Style</div>
-                    <div class="filter-sheet__options" id="filter-style-options" data-filter="style">
-                        <button class="filter-sheet__opt active" data-value="">All Styles</button>
-                    </div>
-                </div>
-
-                <button class="filter-sheet__apply" id="btn-apply-filters">
-                    Apply Filters
-                </button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Toast container -->
-    <div id="toast-container" class="toast-container"></div>
-
-    <!-- Style tooltip (hover over style names) -->
-    <div id="style-tooltip" class="style-tooltip-popup" role="tooltip" aria-hidden="true"></div>
-
-    <!-- Venue detail modal -->
-    <div id="venue-modal" class="modal-overlay venue-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="venue-modal-title" style="display:none;">
-        <div class="modal-content venue-modal-content">
-            <div id="venue-modal-body"></div>
-            <button type="button" id="venue-modal-close" class="btn btn-ghost venue-modal-close" aria-label="Close">✕</button>
-        </div>
-    </div>
-
-    <!-- Delete rating modal -->
-    <div id="delete-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="delete-modal-title" style="display:none;">
-        <div class="modal-content">
-            <h3 id="delete-modal-title">Delete rating?</h3>
-            <p id="delete-modal-message">This can't be undone.</p>
-            <div class="modal-actions">
-                <button type="button" id="delete-modal-cancel" class="btn btn-ghost">Cancel</button>
-                <button type="button" id="delete-modal-confirm" class="btn btn-primary">Delete</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Keyboard shortcuts modal -->
-    <div id="shortcuts-modal" class="modal-overlay" role="dialog" aria-labelledby="shortcuts-modal-title" style="display:none;">
-        <div class="modal-content shortcuts-modal-content">
-            <h3 id="shortcuts-modal-title">Keyboard Shortcuts</h3>
-            <ul class="shortcuts-list">
-                <li><kbd>D</kbd> Dashboard</li>
-                <li><kbd>N</kbd> Rate a Beer</li>
-                <li><kbd>B</kbd> Browse</li>
-                <li><kbd>E</kbd> Exchange</li>
-                <li><kbd>M</kbd> Map</li>
-                <li><kbd>L</kbd> Leaderboard</li>
-                <li><kbd>/</kbd> Search (focus browse search)</li>
-                <li><kbd>Esc</kbd> Close modal or go back</li>
-                <li><kbd>?</kbd> This help</li>
+    <!-- ══════════ NAV ══════════ -->
+    <nav class="nav" id="nav">
+        <div class="container nav-inner">
+            <img src="top_bar_bb.png" alt="BeerBook" class="nav-logo">
+            <ul class="nav-links" id="nav-links">
+                <li><a href="#scoring">Scoring</a></li>
+                <li><a href="#how-it-works">How It Works</a></li>
+                <li><a href="#compare">Compare</a></li>
+                <li><a href="#download" class="nav-cta">Get the App</a></li>
             </ul>
-            <button type="button" class="btn btn-ghost" id="shortcuts-modal-close">Close</button>
+            <button class="nav-toggle" id="nav-toggle" aria-label="Menu">&#9776;</button>
         </div>
-    </div>
+    </nav>
 
-    <!-- Beer detail modal -->
-    <div id="beer-detail-modal" class="modal-overlay beer-detail-modal" role="dialog" aria-modal="true" style="display:none;">
-        <div class="modal-content modal-content-beer-detail">
-            <button type="button" class="beer-detail-back" id="beer-detail-back" aria-label="Close">← Back</button>
-            <div id="beer-detail-body" class="beer-detail-body"></div>
+    <!-- ══════════ HERO ══════════ -->
+    <section class="hero">
+        <div class="hero-content">
+            <div class="hero-badge">
+                <span class="hero-badge-dot"></span>
+                Coming Soon to iOS &amp; Android
+            </div>
+            <h1>Rate Smarter.<br><span class="gold">Drink Better.</span></h1>
+            <p class="hero-sub">
+                BeerBook replaces meaningless star ratings with a real scoring system.
+                Rate on a wider scale, rank beers head-to-head, and discover a hierarchy
+                that actually tells you something.
+            </p>
+            <div class="hero-actions">
+                <a href="#" class="btn-download" aria-label="Download on the App Store">
+                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
+                    <div class="btn-download-text">
+                        <div class="btn-download-label">Download on the</div>
+                        <div class="btn-download-store">App Store</div>
+                    </div>
+                </a>
+                <a href="#" class="btn-download" aria-label="Get it on Google Play">
+                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3,20.5V3.5C3,2.91 3.34,2.39 3.84,2.15L13.69,12L3.84,21.85C3.34,21.61 3,21.09 3,20.5M16.81,15.12L6.05,21.34L14.54,12.85L16.81,15.12M20.16,10.81C20.5,11.08 20.75,11.5 20.75,12C20.75,12.5 20.5,12.92 20.16,13.19L17.89,14.5L15.39,12L17.89,9.5L20.16,10.81M6.05,2.66L16.81,8.88L14.54,11.15L6.05,2.66Z"/></svg>
+                    <div class="btn-download-text">
+                        <div class="btn-download-label">Get it on</div>
+                        <div class="btn-download-store">Google Play</div>
+                    </div>
+                </a>
+            </div>
         </div>
-    </div>
+        <div class="scroll-hint">
+            <span>Scroll</span>
+            <div class="scroll-arrow"></div>
+        </div>
+    </section>
 
-    <!-- Scripts -->
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
-    <script src="utils.js"></script>
-    <script src="config.js"></script>
-    <script src="supabase.js"></script>
-    <script src="charts.js"></script>
-    <script src="tabs.js"></script>
-    <script src="tab-burst.js"></script>
-    <script src="tab-burst-admin.js"></script>
-    <script src="admin.js"></script>
-    <script src="app.js"></script>
-    <script src="exchange.js"></script>
-    <script src="ui/bottomSheet.js"></script>
-    <script src="map.js"></script>
-    <script src="venues.js"></script>
-    <script src="sample-data.js"></script>
-    <script src="social.js"></script>
-    <script src="crews.js"></script>
+    <!-- ══════════ THE PROBLEM ══════════ -->
+    <section class="problem">
+        <div class="container">
+            <div class="reveal">
+                <div class="section-label">The Problem</div>
+                <h2 class="section-title">70% of Beers Fall<br>Between 3.8 and 4.2</h2>
+                <p class="section-desc centered">
+                    Traditional beer apps compress everything into a narrow band.
+                    A world-class double IPA and a mediocre lager both land around 4 stars.
+                    That tells you nothing.
+                </p>
+            </div>
+
+            <div class="problem-visual reveal reveal-delay-2">
+                <div class="star-demo">
+                    <div class="star-row">
+                        <span class="star-row-name">World-Class DIPA</span>
+                        <span class="star-row-stars">&#9733;&#9733;&#9733;&#9733;&#9734;</span>
+                        <span class="star-row-score">4.2</span>
+                    </div>
+                    <div class="star-row">
+                        <span class="star-row-name">Solid Pale Ale</span>
+                        <span class="star-row-stars">&#9733;&#9733;&#9733;&#9733;&#9734;</span>
+                        <span class="star-row-score">3.9</span>
+                    </div>
+                    <div class="star-row">
+                        <span class="star-row-name">Forgettable Lager</span>
+                        <span class="star-row-stars">&#9733;&#9733;&#9733;&#9734;&#9734;</span>
+                        <span class="star-row-score">3.5</span>
+                    </div>
+                    <div class="star-row">
+                        <span class="star-row-name">Actually Terrible</span>
+                        <span class="star-row-stars">&#9733;&#9733;&#9733;&#9734;&#9734;</span>
+                        <span class="star-row-score">3.1</span>
+                    </div>
+                </div>
+            </div>
+
+            <p class="problem-punchline reveal reveal-delay-3">
+                Over 70% of beers fall between 3.8 and 4.2 stars.
+                <em>So what's the point?</em>
+            </p>
+        </div>
+    </section>
+
+    <!-- ══════════ BEERBOOK SCORING ══════════ -->
+    <section class="scoring" id="scoring">
+        <div class="container">
+            <div class="reveal">
+                <div class="section-label">BeerBook Scoring</div>
+                <h2 class="section-title">A Scale That Actually<br>Means Something</h2>
+                <p class="section-desc">
+                    BeerBook uses a wider scoring range that lets you express real opinions &mdash;
+                    including negatives for beers that genuinely let you down.
+                    Then we go further.
+                </p>
+            </div>
+
+            <div class="scoring-grid">
+                <div class="scale-visual reveal reveal-delay-1">
+                    <div class="scale-track">
+                        <div class="scale-fill"></div>
+                        <div class="scale-marker" style="left: 12%;" data-label="Drain pour"></div>
+                        <div class="scale-marker" style="left: 42%;" data-label="Forgettable"></div>
+                        <div class="scale-marker" style="left: 72%;" data-label="Solid"></div>
+                        <div class="scale-marker" style="left: 92%;" data-label="Elite"></div>
+                    </div>
+                    <div class="scale-labels">
+                        <span>Negative</span>
+                        <span>Zero</span>
+                        <span>Positive</span>
+                    </div>
+                    <p class="scale-example-label">
+                        A wider range means every score carries real meaning
+                    </p>
+                </div>
+
+                <div class="scoring-features">
+                    <div class="feature-card reveal reveal-delay-1">
+                        <div class="feature-icon">&#x1F4CF;</div>
+                        <h3>Wider Scale</h3>
+                        <p>Go beyond 5 stars. Our expanded range &mdash; including negatives &mdash; lets you
+                        score with nuance. A 2 and a -3 are worlds apart, and your ratings should reflect that.</p>
+                    </div>
+                    <div class="feature-card reveal reveal-delay-2">
+                        <div class="feature-icon">&#x2694;&#xFE0F;</div>
+                        <h3>Head-to-Head Rankings</h3>
+                        <p>After your initial score, BeerBook asks you to compare beers directly.
+                        This continuous ranking builds a hierarchy you can trust.</p>
+                    </div>
+                    <div class="feature-card reveal reveal-delay-3">
+                        <div class="feature-icon">&#x1F451;</div>
+                        <h3>Style Hierarchy</h3>
+                        <p>See where every beer stands within its style. The best IPA in your book
+                        isn't competing with stouts &mdash; it's measured against other IPAs.</p>
+                    </div>
+                    <div class="feature-card reveal reveal-delay-4">
+                        <div class="feature-icon">&#x1F4A1;</div>
+                        <h3>Perceived Value</h3>
+                        <p>Our overall rankings reveal which beers punch above their weight
+                        and which ones are riding hype. Real value, not marketing.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ══════════ HOW IT WORKS ══════════ -->
+    <section class="how-it-works" id="how-it-works">
+        <div class="container">
+            <div class="reveal">
+                <div class="section-label">How It Works</div>
+                <h2 class="section-title">Three Steps to Better Beer</h2>
+                <p class="section-desc centered">
+                    No complicated setup. Just drink, rate, and discover.
+                </p>
+            </div>
+
+            <div class="steps">
+                <div class="step reveal reveal-delay-1">
+                    <div class="step-number">1</div>
+                    <h3>Rate Your Beer</h3>
+                    <p>Score it on the BeerBook scale. Use the full range &mdash; if it's terrible, go negative. If it's transcendent, go big. Be honest.</p>
+                </div>
+                <div class="step reveal reveal-delay-2">
+                    <div class="step-number">2</div>
+                    <h3>Compare &amp; Rank</h3>
+                    <p>BeerBook presents head-to-head matchups between your rated beers. Quick picks that refine your personal rankings over time.</p>
+                </div>
+                <div class="step reveal reveal-delay-3">
+                    <div class="step-number">3</div>
+                    <h3>Discover Your Hierarchy</h3>
+                    <p>Watch your beer hierarchy take shape &mdash; see your top picks by style, find patterns in what you love, and share your rankings.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ══════════ COMPARISON ══════════ -->
+    <section class="comparison" id="compare">
+        <div class="container">
+            <div class="reveal">
+                <div class="section-label">Why Switch</div>
+                <h2 class="section-title">Everything They Do,<br>Plus Everything They Don't</h2>
+                <p class="section-desc centered">
+                    Check-ins, venue tracking, happy hour prices verified by real bar-goers &mdash;
+                    we do all that. But we also built a scoring system that actually means something.
+                </p>
+            </div>
+
+            <table class="comparison-table reveal reveal-delay-2">
+                <thead>
+                    <tr>
+                        <th>Feature</th>
+                        <th class="highlight">BeerBook</th>
+                        <th>Typical Apps</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Rating scale</td>
+                        <td class="highlight"><span class="check">&#10003;</span> Wide range + negatives</td>
+                        <td><span class="partial">1&ndash;5 stars</span></td>
+                    </tr>
+                    <tr>
+                        <td>Head-to-head ranking</td>
+                        <td class="highlight"><span class="check">&#10003;</span> Built-in</td>
+                        <td><span class="cross">&#10005;</span></td>
+                    </tr>
+                    <tr>
+                        <td>Style hierarchy</td>
+                        <td class="highlight"><span class="check">&#10003;</span> Auto-generated</td>
+                        <td><span class="cross">&#10005;</span></td>
+                    </tr>
+                    <tr>
+                        <td>Rankings improve over time</td>
+                        <td class="highlight"><span class="check">&#10003;</span> Continuous</td>
+                        <td><span class="cross">&#10005;</span></td>
+                    </tr>
+                    <tr>
+                        <td>Perceived value insights</td>
+                        <td class="highlight"><span class="check">&#10003;</span> Data-driven</td>
+                        <td><span class="cross">&#10005;</span></td>
+                    </tr>
+                    <tr>
+                        <td>Express negative opinions</td>
+                        <td class="highlight"><span class="check">&#10003;</span> Go below zero</td>
+                        <td><span class="partial">1 star minimum</span></td>
+                    </tr>
+                    <tr>
+                        <td>Check-ins</td>
+                        <td class="highlight"><span class="check">&#10003;</span></td>
+                        <td><span class="check">&#10003;</span></td>
+                    </tr>
+                    <tr>
+                        <td>Venue prices &amp; happy hours</td>
+                        <td class="highlight"><span class="check">&#10003;</span> Community-verified</td>
+                        <td><span class="cross">&#10005;</span></td>
+                    </tr>
+                    <tr>
+                        <td>Badges, titles &amp; achievements</td>
+                        <td class="highlight"><span class="check">&#10003;</span></td>
+                        <td><span class="check">&#10003;</span></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <!-- ══════════ DOWNLOAD CTA ══════════ -->
+    <section class="cta-section" id="download">
+        <div class="container">
+            <div class="reveal">
+                <h2 class="section-title">Ready to Rate Smarter?</h2>
+                <p class="section-desc centered">
+                    Join BeerBook and start building your personal beer hierarchy.
+                    Every rating makes your rankings sharper.
+                </p>
+            </div>
+            <div class="cta-actions reveal reveal-delay-1">
+                <a href="#" class="btn-download" aria-label="Download on the App Store">
+                    <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
+                    <div class="btn-download-text">
+                        <div class="btn-download-label">Download on the</div>
+                        <div class="btn-download-store">App Store</div>
+                    </div>
+                </a>
+                <a href="#" class="btn-download" aria-label="Get it on Google Play">
+                    <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24"><path d="M3,20.5V3.5C3,2.91 3.34,2.39 3.84,2.15L13.69,12L3.84,21.85C3.34,21.61 3,21.09 3,20.5M16.81,15.12L6.05,21.34L14.54,12.85L16.81,15.12M20.16,10.81C20.5,11.08 20.75,11.5 20.75,12C20.75,12.5 20.5,12.92 20.16,13.19L17.89,14.5L15.39,12L17.89,9.5L20.16,10.81M6.05,2.66L16.81,8.88L14.54,11.15L6.05,2.66Z"/></svg>
+                    <div class="btn-download-text">
+                        <div class="btn-download-label">Get it on</div>
+                        <div class="btn-download-store">Google Play</div>
+                    </div>
+                </a>
+            </div>
+            <p class="cta-coming-soon reveal reveal-delay-2">Coming soon to iOS and Android</p>
+        </div>
+    </section>
+
+    <!-- ══════════ FOOTER ══════════ -->
+    <footer>
+        <div class="container footer-inner">
+            <img src="top_bar_bb.png" alt="BeerBook" class="footer-logo">
+            <span class="footer-text">&copy; 2026 Drinks After Work. All rights reserved.</span>
+            <ul class="footer-links">
+                <li><a href="#">Privacy</a></li>
+                <li><a href="#">Terms</a></li>
+                <li><a href="#">Contact</a></li>
+            </ul>
+        </div>
+    </footer>
+
+    <script>
+        // ── Scroll reveal ──
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('visible');
+                }
+            });
+        }, { threshold: 0.15, rootMargin: '0px 0px -40px 0px' });
+
+        document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+
+        // ── Nav scroll effect ──
+        const nav = document.getElementById('nav');
+        let ticking = false;
+        window.addEventListener('scroll', () => {
+            if (!ticking) {
+                requestAnimationFrame(() => {
+                    nav.classList.toggle('scrolled', window.scrollY > 60);
+                    ticking = false;
+                });
+                ticking = true;
+            }
+        });
+
+        // ── Mobile nav toggle ──
+        const toggle = document.getElementById('nav-toggle');
+        const links = document.getElementById('nav-links');
+        toggle.addEventListener('click', () => {
+            links.classList.toggle('open');
+            toggle.innerHTML = links.classList.contains('open') ? '&#10005;' : '&#9776;';
+        });
+
+        // Close mobile nav on link click
+        links.querySelectorAll('a').forEach(a => {
+            a.addEventListener('click', () => {
+                links.classList.remove('open');
+                toggle.innerHTML = '&#9776;';
+            });
+        });
+
+        // ── Smooth scroll for anchor links ──
+        document.querySelectorAll('a[href^="#"]').forEach(a => {
+            a.addEventListener('click', e => {
+                const target = document.querySelector(a.getAttribute('href'));
+                if (target) {
+                    e.preventDefault();
+                    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            });
+        });
+    </script>
 </body>
 </html>
