@@ -219,6 +219,7 @@ module.exports = function tabsRoutes(opts) {
   router.get('/achievements/catalog', authMiddleware, async (req, res, next) => {
     try {
       const userId = String(req.claims?.sub || '').trim();
+      console.log('[catalog] userId:', userId);
       if (!userId) return res.status(400).json({ error: 'Missing user id' });
 
       // Fetch all active achievements + categories + user unlocks in parallel
@@ -227,6 +228,10 @@ module.exports = function tabsRoutes(opts) {
         rest('GET', '/achievement_categories?order=sort_order.asc,key.asc&select=key,name,icon'),
         rest('GET', `/user_achievements?user_id=eq.${encodeURIComponent(userId)}&select=achievement_id,unlocked_at`),
       ]);
+
+      console.log('[catalog] achievements status:', allAchRes.status, 'count:', Array.isArray(allAchRes.body) ? allAchRes.body.length : typeof allAchRes.body);
+      console.log('[catalog] categories status:', catRes.status, 'count:', Array.isArray(catRes.body) ? catRes.body.length : typeof catRes.body);
+      console.log('[catalog] unlocks status:', uaRes.status, 'count:', Array.isArray(uaRes.body) ? uaRes.body.length : typeof uaRes.body);
 
       if (allAchRes.status >= 400) return res.status(allAchRes.status).json(allAchRes.body || { error: 'Failed to fetch achievements' });
 
@@ -277,8 +282,10 @@ module.exports = function tabsRoutes(opts) {
         };
       });
 
+      console.log('[catalog] responding with', data.length, 'items');
       res.json({ data });
     } catch (e) {
+      console.error('[catalog] ERROR:', e.message || e);
       next(e);
     }
   });
