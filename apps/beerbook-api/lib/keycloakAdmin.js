@@ -1,4 +1,4 @@
-const KEYCLOAK_URL = process.env.KEYCLOAK_URL; // e.g. https://auth.drinksafterwork.net
+const KEYCLOAK_URL = process.env.KEYCLOAK_URL; // e.g. https://auth.beerbookapp.com
 const ADMIN_CLIENT_ID = process.env.KEYCLOAK_ADMIN_CLIENT_ID;
 const ADMIN_CLIENT_SECRET = process.env.KEYCLOAK_ADMIN_CLIENT_SECRET;
 const ADMIN_REALM = process.env.KEYCLOAK_ADMIN_REALM || 'master';

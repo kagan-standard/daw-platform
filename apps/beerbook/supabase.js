@@ -1,7 +1,7 @@
 /* ============================================
    BeerBook — Keycloak (auth) + beerbook-api (data)
    Auth: Keycloak OIDC Authorization Code + PKCE
-   Data: fetch() to api.beerbook.drinksafterwork.net (no direct Supabase)
+   Data: fetch() to api.beerbookapp.com (no direct Supabase)
    Demo: localStorage fallback
    ============================================ */
 
@@ -814,7 +814,7 @@ const DB = {
         try {
             const url = `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(q)}&categories_tags_en=beers&json=1&page_size=10&fields=product_name,brands,categories_tags_en,alcohol_value`;
             const res = await fetch(url, {
-                headers: { 'User-Agent': 'BeerBook/1.0 (drinksafterwork.net)' }
+                headers: { 'User-Agent': 'BeerBook/1.0 (beerbookapp.com)' }
             });
             if (!res.ok) return [];
             const data = await res.json();

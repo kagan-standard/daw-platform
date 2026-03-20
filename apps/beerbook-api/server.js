@@ -33,7 +33,7 @@ const PORT = Number(process.env.PORT) || 3000;
 // PostgREST only; no SUPABASE_URL required. Self-hosted: set SUPABASE_REST_URL if different (e.g. http://supabase-rest:3000).
 const REST_URL = (process.env.SUPABASE_REST_URL || 'http://supabase-rest:3000').replace(/\/$/, '');
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const CORS_ORIGIN = process.env.CORS_ORIGIN || 'https://beerbook.drinksafterwork.net';
+const CORS_ORIGIN = process.env.CORS_ORIGIN || 'https://beerbookapp.com';
 const APP_SCHEME = process.env.APP_SCHEME || 'beerbook';
 const WEB_BASE_URL = (process.env.WEB_BASE_URL || CORS_ORIGIN).replace(/\/$/, '');
 // Allowlist for CORS: web origin + optional comma-separated CORS_ORIGINS (e.g. mobile app origins)
@@ -41,8 +41,8 @@ const CORS_ORIGINS_RAW = process.env.CORS_ORIGINS || '';
 const CORS_ALLOWED_ORIGINS = new Set(
   [CORS_ORIGIN, ...CORS_ORIGINS_RAW.split(',').map((o) => o.trim()).filter(Boolean)]
 );
-const KEYCLOAK_ISSUER = process.env.KEYCLOAK_ISSUER || 'https://auth.drinksafterwork.net/realms/daw';
-const KEYCLOAK_JWKS_URI = process.env.KEYCLOAK_JWKS_URI || 'https://auth.drinksafterwork.net/realms/daw/protocol/openid-connect/certs';
+const KEYCLOAK_ISSUER = process.env.KEYCLOAK_ISSUER || 'https://auth.beerbookapp.com/realms/daw';
+const KEYCLOAK_JWKS_URI = process.env.KEYCLOAK_JWKS_URI || 'https://auth.beerbookapp.com/realms/daw/protocol/openid-connect/certs';
 const CLOCK_SKEW = Number(process.env.TOKEN_CLOCK_SKEW_SECONDS) || 30;
 const RATE_WINDOW_MS = Number(process.env.RATE_LIMIT_WINDOW_MS) || 60000;
 // Raised default (200) for mobile/bootstrap burst; set RATE_LIMIT_MAX=100 to keep previous behavior

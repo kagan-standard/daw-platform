@@ -109,7 +109,7 @@ const upload = multer({
 });
 
 function uploadResponse(file, res) {
-  const baseUrl = (process.env.API_BASE_URL || 'https://api.beerbook.drinksafterwork.net').replace(/\/$/, '');
+  const baseUrl = (process.env.API_BASE_URL || 'https://api.beerbookapp.com').replace(/\/$/, '');
   const url = `${baseUrl}/uploads/${file.filename}`;
   res.status(201).json({ url, filename: file.filename });
 }
@@ -143,7 +143,7 @@ module.exports = function (opts) {
         return res.status(400).json({ error: 'File content does not match declared image type (magic-byte check failed).' });
       }
 
-      const baseUrl = (process.env.API_BASE_URL || 'https://api.beerbook.drinksafterwork.net').replace(/\/$/, '');
+      const baseUrl = (process.env.API_BASE_URL || 'https://api.beerbookapp.com').replace(/\/$/, '');
       const url = `${baseUrl}/uploads/${selectedFile.filename}`;
       const rest = opts.rest;
       const userId = req.claims?.sub;

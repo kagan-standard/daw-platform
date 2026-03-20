@@ -496,8 +496,8 @@
     "enabled" : true,
     "alwaysDisplayInConsole" : false,
     "clientAuthenticatorType" : "client-secret",
-    "redirectUris" : [ "https://beerbook.drinksafterwork.net/*" ],
-    "webOrigins" : [ "https://beerbook.drinksafterwork.net" ],
+    "redirectUris" : [ "https://beerbookapp.com/*", "https://www.beerbookapp.com/*", "https://beerbook.drinksafterwork.net/*" ],
+    "webOrigins" : [ "https://beerbookapp.com", "https://www.beerbookapp.com", "https://beerbook.drinksafterwork.net" ],
     "notBefore" : 0,
     "bearerOnly" : false,
     "consentRequired" : false,
@@ -510,7 +510,7 @@
     "protocol" : "openid-connect",
     "attributes" : {
       "realm_client" : "false",
-      "post.logout.redirect.uris" : "https://beerbook.drinksafterwork.net/*"
+      "post.logout.redirect.uris" : "https://beerbookapp.com/*##https://www.beerbookapp.com/*##https://beerbook.drinksafterwork.net/*"
     },
     "authenticationFlowBindingOverrides" : { },
     "fullScopeAllowed" : true,

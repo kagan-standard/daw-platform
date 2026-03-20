@@ -1,8 +1,8 @@
-// BeerBook runtime config (Phase 1: baked-in for beerbook.drinksafterwork.net)
+// BeerBook runtime config
 window.BEERBOOK_CONFIG = {
     keycloak: {
-        authority: 'https://auth.drinksafterwork.net/realms/daw',
+        authority: 'https://auth.beerbookapp.com/realms/daw',
         clientId: 'beerbook'
     },
-    apiBaseUrl: 'https://api.beerbook.drinksafterwork.net'
+    apiBaseUrl: 'https://api.beerbookapp.com'
 };

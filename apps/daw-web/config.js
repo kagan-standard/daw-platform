@@ -9,7 +9,7 @@ window.DAW_CONFIG = {
             id: 'beerbook',
             name: 'BeerBook',
             desc: 'Rate & review beers with the crew',
-            url: 'https://beerbook.drinksafterwork.net',
+            url: 'https://beerbookapp.com',
             icon: 'beer',
             status: 'live'
         },

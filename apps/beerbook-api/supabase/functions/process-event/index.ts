@@ -17,8 +17,8 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const KEYCLOAK_ISSUER = Deno.env.get("KEYCLOAK_ISSUER") ?? "https://auth.drinksafterwork.net/realms/daw";
-const KEYCLOAK_JWKS_URI = Deno.env.get("KEYCLOAK_JWKS_URI") ?? "https://auth.drinksafterwork.net/realms/daw/protocol/openid-connect/certs";
+const KEYCLOAK_ISSUER = Deno.env.get("KEYCLOAK_ISSUER") ?? "https://auth.beerbookapp.com/realms/daw";
+const KEYCLOAK_JWKS_URI = Deno.env.get("KEYCLOAK_JWKS_URI") ?? "https://auth.beerbookapp.com/realms/daw/protocol/openid-connect/certs";
 const CLOCK_SKEW = Number(Deno.env.get("TOKEN_CLOCK_SKEW_SECONDS")) || 30;
 
 let jwks: ReturnType<typeof createRemoteJWKSet> | null = null;

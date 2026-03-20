@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find /c/Users/kenyo/OneDrive/Desktop/daw-platform/daw-platform/infra -type f \\\\\\(-name *.conf -o -name *.json -o -name *.yml -o -name *.yaml -o -name *.sh \\\\\\))",
+      "Bash(find /c/Users/kenyo/OneDrive/Desktop/daw-platform/daw-platform/apps -type f \\\\\\(-name config.js -o -name app.js -o -name *.env* \\\\\\))",
+      "Bash(grep -r \"drinksafterwork\\\\|beerbookapp\" /c/Users/kenyo/OneDrive/Desktop/daw-platform/daw-platform/apps/beerbook --include=*.js --include=*.html)",
+      "Bash(grep -r \"drinksafterwork\\\\|beerbookapp\" /c/Users/kenyo/OneDrive/Desktop/daw-platform/daw-platform/apps/beerbook-api --include=*.js --include=*.json)",
+      "Bash(find /c/Users/kenyo/OneDrive/Desktop/daw-platform/daw-platform -type f -name *.ts -o -name *.tsx)",
+      "Bash(grep -r \"issuer\\\\|authority\" /c/Users/kenyo/OneDrive/Desktop/daw-platform/daw-platform/apps --include=*.js --include=*.ts)",
+      "Bash(find /c/Users/kenyo/OneDrive/Desktop/daw-platform/daw-platform -type f \\\\\\(-name README* -o -name *.md \\\\\\) ! -path *node_modules* ! -path *.git*)",
+      "Bash(grep -l \"drinksafterwork\\\\|beerbookapp\" /c/Users/kenyo/OneDrive/Desktop/daw-platform/daw-platform/*.md)",
+      "Bash(grep -r well-known /c/Users/kenyo/OneDrive/Desktop/daw-platform/daw-platform --include=*.js --include=*.json --include=*.md)"
+    ]
+  }
+}
