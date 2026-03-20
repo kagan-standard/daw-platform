@@ -172,12 +172,12 @@ async function grantAchievementCosmetics(rest, userId, achievementKey) {
 }
 
 /**
- * rating_submitted: evaluate achievements. Mint ledger only if user_achievements INSERT actually inserted (no conflict).
+ * Evaluate achievements for a given trigger type. Reusable for rating_submitted, cheers_given, cheers_received, etc.
  */
-async function processRatingSubmitted(rest, totalFromContentRange, userId, payload) {
+async function processAchievementsForTrigger(rest, totalFromContentRange, userId, triggerType, payload) {
   const unlocked = [];
   let tabsDelta = 0;
-  const achievements = await loadAchievementsForTrigger(rest, 'rating_submitted');
+  const achievements = await loadAchievementsForTrigger(rest, triggerType);
   for (const ach of achievements) {
     const progress = await calculateAchievementProgress({
       rest,
@@ -209,6 +209,13 @@ async function processRatingSubmitted(rest, totalFromContentRange, userId, paylo
     tabsDelta += (result && result.reward_tabs_granted) || 0;
   }
   return { unlocked, tabsDelta };
+}
+
+/**
+ * rating_submitted: evaluate achievements. Mint ledger only if user_achievements INSERT actually inserted (no conflict).
+ */
+async function processRatingSubmitted(rest, totalFromContentRange, userId, payload) {
+  return processAchievementsForTrigger(rest, totalFromContentRange, userId, 'rating_submitted', payload);
 }
 
 async function getTabsBalance(rest, userId) {
@@ -259,6 +266,10 @@ async function processEvent(opts, eventType, eventId, payload, userId) {
       ...(payload.context || {}),
     };
     tabsDelta = await processSingleAward(rest, ledgerUserId, eventId, eventType, payload, context);
+    // Evaluate cheers_received achievements for the receiver
+    const cheersReceivedResult = await processAchievementsForTrigger(rest, totalFromContentRange, ledgerUserId, 'cheers_received', payload);
+    unlocked = cheersReceivedResult.unlocked;
+    tabsDelta += cheersReceivedResult.tabsDelta;
   } else if (eventType === 'cheers_given' || eventType === 'admin_grant') {
     if (!eventId) throw new Error(`event_id required for ${eventType}`);
     if (eventType === 'admin_grant' && !isAdminUser(userId)) {
@@ -271,6 +282,12 @@ async function processEvent(opts, eventType, eventId, payload, userId) {
         ? { from_user_id: userId, to_user_id: payload.to_user_id ?? null, ...(payload.context || {}) }
         : undefined;
     tabsDelta = await processSingleAward(rest, userId, eventId, eventType, payload, context);
+    // Evaluate cheers_given achievements for the giver
+    if (eventType === 'cheers_given') {
+      const cheersGivenResult = await processAchievementsForTrigger(rest, totalFromContentRange, userId, 'cheers_given', payload);
+      unlocked = cheersGivenResult.unlocked;
+      tabsDelta += cheersGivenResult.tabsDelta;
+    }
   } else if (eventType === 'rating_submitted') {
     const result = await processRatingSubmitted(rest, totalFromContentRange, userId, payload);
     unlocked = result.unlocked;
