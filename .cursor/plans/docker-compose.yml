@@ -8,6 +8,7 @@ services:
     image: quay.io/keycloak/keycloak:26.2
     container_name: keycloak
     restart: unless-stopped
+    # ⚠️  UPDATED: --hostname now points to auth.beerbookapp.com
     command: start --features=token-exchange,admin-fine-grained-authz:v1 --proxy-headers=xforwarded --hostname=https://auth.beerbookapp.com --http-enabled=true --hostname-strict=false --spi-theme-static-max-age=-1 --spi-theme-cache-themes=false
     environment:
       KC_DB: postgres
@@ -28,6 +29,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=traefik"
+      # ⚠️  UPDATED: Primary domain is now beerbookapp.com, old domain kept for transition
       - "traefik.http.routers.keycloak.rule=Host(`auth.beerbookapp.com`) || Host(`auth.drinksafterwork.net`)"
       - "traefik.http.routers.keycloak.entrypoints=web-secure"
       - "traefik.http.routers.keycloak.tls=true"
@@ -45,6 +47,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=traefik"
+      # ⚠️  UPDATED: Primary domain is now beerbookapp.com
       - "traefik.http.routers.beerbook.rule=Host(`beerbookapp.com`) || Host(`www.beerbookapp.com`) || Host(`beerbook.drinksafterwork.net`)"
       - "traefik.http.routers.beerbook.entrypoints=web-secure"
       - "traefik.http.routers.beerbook.tls=true"
@@ -80,6 +83,7 @@ services:
       - /opt/daw-platform/apps/beerbook-api/scripts:/app/scripts:ro
       - uploads_data:/data/uploads
     environment:
+      # ⚠️  UPDATED: All Keycloak URLs now point to auth.beerbookapp.com
       KEYCLOAK_ISSUER: https://auth.beerbookapp.com/realms/daw
       KEYCLOAK_JWKS_URI: https://auth.beerbookapp.com/realms/daw/protocol/openid-connect/certs
       KEYCLOAK_URL: https://auth.beerbookapp.com
@@ -90,6 +94,7 @@ services:
       SUPABASE_REST_URL: http://supabase-rest:3000
       SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
       PORT: "3001"
+      # ⚠️  UPDATED: CORS now allows both old and new domains during transition
       CORS_ORIGIN: https://beerbookapp.com,https://beerbook.drinksafterwork.net
       RATE_LIMIT_WINDOW_MS: "60000"
       RATE_LIMIT_MAX: "100"
@@ -105,6 +110,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=traefik"
+      # ⚠️  UPDATED: Primary domain is now api.beerbookapp.com
       - "traefik.http.routers.beerbook-api.rule=Host(`api.beerbookapp.com`) || Host(`api.beerbook.drinksafterwork.net`)"
       - "traefik.http.routers.beerbook-api.entrypoints=web-secure"
       - "traefik.http.routers.beerbook-api.tls=true"
