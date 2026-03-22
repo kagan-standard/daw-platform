@@ -23,11 +23,13 @@ isProject: false
 
 Do work in this **order**. Each phase fits roughly one focused agent/chat pass so you do not blow the context window.
 
-| Phase | Scope | Deliverables |
-| ----- | ----- | ------------ |
-| **Phase 1 — Database** | Supabase migrations only | New migration(s): backfill `yg_value` (legacy → canonical), `UPDATE ratings SET rating` from locked linear star formula, replace `ratings_yg_value_check`, column comment; achievement row for `first_one_star` (rule `yg_value eq -1`, copy “Give a negative review”) via migration and/or seed update. Optional: split **1a** = ratings backfill + CHECK, **1b** = achievements only (two small files). |
-| **Phase 2 — API + tests** | Node + verification | `[ratingsValidation.js](apps/beerbook-api/lib/ratingsValidation.js)` half-grid + epsilon; `ygValueToStarRating` = §1 formula; `[server.js](apps/beerbook-api/server.js)` error strings; `[ratings-yg-value.test.js](apps/beerbook-api/test/ratings-yg-value.test.js)` updated; run test suite; smoke **verify-aggregates** (leaderboard, profile stats, `/api/beers?sort=avg_yg_value`) against env with migrated DB. |
-| **Phase 3 — Docs** | Contract + internal docs | `[API_CONTRACT.md](apps/beerbook-api/docs/API_CONTRACT.md)` (allowed set, errors, rounding, analytics appendix); architecture-scan; `[DATABASE_SCHEMAS_OVERVIEW.md](apps/beerbook-api/docs/DATABASE_SCHEMAS_OVERVIEW.md)`; `[DECISIONS.md](DECISIONS.md)` / `[YG_BIDIRECTIONAL_PRODUCT_DECISIONS.md](apps/beerbook-api/docs/YG_BIDIRECTIONAL_PRODUCT_DECISIONS.md)` as needed. |
+
+| Phase                     | Scope                    | Deliverables                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ------------------------- | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Phase 1 — Database**    | Supabase migrations only | New migration(s): backfill `yg_value` (legacy → canonical), `UPDATE ratings SET rating` from locked linear star formula, replace `ratings_yg_value_check`, column comment; achievement row for `first_one_star` (rule `yg_value eq -1`, copy “Give a negative review”) via migration and/or seed update. Optional: split **1a** = ratings backfill + CHECK, **1b** = achievements only (two small files).             |
+| **Phase 2 — API + tests** | Node + verification      | `[ratingsValidation.js](apps/beerbook-api/lib/ratingsValidation.js)` half-grid + epsilon; `ygValueToStarRating` = §1 formula; `[server.js](apps/beerbook-api/server.js)` error strings; `[ratings-yg-value.test.js](apps/beerbook-api/test/ratings-yg-value.test.js)` updated; run test suite; smoke **verify-aggregates** (leaderboard, profile stats, `/api/beers?sort=avg_yg_value`) against env with migrated DB. |
+| **Phase 3 — Docs**        | Contract + internal docs | `[API_CONTRACT.md](apps/beerbook-api/docs/API_CONTRACT.md)` (allowed set, errors, rounding, analytics appendix); architecture-scan; `[DATABASE_SCHEMAS_OVERVIEW.md](apps/beerbook-api/docs/DATABASE_SCHEMAS_OVERVIEW.md)`; `[DECISIONS.md](DECISIONS.md)` / `[YG_BIDIRECTIONAL_PRODUCT_DECISIONS.md](apps/beerbook-api/docs/YG_BIDIRECTIONAL_PRODUCT_DECISIONS.md)` as needed.                                        |
+
 
 **Deploy sequence:** apply **Phase 1** on DB → ship **Phase 2** API so new writes validate correctly on the new grid → **Phase 3** can ship with the same release or immediately after. Mobile half-steps should assume **Phase 1 + 2** are live.
 
@@ -160,5 +162,7 @@ flowchart LR
   phase1 --> phase2
   phase2 --> phase3
 ```
+
+
 
 Mobile half-steps: **Phase 1 + Phase 2** live → clients send halves as-is (no int-only double-rounding).
