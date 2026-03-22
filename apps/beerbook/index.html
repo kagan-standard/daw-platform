@@ -382,36 +382,120 @@
             max-width: 700px;
         }
 
-        /* Star rating demo */
-        .star-demo {
-            display: flex;
-            flex-direction: column;
-            gap: 16px;
-        }
-        .star-row {
-            display: flex;
-            align-items: center;
-            gap: 16px;
-            padding: 16px 24px;
+        /* Star-rating histogram (illustrative — shows the “everything is ~4★” pile-up) */
+        .rating-histogram {
+            padding: 28px 24px 24px;
             background: var(--bg-surface);
             border: 1px solid var(--border-subtle);
-            border-radius: 12px;
-        }
-        .star-row-name {
-            flex: 1;
+            border-radius: 16px;
             text-align: left;
-            font-weight: 500;
         }
-        .star-row-stars {
-            color: var(--foam);
-            font-size: 1.1rem;
-            letter-spacing: 2px;
+        .histogram-head {
+            margin-bottom: 20px;
         }
-        .star-row-score {
-            font-weight: 700;
+        .histogram-title {
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 4px;
+        }
+        .histogram-sub {
+            font-size: 0.85rem;
             color: var(--text-muted);
-            min-width: 40px;
-            text-align: right;
+            line-height: 1.45;
+        }
+        .histogram-chart {
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            gap: 10px;
+            height: 220px;
+            padding: 12px 8px 0;
+            border-bottom: 1px solid var(--border-default);
+        }
+        .histogram-col {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-end;
+            min-width: 0;
+            height: 100%;
+        }
+        .histogram-bar-wrap {
+            width: 100%;
+            max-width: 56px;
+            height: 100%;
+            display: flex;
+            align-items: flex-end;
+            justify-content: center;
+        }
+        .histogram-bar {
+            width: 100%;
+            border-radius: 8px 8px 4px 4px;
+            background: linear-gradient(180deg, rgba(123, 143, 163, 0.45), rgba(123, 143, 163, 0.2));
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            transition: height 1.2s cubic-bezier(0.34, 1.2, 0.64, 1);
+        }
+        .visible .histogram-bar {
+            height: var(--h, 8%) !important;
+        }
+        .histogram-bar--peak {
+            position: relative;
+            background: linear-gradient(180deg, var(--foam), var(--gold), var(--amber));
+            border-color: rgba(244, 178, 35, 0.5);
+            box-shadow:
+                0 0 0 1px rgba(244, 178, 35, 0.25),
+                0 -8px 40px rgba(244, 178, 35, 0.35),
+                0 0 60px rgba(255, 159, 28, 0.2);
+            animation: histogramPeakPulse 2.4s ease-in-out infinite;
+        }
+        @keyframes histogramPeakPulse {
+            0%, 100% {
+                box-shadow:
+                    0 0 0 1px rgba(244, 178, 35, 0.25),
+                    0 -8px 40px rgba(244, 178, 35, 0.35),
+                    0 0 60px rgba(255, 159, 28, 0.2);
+            }
+            50% {
+                box-shadow:
+                    0 0 0 2px rgba(244, 178, 35, 0.45),
+                    0 -12px 56px rgba(244, 178, 35, 0.55),
+                    0 0 80px rgba(255, 159, 28, 0.35);
+            }
+        }
+        .histogram-bar--peak::before {
+            content: 'The blob';
+            position: absolute;
+            left: 50%;
+            bottom: 100%;
+            transform: translateX(-50%);
+            margin-bottom: 8px;
+            white-space: nowrap;
+            font-size: 0.7rem;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--gold);
+            text-shadow: 0 0 20px rgba(244, 178, 35, 0.6);
+            pointer-events: none;
+        }
+        .histogram-label {
+            margin-top: 12px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-align: center;
+        }
+        .histogram-label--peak {
+            color: var(--gold);
+        }
+        .histogram-stars {
+            font-size: 0.72rem;
+            letter-spacing: 0.02em;
+            color: var(--foam);
+            opacity: 0.9;
+            margin-top: 2px;
         }
         .problem-punchline {
             margin-top: 40px;
@@ -812,7 +896,8 @@
             .hero { padding: 100px 20px 60px; }
             .hero-actions { flex-direction: column; align-items: center; }
             .btn-download { width: 100%; max-width: 280px; justify-content: center; }
-            .star-row { padding: 12px 16px; gap: 10px; font-size: 0.9rem; }
+            .histogram-chart { height: 180px; gap: 6px; }
+            .histogram-bar-wrap { max-width: 44px; }
             .comparison-table thead th:first-child,
             .comparison-table tbody td:first-child {
                 min-width: 100px;
@@ -886,26 +971,47 @@
             </div>
 
             <div class="problem-visual reveal reveal-delay-2">
-                <div class="star-demo">
-                    <div class="star-row">
-                        <span class="star-row-name">World-Class DIPA</span>
-                        <span class="star-row-stars">&#9733;&#9733;&#9733;&#9733;&#9734;</span>
-                        <span class="star-row-score">4.2</span>
+                <div class="rating-histogram" role="img" aria-label="Illustrative five-star histogram: an exaggerated spike at four stars, with tiny counts at one, two, three, and five stars.">
+                    <div class="histogram-head">
+                        <p class="histogram-title">Star ratings on a typical beer app</p>
+                        <p class="histogram-sub">Illustrative counts &mdash; the classic &ldquo;everything piles up at 4&rdquo; look.</p>
                     </div>
-                    <div class="star-row">
-                        <span class="star-row-name">Solid Pale Ale</span>
-                        <span class="star-row-stars">&#9733;&#9733;&#9733;&#9733;&#9734;</span>
-                        <span class="star-row-score">3.9</span>
-                    </div>
-                    <div class="star-row">
-                        <span class="star-row-name">Forgettable Lager</span>
-                        <span class="star-row-stars">&#9733;&#9733;&#9733;&#9734;&#9734;</span>
-                        <span class="star-row-score">3.5</span>
-                    </div>
-                    <div class="star-row">
-                        <span class="star-row-name">Actually Terrible</span>
-                        <span class="star-row-stars">&#9733;&#9733;&#9733;&#9734;&#9734;</span>
-                        <span class="star-row-score">3.1</span>
+                    <div class="histogram-chart">
+                        <div class="histogram-col">
+                            <div class="histogram-bar-wrap">
+                                <div class="histogram-bar" style="--h: 6%; height: 0;" aria-hidden="true"></div>
+                            </div>
+                            <span class="histogram-label">1&#9733;</span>
+                            <span class="histogram-stars" aria-hidden="true">&#9733;&#9734;&#9734;&#9734;&#9734;</span>
+                        </div>
+                        <div class="histogram-col">
+                            <div class="histogram-bar-wrap">
+                                <div class="histogram-bar" style="--h: 10%; height: 0;" aria-hidden="true"></div>
+                            </div>
+                            <span class="histogram-label">2&#9733;</span>
+                            <span class="histogram-stars" aria-hidden="true">&#9733;&#9733;&#9734;&#9734;&#9734;</span>
+                        </div>
+                        <div class="histogram-col">
+                            <div class="histogram-bar-wrap">
+                                <div class="histogram-bar" style="--h: 18%; height: 0;" aria-hidden="true"></div>
+                            </div>
+                            <span class="histogram-label">3&#9733;</span>
+                            <span class="histogram-stars" aria-hidden="true">&#9733;&#9733;&#9733;&#9734;&#9734;</span>
+                        </div>
+                        <div class="histogram-col">
+                            <div class="histogram-bar-wrap">
+                                <div class="histogram-bar histogram-bar--peak" style="--h: 94%; height: 0;" aria-hidden="true"></div>
+                            </div>
+                            <span class="histogram-label histogram-label--peak">4&#9733;</span>
+                            <span class="histogram-stars" aria-hidden="true">&#9733;&#9733;&#9733;&#9733;&#9734;</span>
+                        </div>
+                        <div class="histogram-col">
+                            <div class="histogram-bar-wrap">
+                                <div class="histogram-bar" style="--h: 8%; height: 0;" aria-hidden="true"></div>
+                            </div>
+                            <span class="histogram-label">5&#9733;</span>
+                            <span class="histogram-stars" aria-hidden="true">&#9733;&#9733;&#9733;&#9733;&#9733;</span>
+                        </div>
                     </div>
                 </div>
             </div>
