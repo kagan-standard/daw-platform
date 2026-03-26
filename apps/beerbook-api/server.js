@@ -598,6 +598,7 @@ const trackingRoutes = require('./routes/tracking')({ ...routeHelpers });
 const tabsRoutes = require('./routes/tabs')({ ...routeHelpers });
 const followsRoutes = require('./routes/follows')({ ...routeHelpers });
 const crewsRoutes = require('./routes/crews')({ ...routeHelpers });
+const pushRoutes = require('./routes/push')({ ...routeHelpers });
 const internalRoutesModule = require('./routes/internal');
 const internalOpts = { rest, totalFromContentRange, getKeycloakUserId };
 const internalRoutes = internalRoutesModule(internalOpts);
@@ -619,6 +620,7 @@ app.use('/api', trackingRoutes);
 app.use('/api', tabsRoutes);
 app.use('/api', followsRoutes);
 app.use('/api', crewsRoutes);
+app.use('/api', pushRoutes);
 if (process.env.INTERNAL_PROCESS_EVENT_SECRET) {
   const internalLimiter = rateLimit({
     windowMs: RATE_WINDOW_MS,

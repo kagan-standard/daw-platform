@@ -2,7 +2,7 @@
 
 Generated: 2026-03-20
 Source: `daw-platform/apps/beerbook-api`
-Verification: Endpoint parity checked against `server.js` + `routes/*.js` (104 implemented / 104 documented)
+Verification: Endpoint parity checked against `server.js` + `routes/*.js` (106 implemented / 106 documented)
 Process-event source: `lib/processEvent.js` + `lib/processEventEngine.js` + `routes/internal.js`
 
 ---
@@ -34,6 +34,7 @@ Process-event source: `lib/processEvent.js` + `lib/processEventEngine.js` + `rou
 - [Endpoints: Cosmetics](#cosmetics)
 - [Endpoints: Follows](#follows)
 - [Endpoints: Crews](#crews)
+- [Endpoints: Push](#push)
 - [Endpoints: Tracking](#tracking)
 - [Endpoints: Admin](#admin)
 - [Endpoints: Internal](#internal)
@@ -3511,6 +3512,123 @@ Empty crew returns `{}`.
 - 502: `{ "error": "Remove member failed" }` - upstream delete failed
 
 **Side Effects:** Deletes from `crew_members`. If last member, deletes the crew.
+
+---
+
+### Push
+
+#### POST /api/push/register
+
+- **Auth:** `authMiddleware` (required)
+- **File:** `routes/push.js`
+
+Registers or refreshes a device Expo push token for the authenticated user.
+
+**Request Body:**
+
+| Field | Type | Required | Validation |
+|-------|------|----------|------------|
+| `expo_push_token` | string | yes | Must match Expo format (`ExponentPushToken[...]`) |
+| `platform` | string | yes | `ios` or `android` |
+| `device_id` | string | no | Device-stable identifier; recommended for replacement semantics |
+| `app_version` | string | no | App version string |
+
+**Success Response (200):**
+
+```json
+{
+  "registered": true,
+  "token": {
+    "id": "uuid",
+    "user_id": "string",
+    "expo_push_token": "ExponentPushToken[...]",
+    "platform": "ios|android",
+    "device_id": "string|null",
+    "app_version": "string|null",
+    "is_active": true,
+    "last_seen_at": "ISO8601",
+    "updated_at": "ISO8601",
+    "created_at": "ISO8601"
+  }
+}
+```
+
+**Error Responses:**
+- 400: `{ "error": "expo_push_token is required" }`
+- 400: `{ "error": "expo_push_token is invalid" }`
+- 400: `{ "error": "platform must be ios or android" }`
+- 401/403: standard auth failures from `authMiddleware`
+
+**Idempotency / Semantics:**
+- Re-registering the same `expo_push_token` is safe and upserts the same row.
+- Re-registering an inactive token reactivates it: `is_active=true`, `deactivated_at=null`, `deactivation_reason=null`.
+- `updated_at` and `last_seen_at` refresh on each successful register.
+- Ownership is bound to the currently authenticated user (`req.claims.sub`) and is updated on upsert.
+- If `device_id` is provided, existing active token(s) for the same `(user_id, device_id)` are deactivated with reason `replaced_by_new_registration` before upsert.
+
+---
+
+#### POST /api/push/unregister
+
+- **Auth:** `authMiddleware` (required)
+- **File:** `routes/push.js`
+
+Deactivates the specified Expo push token for the authenticated user.
+
+**Request Body:**
+
+| Field | Type | Required |
+|-------|------|----------|
+| `expo_push_token` | string | yes |
+
+**Success Response (200):**
+
+```json
+{
+  "unregistered": true,
+  "already_unregistered": false
+}
+```
+
+`already_unregistered` is `true` when no active token row matched `(user_id, expo_push_token)` (idempotent no-op).
+
+**Error Responses:**
+- 400: `{ "error": "expo_push_token is required" }`
+- 401/403: standard auth failures from `authMiddleware`
+
+**Idempotency / Semantics:**
+- Repeated calls are safe; inactive/missing token for the caller still returns success.
+- Deactivation is scoped to the authenticated `user_id` and does not deactivate another user's token.
+- On active match, token state becomes `is_active=false`, `deactivated_at=<now>`, `deactivation_reason='user_unregistered'`.
+
+#### Push Delivery Contract (Expo worker)
+
+- **Dispatcher script:** `scripts/push-dispatch.js`
+- **Eligibility gate:** `lib/pushEligibility.js` (fail-closed allowlist; unknown types remain in-app only)
+
+**Outbound payload shape to Expo:**
+
+```json
+{
+  "to": "ExponentPushToken[...]",
+  "sound": "default",
+  "title": "Notification title",
+  "body": "Notification message",
+  "data": {
+    "notification_id": "string",
+    "notification_type": "string",
+    "target_type": "beer|user|crew|achievement|tabs_profile|null",
+    "target_id": "string|null"
+  }
+}
+```
+
+**Milestone 2 state model:**
+- Current state table: `notification_token_push_state` (unique `(notification_id, token_id)` claim/delivery state)
+- Immutable attempts: `push_send_attempts` (one row per send attempt)
+- Terminal states: `receipt_ok`, `permanent_failure`
+- Retries: `retryable_failure` with exponential backoff via `next_attempt_at`
+- Invalid token handling: provider error `DeviceNotRegistered` deactivates token (`is_active=false`)
 
 ---
 
