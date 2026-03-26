@@ -3663,6 +3663,21 @@ Deactivates the specified Expo push token for the authenticated user.
 - Top-level: `to`, `sound`, `title`, `body`, `data`
 - `data` object: `notification_id`, `notification_type`, `target_type`, `target_id`
 
+**Notification Type Matrix (current backend producers):**
+
+| Producer | Source file | `notification_type` | Default target | Push eligibility |
+|----------|-------------|---------------------|----------------|------------------|
+| Mid-week streak risk scheduler | `scripts/streak-risk-check.js` | `streak_at_risk` | `tabs_profile` + user id | Yes (allowlisted) |
+| Mid-week streak risk scheduler | `scripts/streak-risk-check.js` | `approaching_demotion` | `tabs_profile` + user id | Yes (allowlisted) |
+| Weekly tier evaluation scheduler | `scripts/weekly-tabs-eval.js` | `tier_promotion` | `tabs_profile` + user id | Yes (allowlisted) |
+| Weekly tier evaluation scheduler | `scripts/weekly-tabs-eval.js` | `tier_demotion` | `tabs_profile` + user id | No (in-app only) |
+| Admin seeder grant | `routes/tabs.js` | `seeder_granted` | `tabs_profile` + user id | No (in-app only) |
+| Admin submission review | `routes/tabs.js` | `beer_approved` | `beer` + submission id | Yes (allowlisted) |
+| Admin submission review | `routes/tabs.js` | `beer_rejected` | `beer` + submission id | No (in-app only) |
+| Async upload moderation | `lib/uploadModeration.js` | `photo_removed` | `tabs_profile` + user id | No (in-app only) |
+Push allowlist is enforced in `lib/pushEligibility.js` and is fail-closed by default: unknown/new types are not pushed until explicitly allowlisted. Current allowlist values are:
+`streak_at_risk`, `approaching_demotion`, `tier_promotion`, `tabs_earned`, `beer_approved`, `weekly_summary`.
+
 **Milestone 2 state model:**
 - Current state table: `notification_token_push_state` (unique `(notification_id, token_id)` claim/delivery state)
 - Immutable attempts: `push_send_attempts` (one row per send attempt)
@@ -4575,6 +4590,9 @@ Writers that bypass the Node BFF must satisfy the same values: PostgreSQL constr
 | `POST /api/cosmetics/equip` | `profiles` (equipped IDs) | None | No |
 | `POST /api/tabs/submissions` | `beer_submissions` | None | No |
 | `PATCH /api/admin/tabs/submissions/:id` (approve) | `beer_submissions`, `tabs_ledger`, `user_tabs_profile` | Yes | Yes |
+| `POST /api/push/register` | `push_tokens` (upsert), possibly deactivates other active rows for same `(user_id, device_id)` | None | No |
+| `POST /api/push/unregister` | `push_tokens` (deactivate matching active row for caller/token) | None | No |
+| `npm run push:dispatch` (worker) | `notification_token_push_state`, `push_send_attempts`, possible `push_tokens` deactivation on `DeviceNotRegistered` | Consumes existing `tab_notifications` only (does not create business notifications) | No (delivery only) |
 | `GET /api/admin/beers/for-review` | `beers` (read) | Yes | No |
 | `PATCH /api/admin/beers/:id` | `beers` (name, brewery_name, style, abv; clear flagged_for_review) | Yes | No |
 | `PATCH /api/admin/tabs/users/:userId/seeder` | `user_tabs_profile` | Yes (if granting) | No |
