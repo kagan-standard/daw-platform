@@ -7,6 +7,7 @@ const REST_URL = (process.env.SUPABASE_REST_URL || 'http://supabase-rest:3000').
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const EXPO_PUSH_URL = process.env.EXPO_PUSH_URL || 'https://exp.host/--/api/v2/push/send';
 const PUSH_BATCH_SIZE = Math.max(1, Number(process.env.PUSH_BATCH_SIZE || 50));
+const PUSH_MAX_BATCHES = Math.max(1, Number(process.env.PUSH_MAX_BATCHES || 1));
 const MAX_RETRY_ATTEMPTS = Math.max(1, Number(process.env.PUSH_MAX_RETRY_ATTEMPTS || 5));
 const RETRY_BASE_SECONDS = Math.max(5, Number(process.env.PUSH_RETRY_BASE_SECONDS || 30));
 
@@ -113,7 +114,7 @@ async function markIneligible(rest, row, reason) {
   });
 }
 
-async function run({ restFn = createRest(), sendFn = sendToExpo } = {}) {
+async function runOnce({ restFn = createRest(), sendFn = sendToExpo } = {}) {
   const claimedRows = await restFn('POST', '/rpc/claim_push_dispatch_batch', {
     p_batch_size: PUSH_BATCH_SIZE,
   });
@@ -215,6 +216,32 @@ async function run({ restFn = createRest(), sendFn = sendToExpo } = {}) {
   };
 }
 
+async function run({ restFn = createRest(), sendFn = sendToExpo, maxBatches = PUSH_MAX_BATCHES } = {}) {
+  const boundedBatches = Math.max(1, Number(maxBatches || 1));
+  const totals = {
+    batches: 0,
+    claimed: 0,
+    sent_to_expo: 0,
+    retryable_failure: 0,
+    permanent_failure: 0,
+  };
+
+  for (let i = 0; i < boundedBatches; i += 1) {
+    const out = await runOnce({ restFn, sendFn });
+    totals.batches += 1;
+    totals.claimed += out.claimed;
+    totals.sent_to_expo += out.sent_to_expo;
+    totals.retryable_failure += out.retryable_failure;
+    totals.permanent_failure += out.permanent_failure;
+    if (out.claimed === 0) break;
+  }
+
+  console.log(
+    `push-dispatch total: batches=${totals.batches} claimed=${totals.claimed} sent_to_expo=${totals.sent_to_expo} retryable_failure=${totals.retryable_failure} permanent_failure=${totals.permanent_failure}`
+  );
+  return totals;
+}
+
 if (require.main === module) {
   if (!SERVICE_ROLE_KEY) {
     console.error('SUPABASE_SERVICE_ROLE_KEY is required');
@@ -227,6 +254,7 @@ if (require.main === module) {
 } else {
   module.exports = {
     run,
+    runOnce,
     composePayload,
     computeBackoffIso,
     isPermanentExpoError,

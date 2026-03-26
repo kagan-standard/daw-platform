@@ -3533,6 +3533,17 @@ Registers or refreshes a device Expo push token for the authenticated user.
 | `device_id` | string | no | Device-stable identifier; recommended for replacement semantics |
 | `app_version` | string | no | App version string |
 
+**Canonical Request Example:**
+
+```json
+{
+  "expo_push_token": "ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]",
+  "platform": "ios",
+  "device_id": "ios-device-8d7f4",
+  "app_version": "1.4.0"
+}
+```
+
 **Success Response (200):**
 
 ```json
@@ -3581,6 +3592,14 @@ Deactivates the specified Expo push token for the authenticated user.
 |-------|------|----------|
 | `expo_push_token` | string | yes |
 
+**Canonical Request Example:**
+
+```json
+{
+  "expo_push_token": "ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]"
+}
+```
+
 **Success Response (200):**
 
 ```json
@@ -3623,12 +3642,43 @@ Deactivates the specified Expo push token for the authenticated user.
 }
 ```
 
+**Canonical push payload delivered to the app (`data` keys are frozen for frontend consumption):**
+
+```json
+{
+  "to": "ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]",
+  "sound": "default",
+  "title": "Streak at risk",
+  "body": "You need 1 more rating this week to maintain your tier activity minimum.",
+  "data": {
+    "notification_id": "notif_01JXXXXXX",
+    "notification_type": "streak_at_risk",
+    "target_type": "tabs_profile",
+    "target_id": "user_01HXXXXXX"
+  }
+}
+```
+
+**Frontend frozen field names (do not rename):**
+- Top-level: `to`, `sound`, `title`, `body`, `data`
+- `data` object: `notification_id`, `notification_type`, `target_type`, `target_id`
+
 **Milestone 2 state model:**
 - Current state table: `notification_token_push_state` (unique `(notification_id, token_id)` claim/delivery state)
 - Immutable attempts: `push_send_attempts` (one row per send attempt)
+- `sent_to_expo` means provider ticket accepted only; it is **not** confirmed device delivery
 - Terminal states: `receipt_ok`, `permanent_failure`
 - Retries: `retryable_failure` with exponential backoff via `next_attempt_at`
 - Invalid token handling: provider error `DeviceNotRegistered` deactivates token (`is_active=false`)
+
+**Rollout controls (dispatcher):**
+- `PUSH_BATCH_SIZE` (default `50`): max claim/send rows per batch
+- `PUSH_MAX_BATCHES` (default `1`): bounded batch loops per invocation (useful for controlled drain runs)
+- `PUSH_MAX_RETRY_ATTEMPTS` (default `5`): cap before marking `permanent_failure`
+- `PUSH_RETRY_BASE_SECONDS` (default `30`): exponential backoff base for retry scheduling
+
+**Cadence example (narrow rollout):**
+- Run `npm run push:dispatch` every 1-2 minutes with `PUSH_BATCH_SIZE=10` and `PUSH_MAX_BATCHES=1` initially.
 
 ---
 
