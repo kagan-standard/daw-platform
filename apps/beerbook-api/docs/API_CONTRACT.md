@@ -3564,11 +3564,30 @@ Registers or refreshes a device Expo push token for the authenticated user.
 }
 ```
 
+When the Postgres unique constraint fires and PostgREST returns **`409`** with body **`code` `"23505"`** (`unique_violation`), the handler reconciles and may still respond **200**:
+
+1. `GET` the row by **`expo_push_token`** (same `select` as upsert). If it exists and **`user_id`** matches the JWT subject → **`200`** with **`already_registered: true`** and that **`token`**.
+2. Else if **`device_id`** was sent: `GET` active row for **`user_id`** (caller) + **`device_id`** + **`is_active=true`**. If found → **`200`** with **`already_registered: true`** and that **`token`** (covers races on the partial unique index for one active row per device).
+3. If the row for the submitted **`expo_push_token`** exists but **`user_id`** differs from the caller, the conflict is **not** coerced to success (token is tied to another account).
+
+Idempotent success shape:
+
+```json
+{
+  "registered": true,
+  "already_registered": true,
+  "token": { }
+}
+```
+
+After a normal upsert with no conflict, **`already_registered`** is omitted.
+
 **Error Responses:**
 - 400: `{ "error": "expo_push_token is required" }`
 - 400: `{ "error": "expo_push_token is invalid" }`
 - 400: `{ "error": "platform must be ios or android" }`
 - 401/403: standard auth failures from `authMiddleware`
+- 409: PostgREST error body (e.g. `code`, `message`) when upsert fails and reconciliation finds no safe row, or when the existing token row belongs to another user
 
 **Idempotency / Semantics:**
 - Re-registering the same `expo_push_token` is safe and upserts the same row.
@@ -3694,6 +3713,32 @@ Push allowlist is enforced in `lib/pushEligibility.js` and is fail-closed by def
 
 **Cadence example (narrow rollout):**
 - Run `npm run push:dispatch` every 1-2 minutes with `PUSH_BATCH_SIZE=10` and `PUSH_MAX_BATCHES=1` initially.
+
+**Milestone 3 — receipts, telemetry, retention, optional allowlist expansion**
+
+- **Receipt worker:** `scripts/push-receipts.js` (`npm run push:receipts`). Polls Expo [`getReceipts`](https://docs.expo.dev/push-notifications/sending-notifications/#check-push-receipts) for tickets produced after `sent_to_expo`, then transitions pairs to `receipt_ok`, schedules another poll when receipts are not ready, or ends in `permanent_failure` with token deactivation on `DeviceNotRegistered` (same semantics as send-time errors).
+- **Dispatch retry hardening:** `PUSH_RETRY_MAX_SECONDS` (default `3600`) caps exponential backoff; `PUSH_RETRY_JITTER_RATIO` (default `0.2`) adds bounded jitter to `next_attempt_at`.
+- **Staged allowlist:** set `PUSH_ALLOWLIST_EXTRA` to a comma-separated list of extra `notification_type` values to push without a code deploy (use only after metrics look healthy).
+- **Hooks (off by default):** `lib/pushEligibility.js` exports `createNoOpPushHooks()`; pass `preferences` / `quietHours` / `fatigue` functions into `evaluatePushEligibility` when product controls exist. The dispatcher passes no-op hooks so behavior matches v1 until wired.
+- **Inactive token retention:** `scripts/push-token-prune.js` (`npm run push:token-prune`) calls `prune_inactive_push_tokens`; use `PUSH_TOKEN_PRUNE_RETENTION_DAYS` (default `90`). Run on a monthly or weekly schedule independent of dispatch.
+- **Read-only telemetry (SQL):** for dashboards / ad-hoc queries against Supabase as `service_role`:
+  - `push_telemetry_token_summary` — active vs inactive tokens, distinct users with an active token
+  - `push_telemetry_delivery_by_status` — counts from `notification_token_push_state.delivery_status`
+  - `push_telemetry_attempts_24h` — attempt counts by `push_send_attempts.status` (last 24h)
+  - `push_telemetry_deactivations_30d` — deactivated tokens by `deactivation_reason` (last 30d)
+
+**Receipt worker environment**
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `EXPO_RECEIPTS_URL` | `https://exp.host/--/api/v2/push/getReceipts` | Expo receipts endpoint |
+| `PUSH_RECEIPT_BATCH_SIZE` | `50` | Rows claimed per RPC batch |
+| `PUSH_RECEIPT_MAX_BATCHES` | `3` | Loop cap per process invocation |
+| `PUSH_RECEIPT_PENDING_SECONDS` | `45` | Backoff when a ticket is not ready or transport fails |
+| `PUSH_RECEIPT_MIN_AGE_SECONDS` | `15` | Minimum age of `sent_to_expo_at` before first receipt poll |
+| `PUSH_RECEIPT_POLL_COOLDOWN_SECONDS` | `20` | Minimum gap between receipt polls for the same pair |
+
+**Cadence example (receipts):** run `npm run push:receipts` every 1–5 minutes behind dispatch so `sent_to_expo` rows converge to `receipt_ok` or a terminal failure.
 
 ---
 

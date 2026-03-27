@@ -7,6 +7,27 @@ const DEFAULT_PUSH_ALLOWLIST = new Set([
   'weekly_summary',
 ]);
 
+/** Off-by-default hook surface for preferences / quiet hours / fatigue (v1: no-ops). */
+function createNoOpPushHooks() {
+  return {
+    preferences: () => ({ pass: true }),
+    quietHours: () => ({ pass: true }),
+    fatigue: () => ({ pass: true }),
+  };
+}
+
+function parseAllowlistExtra(raw) {
+  if (!raw || typeof raw !== 'string') return [];
+  return raw.split(',').map((s) => s.trim()).filter(Boolean);
+}
+
+/** Default allowlist plus optional `PUSH_ALLOWLIST_EXTRA` (comma-separated types) for staged rollout. */
+function resolvePushAllowlist(env = process.env) {
+  const set = new Set(DEFAULT_PUSH_ALLOWLIST);
+  for (const t of parseAllowlistExtra(env.PUSH_ALLOWLIST_EXTRA)) set.add(t);
+  return set;
+}
+
 function evaluatePushEligibility({
   notification,
   hasActiveToken,
@@ -50,5 +71,8 @@ function evaluatePushEligibility({
 
 module.exports = {
   DEFAULT_PUSH_ALLOWLIST,
+  createNoOpPushHooks,
   evaluatePushEligibility,
+  parseAllowlistExtra,
+  resolvePushAllowlist,
 };

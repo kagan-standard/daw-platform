@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /* eslint-disable no-console */
 
-const { evaluatePushEligibility, DEFAULT_PUSH_ALLOWLIST } = require('../lib/pushEligibility');
+const { evaluatePushEligibility, resolvePushAllowlist, createNoOpPushHooks } = require('../lib/pushEligibility');
 
 const REST_URL = (process.env.SUPABASE_REST_URL || 'http://supabase-rest:3000').replace(/\/$/, '');
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -10,6 +10,8 @@ const PUSH_BATCH_SIZE = Math.max(1, Number(process.env.PUSH_BATCH_SIZE || 50));
 const PUSH_MAX_BATCHES = Math.max(1, Number(process.env.PUSH_MAX_BATCHES || 1));
 const MAX_RETRY_ATTEMPTS = Math.max(1, Number(process.env.PUSH_MAX_RETRY_ATTEMPTS || 5));
 const RETRY_BASE_SECONDS = Math.max(5, Number(process.env.PUSH_RETRY_BASE_SECONDS || 30));
+const RETRY_MAX_SECONDS = Math.max(RETRY_BASE_SECONDS, Number(process.env.PUSH_RETRY_MAX_SECONDS || 3600));
+const RETRY_JITTER_RATIO = Math.min(0.5, Math.max(0, Number(process.env.PUSH_RETRY_JITTER_RATIO || 0.2)));
 
 function composePayload(row) {
   return {
@@ -28,8 +30,10 @@ function composePayload(row) {
 
 function computeBackoffIso(attemptCount) {
   const exp = Math.max(0, attemptCount - 1);
-  const waitSeconds = RETRY_BASE_SECONDS * (2 ** exp);
-  return new Date(Date.now() + (waitSeconds * 1000)).toISOString();
+  const raw = RETRY_BASE_SECONDS * (2 ** exp);
+  const waitSeconds = Math.min(raw, RETRY_MAX_SECONDS);
+  const jitter = RETRY_JITTER_RATIO > 0 ? waitSeconds * RETRY_JITTER_RATIO * Math.random() : 0;
+  return new Date(Date.now() + (waitSeconds + jitter) * 1000).toISOString();
 }
 
 function isPermanentExpoError(result) {
@@ -115,6 +119,8 @@ async function markIneligible(rest, row, reason) {
 }
 
 async function runOnce({ restFn = createRest(), sendFn = sendToExpo } = {}) {
+  const allowlist = resolvePushAllowlist();
+  const hooks = createNoOpPushHooks();
   const claimedRows = await restFn('POST', '/rpc/claim_push_dispatch_batch', {
     p_batch_size: PUSH_BATCH_SIZE,
   });
@@ -131,7 +137,8 @@ async function runOnce({ restFn = createRest(), sendFn = sendToExpo } = {}) {
       notification: row,
       hasActiveToken: Boolean(row.expo_push_token),
       deliveryStatus: row.delivery_status,
-      allowlist: DEFAULT_PUSH_ALLOWLIST,
+      allowlist,
+      hooks,
     });
     if (!decision.eligible) {
       await markIneligible(restFn, row, decision.reason);

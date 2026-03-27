@@ -9,6 +9,8 @@
     "tabs:weekly-eval": "node scripts/weekly-tabs-eval.js",
     "tabs:streak-risk": "node scripts/streak-risk-check.js",
     "push:dispatch": "node scripts/push-dispatch.js",
+    "push:receipts": "node scripts/push-receipts.js",
+    "push:token-prune": "node scripts/push-token-prune.js",
     "ci:check-migrations": "node scripts/check-migration-safety.js"
   },
   "engines": { "node": ">=20" },

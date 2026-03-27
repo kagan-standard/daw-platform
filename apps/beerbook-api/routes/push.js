@@ -3,6 +3,10 @@ const express = require('express');
 const VALID_PLATFORMS = new Set(['ios', 'android']);
 const EXPO_TOKEN_PREFIX = 'ExponentPushToken[';
 
+/** PostgREST/PG select list for push token upsert + reconcile GETs (keep in sync). */
+const PUSH_TOKENS_REGISTER_SELECT =
+  'id,user_id,expo_push_token,platform,device_id,app_version,is_active,last_seen_at,updated_at,created_at';
+
 function normalizeString(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
@@ -11,12 +15,18 @@ function looksLikeExpoPushToken(token) {
   return token.startsWith(EXPO_TOKEN_PREFIX) && token.endsWith(']');
 }
 
+function isPostgrestUniqueViolation(body) {
+  if (!body || typeof body !== 'object') return false;
+  const code = body.code;
+  return code === '23505' || code === 23505;
+}
+
 module.exports = function pushRoutes(opts) {
   const { rest, authMiddleware } = opts;
   const router = express.Router();
 
   // POST /api/push/register
-  // Idempotent by expo_push_token unique constraint + PostgREST upsert.
+  // Idempotent by expo_push_token upsert; on unique_violation (23505), reconcile by token then by active (user_id, device_id).
   router.post('/push/register', authMiddleware, async (req, res, next) => {
     try {
       const userId = req.claims.sub;
@@ -69,16 +79,62 @@ module.exports = function pushRoutes(opts) {
         }
       }
 
+      const upsertQuery =
+        `/push_tokens?on_conflict=expo_push_token&select=${PUSH_TOKENS_REGISTER_SELECT}`;
       const upsertOut = await rest(
         'POST',
-        '/push_tokens?on_conflict=expo_push_token&select=id,user_id,expo_push_token,platform,device_id,app_version,is_active,last_seen_at,updated_at,created_at',
+        upsertQuery,
         {
           headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
           body: JSON.stringify(row),
         }
       );
       if (upsertOut.status >= 400) {
-        return res.status(upsertOut.status).json(upsertOut.body || { error: 'Upstream error' });
+        if (!isPostgrestUniqueViolation(upsertOut.body)) {
+          return res.status(upsertOut.status).json(upsertOut.body || { error: 'Upstream error' });
+        }
+
+        const conflictStatus = upsertOut.status;
+        const conflictBody = upsertOut.body || { error: 'Upstream error' };
+
+        const byToken = await rest(
+          'GET',
+          `/push_tokens?expo_push_token=eq.${encodeURIComponent(expoPushToken)}&limit=1&select=${PUSH_TOKENS_REGISTER_SELECT}`
+        );
+        if (byToken.status < 400) {
+          const tokenRows = Array.isArray(byToken.body) ? byToken.body : [];
+          const existing = tokenRows[0];
+          if (existing) {
+            if (existing.user_id === userId) {
+              return res.json({
+                registered: true,
+                already_registered: true,
+                token: existing,
+              });
+            }
+            return res.status(conflictStatus).json(conflictBody);
+          }
+        }
+
+        if (deviceId) {
+          const byDevice = await rest(
+            'GET',
+            `/push_tokens?user_id=eq.${encodeURIComponent(userId)}&device_id=eq.${encodeURIComponent(deviceId)}&is_active=eq.true&limit=1&select=${PUSH_TOKENS_REGISTER_SELECT}`
+          );
+          if (byDevice.status < 400) {
+            const deviceRows = Array.isArray(byDevice.body) ? byDevice.body : [];
+            const active = deviceRows[0];
+            if (active) {
+              return res.json({
+                registered: true,
+                already_registered: true,
+                token: active,
+              });
+            }
+          }
+        }
+
+        return res.status(conflictStatus).json(conflictBody);
       }
 
       const saved = Array.isArray(upsertOut.body) ? upsertOut.body[0] : upsertOut.body;

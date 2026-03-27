@@ -25,8 +25,26 @@ function parseFilterValue(raw) {
   return null;
 }
 
-function createPushTokensRestMock(seedRows = []) {
+function rowMatchesPushTokensGetFilters(row, params) {
+  for (const [key, raw] of params.entries()) {
+    if (key === 'select' || key === 'limit') continue;
+    const fv = parseFilterValue(raw);
+    if (!fv || fv.op !== 'eq') continue;
+    if (key === 'user_id' && String(row.user_id) !== fv.value) return false;
+    if (key === 'expo_push_token' && String(row.expo_push_token) !== fv.value) return false;
+    if (key === 'device_id' && String(row.device_id || '') !== fv.value) return false;
+    if (key === 'is_active') {
+      const expected = fv.value === 'true';
+      if (Boolean(row.is_active) !== expected) return false;
+    }
+  }
+  return true;
+}
+
+function createPushTokensRestMock(seedRows = [], options = {}) {
   const rows = seedRows.map((row) => ({ ...row }));
+  let upsertOnceResponse = options.upsertOnceResponse ?? null;
+  const patchSameDeviceDeactivateNoop = options.patchSameDeviceDeactivateNoop === true;
 
   return {
     rest: async (method, path, opts = {}) => {
@@ -40,7 +58,22 @@ function createPushTokensRestMock(seedRows = []) {
       }
       const params = new URLSearchParams(rawQuery);
 
+      if (method === 'GET') {
+        let matches = rows.filter((r) => rowMatchesPushTokensGetFilters(r, params));
+        const limitRaw = params.get('limit');
+        if (limitRaw) {
+          const n = parseInt(limitRaw, 10);
+          if (Number.isFinite(n)) matches = matches.slice(0, n);
+        }
+        return { status: 200, body: matches };
+      }
+
       if (method === 'POST') {
+        if (upsertOnceResponse != null && params.get('on_conflict')) {
+          const out = upsertOnceResponse;
+          upsertOnceResponse = null;
+          return out;
+        }
         const body = JSON.parse(opts.body || '{}');
         const token = String(body.expo_push_token || '');
         const existingIdx = rows.findIndex((r) => r.expo_push_token === token);
@@ -57,6 +90,9 @@ function createPushTokensRestMock(seedRows = []) {
       }
 
       if (method === 'PATCH') {
+        if (patchSameDeviceDeactivateNoop) {
+          return { status: 200, body: [] };
+        }
         const patch = JSON.parse(opts.body || '{}');
         const userIdFilter = parseFilterValue(params.get('user_id'));
         const tokenEqFilter = parseFilterValue(params.get('expo_push_token'));
@@ -118,9 +154,149 @@ test('POST /api/push/register initial register creates active token', async () =
 
     assert.equal(out.status, 200);
     assert.equal(out.body.registered, true);
+    assert.notEqual(out.body.already_registered, true);
     assert.equal(out.body.token.user_id, 'user-123');
     assert.equal(out.body.token.is_active, true);
     assert.equal(mock.rows.length, 1);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test('POST /api/push/register 23505 reconcile by expo_push_token same user returns 200 already_registered', async () => {
+  const existing = {
+    id: 'pt-existing',
+    user_id: 'user-123',
+    expo_push_token: 'ExponentPushToken[token-1]',
+    platform: 'ios',
+    device_id: 'device-a',
+    is_active: true,
+    created_at: '2026-03-01T00:00:00.000Z',
+    updated_at: '2026-03-01T00:00:00.000Z',
+    last_seen_at: '2026-03-01T00:00:00.000Z',
+  };
+  const mock = createPushTokensRestMock([{ ...existing }], {
+    upsertOnceResponse: {
+      status: 409,
+      body: { code: '23505', message: 'duplicate key value violates unique constraint' },
+    },
+  });
+  const app = createApi({ restImpl: mock.rest });
+  const server = app.listen(0);
+  try {
+    const out = await requestJson(server, 'POST', '/api/push/register', {
+      expo_push_token: 'ExponentPushToken[token-1]',
+      platform: 'ios',
+      device_id: 'device-a',
+    });
+
+    assert.equal(out.status, 200);
+    assert.equal(out.body.registered, true);
+    assert.equal(out.body.already_registered, true);
+    assert.equal(out.body.token.expo_push_token, 'ExponentPushToken[token-1]');
+    assert.equal(out.body.token.user_id, 'user-123');
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test('POST /api/push/register 23505 token row owned by other user preserves conflict', async () => {
+  const mock = createPushTokensRestMock(
+    [
+      {
+        id: 'pt-other',
+        user_id: 'user-999',
+        expo_push_token: 'ExponentPushToken[token-1]',
+        platform: 'ios',
+        device_id: 'device-a',
+        is_active: true,
+        created_at: '2026-03-01T00:00:00.000Z',
+        updated_at: '2026-03-01T00:00:00.000Z',
+        last_seen_at: '2026-03-01T00:00:00.000Z',
+      },
+    ],
+    {
+      upsertOnceResponse: {
+        status: 409,
+        body: { code: '23505', message: 'duplicate key value violates unique constraint' },
+      },
+    }
+  );
+  const app = createApi({ restImpl: mock.rest, userId: 'user-123' });
+  const server = app.listen(0);
+  try {
+    const out = await requestJson(server, 'POST', '/api/push/register', {
+      expo_push_token: 'ExponentPushToken[token-1]',
+      platform: 'ios',
+      device_id: 'device-a',
+    });
+
+    assert.equal(out.status, 409);
+    assert.equal(out.body.code, '23505');
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test('POST /api/push/register 23505 active device row fallback returns 200 already_registered', async () => {
+  const mock = createPushTokensRestMock(
+    [
+      {
+        id: 'pt-old',
+        user_id: 'user-123',
+        expo_push_token: 'ExponentPushToken[old-on-device]',
+        platform: 'ios',
+        device_id: 'device-a',
+        is_active: true,
+        created_at: '2026-03-01T00:00:00.000Z',
+        updated_at: '2026-03-01T00:00:00.000Z',
+        last_seen_at: '2026-03-01T00:00:00.000Z',
+      },
+    ],
+    {
+      upsertOnceResponse: {
+        status: 409,
+        body: { code: '23505', message: 'duplicate key (user_id, device_id)' },
+      },
+      patchSameDeviceDeactivateNoop: true,
+    }
+  );
+  const app = createApi({ restImpl: mock.rest });
+  const server = app.listen(0);
+  try {
+    const out = await requestJson(server, 'POST', '/api/push/register', {
+      expo_push_token: 'ExponentPushToken[brand-new]',
+      platform: 'ios',
+      device_id: 'device-a',
+    });
+
+    assert.equal(out.status, 200);
+    assert.equal(out.body.already_registered, true);
+    assert.equal(out.body.token.expo_push_token, 'ExponentPushToken[old-on-device]');
+    assert.equal(out.body.token.user_id, 'user-123');
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test('POST /api/push/register 23505 with no reconcile match preserves conflict', async () => {
+  const mock = createPushTokensRestMock([], {
+    upsertOnceResponse: {
+      status: 409,
+      body: { code: '23505', message: 'duplicate key' },
+    },
+  });
+  const app = createApi({ restImpl: mock.rest });
+  const server = app.listen(0);
+  try {
+    const out = await requestJson(server, 'POST', '/api/push/register', {
+      expo_push_token: 'ExponentPushToken[token-1]',
+      platform: 'ios',
+      device_id: 'device-a',
+    });
+
+    assert.equal(out.status, 409);
+    assert.equal(out.body.code, '23505');
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
