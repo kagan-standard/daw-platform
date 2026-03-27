@@ -791,6 +791,9 @@ const Admin = {
             panel.innerHTML = `
                 <div class="admin-panel-wrap">
                     <p class="view-desc" style="margin-bottom: 1rem;">Enable or disable Expo push per notification type. New types are added via backend migrations only.</p>
+                    <div class="admin-table-actions" style="margin-bottom: 1rem;">
+                        <button type="button" class="btn btn-ghost" id="admin-push-send-test-btn">Send test push to me</button>
+                    </div>
                     <form id="admin-push-form" class="admin-form">
                         <div class="admin-table-wrap">
                             <table class="admin-table">
@@ -816,6 +819,14 @@ const Admin = {
                     </form>
                 </div>
             `;
+            panel.querySelector('#admin-push-send-test-btn')?.addEventListener('click', async () => {
+                try {
+                    await DB.adminSendPushTest();
+                    this.toast('Test notification queued. It will be pushed on the next dispatcher run.', 'success');
+                } catch (err) {
+                    this.toast('Failed to queue test notification: ' + (err?.message || err?.error || ''), 'error');
+                }
+            });
             panel.querySelector('#admin-push-form')?.addEventListener('submit', (e) => this.savePushNotificationsForm(e));
         } catch (err) {
             panel.innerHTML = '<p class="empty-state">Failed to load push notification settings.</p>';

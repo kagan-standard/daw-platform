@@ -851,6 +851,39 @@ module.exports = function adminRoutes(opts) {
     }
   });
 
+  // POST /api/admin/push-notification-types/test-send — trigger a one-off test notification to self.
+  router.post('/push-notification-types/test-send', async (req, res, next) => {
+    try {
+      const adminUserId = req.claims && req.claims.sub ? String(req.claims.sub) : '';
+      if (!adminUserId) return res.status(401).json({ error: 'Authentication required' });
+
+      const title = 'Push test';
+      const message = 'Admin-triggered test push notification.';
+      const out = await rest('POST', '/tab_notifications', {
+        headers: { 'Content-Type': 'application/json', Prefer: 'return=representation' },
+        body: JSON.stringify({
+          user_id: adminUserId,
+          notification_type: 'admin_push_test',
+          title,
+          message,
+          target_type: 'tabs_profile',
+          target_id: adminUserId,
+          metadata: { source: 'admin_push_test_send' },
+        }),
+      });
+      if (out.status >= 400) {
+        return res.status(out.status).json(out.body || { error: 'Failed to create test notification' });
+      }
+      const row = Array.isArray(out.body) && out.body.length ? out.body[0] : out.body;
+      res.status(201).json({
+        ok: true,
+        queued_notification: row || null,
+      });
+    } catch (e) {
+      next(e);
+    }
+  });
+
   // PATCH /api/admin/config — update global app config (e.g. theme). Admin only.
   router.patch('/config', async (req, res, next) => {
     try {

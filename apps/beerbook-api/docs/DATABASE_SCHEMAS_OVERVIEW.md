@@ -21,6 +21,7 @@ This file outlines the current BeerBook database schema state after applying the
 - `apps/beerbook-api/supabase/migrations/20260321100000_cosmetics_border_fit.sql`
 - `apps/beerbook-api/supabase/migrations/20260329100000_app_config.sql`
 - `apps/beerbook-api/supabase/migrations/20260426120000_push_notification_catalog.sql`
+- `apps/beerbook-api/supabase/migrations/20260426123000_push_admin_test_type.sql`
 - `apps/beerbook-api/supabase/migrations/20260330100000_ratings_yg_value_canonical_half_steps.sql` (canonical YG: `-1` or `1`–`10` in `0.5` steps; backfill from legacy `-6..7` integer scale)
 
 ## Schemas

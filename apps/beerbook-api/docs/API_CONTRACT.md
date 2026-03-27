@@ -3691,13 +3691,14 @@ Deactivates the specified Expo push token for the authenticated user.
 | Weekly tier evaluation scheduler | `scripts/weekly-tabs-eval.js` | `tier_promotion` | `tabs_profile` + user id | Yes (allowlisted) |
 | Weekly tier evaluation scheduler | `scripts/weekly-tabs-eval.js` | `tier_demotion` | `tabs_profile` + user id | No (in-app only) |
 | Admin seeder grant | `routes/tabs.js` | `seeder_granted` | `tabs_profile` + user id | No (in-app only) |
+| Admin push test trigger | `routes/admin.js` (`POST /api/admin/push-notification-types/test-send`) | `admin_push_test` | `tabs_profile` + admin user id | Yes (allowlisted; default enabled) |
 | Admin submission review | `routes/tabs.js` | `beer_approved` | `beer` + submission id | Yes (allowlisted) |
 | Admin submission review | `routes/tabs.js` | `beer_rejected` | `beer` + submission id | No (in-app only) |
 | Async upload moderation | `lib/uploadModeration.js` | `photo_removed` | `tabs_profile` + user id | No (in-app only) |
 
-**Push allowlist (effective):** Rows in `push_notification_catalog` with `push_notification_push_toggle.push_enabled = true`, plus any `notification_type` listed in `PUSH_ALLOWLIST_EXTRA` that also exists in `push_notification_catalog` (extras outside the catalog are ignored). New catalog types require a **database migration**; admins enable or disable push per catalog row via `GET` / `PATCH /api/admin/push-notification-types`. Matrix column “Yes (allowlisted)” means the type is in the catalog and **may** be pushed when its toggle is on (initial seed has all six types below enabled).
+**Push allowlist (effective):** Rows in `push_notification_catalog` with `push_notification_push_toggle.push_enabled = true`, plus any `notification_type` listed in `PUSH_ALLOWLIST_EXTRA` that also exists in `push_notification_catalog` (extras outside the catalog are ignored). New catalog types require a **database migration**; admins enable or disable push per catalog row via `GET` / `PATCH /api/admin/push-notification-types`. Matrix column “Yes (allowlisted)” means the type is in the catalog and **may** be pushed when its toggle is on (initial seed has all listed types enabled).
 
-Initial catalog types: `streak_at_risk`, `approaching_demotion`, `tier_promotion`, `tabs_earned`, `beer_approved`, `weekly_summary`.
+Initial catalog types: `streak_at_risk`, `approaching_demotion`, `tier_promotion`, `tabs_earned`, `beer_approved`, `weekly_summary`, `admin_push_test`.
 
 **Milestone 2 state model:**
 - Current state table: `notification_token_push_state` (unique `(notification_id, token_id)` claim/delivery state)
@@ -4037,6 +4038,28 @@ Returns the migration-defined push catalog merged with current toggle state, ord
 - **File:** `routes/admin.js`
 - **Body:** `{ "toggles": { "streak_at_risk": false, "beer_approved": true } }`. Each value must be a boolean. Keys must be `notification_type` values that exist in `push_notification_catalog` (400 if unknown).
 - **Success Response (200):** Same shape as **GET /api/admin/push-notification-types** (refreshed `data` after updates).
+
+---
+
+#### POST /api/admin/push-notification-types/test-send
+
+- **Auth:** required (admin only)
+- **File:** `routes/admin.js`
+- **Behavior:** Inserts one `tab_notifications` row for the authenticated admin (`notification_type = "admin_push_test"`). Push delivery uses the normal dispatcher cadence and current allowlist/toggle state.
+- **Success Response (201):**
+
+```json
+{
+  "ok": true,
+  "queued_notification": {
+    "id": "string",
+    "user_id": "admin_user_id",
+    "notification_type": "admin_push_test",
+    "title": "Push test",
+    "message": "Admin-triggered test push notification."
+  }
+}
+```
 
 ---
 

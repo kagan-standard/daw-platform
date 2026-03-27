@@ -1522,6 +1522,11 @@ const DB = {
         return await this._api('PATCH', '/api/admin/push-notification-types', { body: JSON.stringify(body) });
     },
 
+    async adminSendPushTest() {
+        if (this.isDemo) return { ok: true };
+        return await this._api('POST', '/api/admin/push-notification-types/test-send');
+    },
+
     _demoGetFollows() {
         return Utils.storage.get('demo_follows', {});
     },
