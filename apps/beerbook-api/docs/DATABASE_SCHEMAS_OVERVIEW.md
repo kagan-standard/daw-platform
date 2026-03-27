@@ -20,6 +20,7 @@ This file outlines the current BeerBook database schema state after applying the
 - `apps/beerbook-api/supabase/migrations/20260320100000_admin_featured_beers.sql`
 - `apps/beerbook-api/supabase/migrations/20260321100000_cosmetics_border_fit.sql`
 - `apps/beerbook-api/supabase/migrations/20260329100000_app_config.sql`
+- `apps/beerbook-api/supabase/migrations/20260426120000_push_notification_catalog.sql`
 - `apps/beerbook-api/supabase/migrations/20260330100000_ratings_yg_value_canonical_half_steps.sql` (canonical YG: `-1` or `1`–`10` in `0.5` steps; backfill from legacy `-6..7` integer scale)
 
 ## Schemas
@@ -64,6 +65,15 @@ This file outlines the current BeerBook database schema state after applying the
 - **Primary key:** `id` (text, default `'default'`) — single-row table for global app settings
 - **Columns:** `theme` (text, not null, default `'default'`; check: `'default'` | `'st_patricks_day'`)
 - **Usage:** GET /api/config (read), PATCH /api/admin/config (admin update)
+
+### `push_notification_catalog`
+- **Primary key:** `notification_type` (text) — migration-seeded list of types that may participate in push policy
+- **Columns:** `label`, `sort_order`, optional `description`
+
+### `push_notification_push_toggle`
+- **Primary key:** `notification_type` (text, FK → `push_notification_catalog`)
+- **Columns:** `push_enabled` (boolean), `updated_at`
+- **Usage:** Push workers read enabled types; admins PATCH via GET/PATCH `/api/admin/push-notification-types`
 
 ## Venue and Pricing Tables
 

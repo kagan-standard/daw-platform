@@ -3,6 +3,15 @@ const assert = require('node:assert/strict');
 
 const { runOnce } = require('../scripts/push-receipts');
 
+const PUSH_CATALOG_FIXTURE_TYPES = [
+  'streak_at_risk',
+  'approaching_demotion',
+  'tier_promotion',
+  'tabs_earned',
+  'beer_approved',
+  'weekly_summary',
+];
+
 function createReceiptHarness(seed = {}) {
   const attempts = [];
   const pending = [];
@@ -10,6 +19,12 @@ function createReceiptHarness(seed = {}) {
   const deactivations = [];
 
   async function rest(method, path, body) {
+    if (method === 'GET' && path.startsWith('/push_notification_catalog')) {
+      return PUSH_CATALOG_FIXTURE_TYPES.map((notification_type) => ({ notification_type }));
+    }
+    if (method === 'GET' && path.startsWith('/push_notification_push_toggle')) {
+      return PUSH_CATALOG_FIXTURE_TYPES.map((notification_type) => ({ notification_type, push_enabled: true }));
+    }
     if (method === 'POST' && path === '/rpc/claim_push_receipt_batch') {
       const rows = seed.claimRows || [];
       return rows.map((r) => ({ ...r }));

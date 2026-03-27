@@ -358,6 +358,8 @@ All admin routes use **authMiddleware + adminMiddleware** (env `ADMIN_USER_IDS` 
 | POST | `/api/admin/cosmetics` | **cosmetics** | — |
 | PATCH | `/api/admin/cosmetics/:id` | **cosmetics** | — |
 | PATCH | `/api/admin/cosmetics/:id/deactivate` | **cosmetics** | — |
+| GET | `/api/admin/push-notification-types` | none | push catalog + toggles (`push_notification_catalog`, `push_notification_push_toggle`) |
+| PATCH | `/api/admin/push-notification-types` | **push_notification_push_toggle** | `toggles` map; keys must exist in catalog |
 | GET | `/api/admin/tabs/users` | none | — |
 | PATCH | `/api/admin/tabs/users/:userId/seeder` | **user_tabs_profile**; notification if granting | — |
 | PATCH | `/api/admin/tabs/users/:userId/tier` | **user_tabs_profile**; notification | — |

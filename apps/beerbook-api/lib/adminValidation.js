@@ -504,6 +504,26 @@ async function validateConfigPatch(body) {
   return { valid: true, data: { theme: themeStr } };
 }
 
+/** @returns {Promise<{ valid: boolean, error?: string, data?: { toggles: Record<string, boolean> } }>} */
+async function validatePushNotificationTogglesPatch(body) {
+  const toggles = body?.toggles;
+  if (!toggles || typeof toggles !== 'object' || Array.isArray(toggles)) {
+    return { valid: false, error: 'toggles object is required' };
+  }
+  const keys = Object.keys(toggles);
+  if (keys.length === 0) return { valid: false, error: 'At least one toggle is required' };
+  if (keys.length > 64) return { valid: false, error: 'Too many toggles in one request' };
+  const out = {};
+  for (const k of keys) {
+    const type = String(k || '').trim();
+    if (!type) return { valid: false, error: 'Invalid notification_type key' };
+    const v = toggles[k];
+    if (typeof v !== 'boolean') return { valid: false, error: `Toggle for "${type}" must be a boolean` };
+    out[type] = v;
+  }
+  return { valid: true, data: { toggles: out } };
+}
+
 module.exports = {
   validateChallengeCreate,
   validateChallengePatch,
@@ -517,4 +537,5 @@ module.exports = {
   validateCosmeticPatch,
   validateBeerPatch,
   validateConfigPatch,
+  validatePushNotificationTogglesPatch,
 };

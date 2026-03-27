@@ -3642,7 +3642,7 @@ Deactivates the specified Expo push token for the authenticated user.
 #### Push Delivery Contract (Expo worker)
 
 - **Dispatcher script:** `scripts/push-dispatch.js`
-- **Eligibility gate:** `lib/pushEligibility.js` (fail-closed allowlist; unknown types remain in-app only)
+- **Eligibility gate:** `lib/pushEligibility.js` with effective allowlist from `lib/pushAllowlistStore.js` (PostgREST: catalog + admin toggles + optional `PUSH_ALLOWLIST_EXTRA` capped to catalog). Unknown types remain in-app only (fail-closed).
 
 **Outbound payload shape to Expo:**
 
@@ -3694,8 +3694,10 @@ Deactivates the specified Expo push token for the authenticated user.
 | Admin submission review | `routes/tabs.js` | `beer_approved` | `beer` + submission id | Yes (allowlisted) |
 | Admin submission review | `routes/tabs.js` | `beer_rejected` | `beer` + submission id | No (in-app only) |
 | Async upload moderation | `lib/uploadModeration.js` | `photo_removed` | `tabs_profile` + user id | No (in-app only) |
-Push allowlist is enforced in `lib/pushEligibility.js` and is fail-closed by default: unknown/new types are not pushed until explicitly allowlisted. Current allowlist values are:
-`streak_at_risk`, `approaching_demotion`, `tier_promotion`, `tabs_earned`, `beer_approved`, `weekly_summary`.
+
+**Push allowlist (effective):** Rows in `push_notification_catalog` with `push_notification_push_toggle.push_enabled = true`, plus any `notification_type` listed in `PUSH_ALLOWLIST_EXTRA` that also exists in `push_notification_catalog` (extras outside the catalog are ignored). New catalog types require a **database migration**; admins enable or disable push per catalog row via `GET` / `PATCH /api/admin/push-notification-types`. Matrix column “Yes (allowlisted)” means the type is in the catalog and **may** be pushed when its toggle is on (initial seed has all six types below enabled).
+
+Initial catalog types: `streak_at_risk`, `approaching_demotion`, `tier_promotion`, `tabs_earned`, `beer_approved`, `weekly_summary`.
 
 **Milestone 2 state model:**
 - Current state table: `notification_token_push_state` (unique `(notification_id, token_id)` claim/delivery state)
@@ -3718,7 +3720,7 @@ Push allowlist is enforced in `lib/pushEligibility.js` and is fail-closed by def
 
 - **Receipt worker:** `scripts/push-receipts.js` (`npm run push:receipts`). Polls Expo [`getReceipts`](https://docs.expo.dev/push-notifications/sending-notifications/#check-push-receipts) for tickets produced after `sent_to_expo`, then transitions pairs to `receipt_ok`, schedules another poll when receipts are not ready, or ends in `permanent_failure` with token deactivation on `DeviceNotRegistered` (same semantics as send-time errors).
 - **Dispatch retry hardening:** `PUSH_RETRY_MAX_SECONDS` (default `3600`) caps exponential backoff; `PUSH_RETRY_JITTER_RATIO` (default `0.2`) adds bounded jitter to `next_attempt_at`.
-- **Staged allowlist:** set `PUSH_ALLOWLIST_EXTRA` to a comma-separated list of extra `notification_type` values to push without a code deploy (use only after metrics look healthy).
+- **Staged allowlist:** set `PUSH_ALLOWLIST_EXTRA` to a comma-separated list of extra `notification_type` values; only types **already present** in `push_notification_catalog` are merged into the effective allowlist (use only after metrics look healthy).
 - **Hooks (off by default):** `lib/pushEligibility.js` exports `createNoOpPushHooks()`; pass `preferences` / `quietHours` / `fatigue` functions into `evaluatePushEligibility` when product controls exist. The dispatcher passes no-op hooks so behavior matches v1 until wired.
 - **Inactive token retention:** `scripts/push-token-prune.js` (`npm run push:token-prune`) calls `prune_inactive_push_tokens`; use `PUSH_TOKEN_PRUNE_RETENTION_DAYS` (default `90`). Run on a monthly or weekly schedule independent of dispatch.
 - **Read-only telemetry (SQL):** for dashboards / ad-hoc queries against Supabase as `service_role`:
@@ -4001,6 +4003,40 @@ All admin routes require `authMiddleware` + `adminMiddleware`.
   ]
 }
 ```
+
+---
+
+#### GET /api/admin/push-notification-types
+
+- **Auth:** required (admin only)
+- **File:** `routes/admin.js`
+
+Returns the migration-defined push catalog merged with current toggle state, ordered by `sort_order`.
+
+**Success Response (200):**
+
+```json
+{
+  "data": [
+    {
+      "notification_type": "streak_at_risk",
+      "label": "Streak at risk",
+      "description": "Mid-week streak risk (scheduler)",
+      "push_enabled": true,
+      "updated_at": "2026-03-26T12:00:00.000Z"
+    }
+  ]
+}
+```
+
+---
+
+#### PATCH /api/admin/push-notification-types
+
+- **Auth:** required (admin only)
+- **File:** `routes/admin.js`
+- **Body:** `{ "toggles": { "streak_at_risk": false, "beer_approved": true } }`. Each value must be a boolean. Keys must be `notification_type` values that exist in `push_notification_catalog` (400 if unknown).
+- **Success Response (200):** Same shape as **GET /api/admin/push-notification-types** (refreshed `data` after updates).
 
 ---
 

@@ -31,7 +31,7 @@ const Admin = {
     },
 
     switchView(view) {
-        const allowed = ['users', 'submissions', 'economy', 'challenges', 'achievements', 'featured', 'cosmetics'];
+        const allowed = ['users', 'submissions', 'economy', 'challenges', 'achievements', 'featured', 'cosmetics', 'push'];
         this.activeView = allowed.includes(view) ? view : 'users';
         document.querySelectorAll('#admin-tabs .admin-tab').forEach((btn) => {
             btn.classList.toggle('active', btn.getAttribute('data-admin-view') === this.activeView);
@@ -44,6 +44,7 @@ const Admin = {
             achievements: document.getElementById('admin-achievements'),
             featured: document.getElementById('admin-featured'),
             cosmetics: document.getElementById('admin-cosmetics'),
+            push: document.getElementById('admin-push'),
         };
         Object.entries(panels).forEach(([key, panel]) => {
             if (!panel) return;
@@ -57,6 +58,7 @@ const Admin = {
         if (this.activeView === 'achievements') this.renderAchievementsPanel();
         if (this.activeView === 'featured') this.renderFeaturedPanel();
         if (this.activeView === 'cosmetics') this.renderCosmeticsPanel();
+        if (this.activeView === 'push') this.renderPushNotificationsPanel();
     },
 
     async renderDashboard() {
@@ -68,6 +70,7 @@ const Admin = {
         if (this.activeView === 'achievements') await this.renderAchievementsPanel();
         if (this.activeView === 'featured') await this.renderFeaturedPanel();
         if (this.activeView === 'cosmetics') await this.renderCosmeticsPanel();
+        if (this.activeView === 'push') await this.renderPushNotificationsPanel();
         const adminViewElement = document.getElementById('view-admin');
         if (adminViewElement) {
             let burstContainer = document.getElementById('admin-tab-burst');
@@ -773,6 +776,64 @@ const Admin = {
             }
             this.closeFeaturedModal();
             this.renderFeaturedPanel();
+        } catch (err) {
+            this.toast('Save failed: ' + (err?.message || err?.error || ''), 'error');
+        }
+    },
+
+    async renderPushNotificationsPanel() {
+        const panel = document.getElementById('admin-push');
+        if (!panel) return;
+        panel.innerHTML = '<p class="empty-state">Loading push notification settings…</p>';
+        try {
+            const out = await DB.adminGetPushNotificationTypes();
+            const list = Array.isArray(out?.data) ? out.data : [];
+            panel.innerHTML = `
+                <div class="admin-panel-wrap">
+                    <p class="view-desc" style="margin-bottom: 1rem;">Enable or disable Expo push per notification type. New types are added via backend migrations only.</p>
+                    <form id="admin-push-form" class="admin-form">
+                        <div class="admin-table-wrap">
+                            <table class="admin-table">
+                                <thead><tr><th>Type</th><th>Label</th><th>Push enabled</th></tr></thead>
+                                <tbody>
+                                    ${list.map((row) => `
+                                        <tr>
+                                            <td><code>${Utils.escapeHtml(row.notification_type || '')}</code></td>
+                                            <td>${Utils.escapeHtml(row.label || '')}</td>
+                                            <td>
+                                                <label>
+                                                    <input type="checkbox" class="admin-push-toggle" data-type="${Utils.escapeHtml(row.notification_type || '')}" ${row.push_enabled !== false ? 'checked' : ''}>
+                                                </label>
+                                            </td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="admin-table-actions" style="margin-top: 1rem;">
+                            <button type="submit" class="btn btn-primary">Save changes</button>
+                        </div>
+                    </form>
+                </div>
+            `;
+            panel.querySelector('#admin-push-form')?.addEventListener('submit', (e) => this.savePushNotificationsForm(e));
+        } catch (err) {
+            panel.innerHTML = '<p class="empty-state">Failed to load push notification settings.</p>';
+        }
+    },
+    async savePushNotificationsForm(e) {
+        e.preventDefault();
+        const form = e.target;
+        const toggles = {};
+        form.querySelectorAll('.admin-push-toggle').forEach((input) => {
+            const type = input.getAttribute('data-type');
+            if (!type) return;
+            toggles[type] = !!input.checked;
+        });
+        try {
+            await DB.adminPatchPushNotificationTypes({ toggles });
+            this.toast('Push notification settings saved', 'success');
+            await this.renderPushNotificationsPanel();
         } catch (err) {
             this.toast('Save failed: ' + (err?.message || err?.error || ''), 'error');
         }

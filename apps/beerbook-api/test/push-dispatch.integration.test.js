@@ -3,6 +3,15 @@ const assert = require('node:assert/strict');
 
 const { runOnce } = require('../scripts/push-dispatch');
 
+const PUSH_CATALOG_FIXTURE_TYPES = [
+  'streak_at_risk',
+  'approaching_demotion',
+  'tier_promotion',
+  'tabs_earned',
+  'beer_approved',
+  'weekly_summary',
+];
+
 function createDispatcherHarness(seed = {}) {
   const now = Date.now();
   const tokens = new Map((seed.tokens || []).map((t) => [t.id, { ...t }]));
@@ -12,6 +21,12 @@ function createDispatcherHarness(seed = {}) {
   const deactivations = [];
 
   async function rest(method, path, body) {
+    if (method === 'GET' && path.startsWith('/push_notification_catalog')) {
+      return PUSH_CATALOG_FIXTURE_TYPES.map((notification_type) => ({ notification_type }));
+    }
+    if (method === 'GET' && path.startsWith('/push_notification_push_toggle')) {
+      return PUSH_CATALOG_FIXTURE_TYPES.map((notification_type) => ({ notification_type, push_enabled: true }));
+    }
     if (method === 'POST' && path === '/rpc/claim_push_dispatch_batch') {
       const batchSize = Number(body?.p_batch_size || 50);
       const claimable = states

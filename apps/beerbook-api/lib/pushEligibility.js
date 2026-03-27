@@ -1,12 +1,3 @@
-const DEFAULT_PUSH_ALLOWLIST = new Set([
-  'streak_at_risk',
-  'approaching_demotion',
-  'tier_promotion',
-  'tabs_earned',
-  'beer_approved',
-  'weekly_summary',
-]);
-
 /** Off-by-default hook surface for preferences / quiet hours / fatigue (v1: no-ops). */
 function createNoOpPushHooks() {
   return {
@@ -21,18 +12,11 @@ function parseAllowlistExtra(raw) {
   return raw.split(',').map((s) => s.trim()).filter(Boolean);
 }
 
-/** Default allowlist plus optional `PUSH_ALLOWLIST_EXTRA` (comma-separated types) for staged rollout. */
-function resolvePushAllowlist(env = process.env) {
-  const set = new Set(DEFAULT_PUSH_ALLOWLIST);
-  for (const t of parseAllowlistExtra(env.PUSH_ALLOWLIST_EXTRA)) set.add(t);
-  return set;
-}
-
 function evaluatePushEligibility({
   notification,
   hasActiveToken,
   deliveryStatus,
-  allowlist = DEFAULT_PUSH_ALLOWLIST,
+  allowlist = new Set(),
   hooks = {},
 }) {
   const notificationType = String(notification?.notification_type || '').trim();
@@ -70,9 +54,7 @@ function evaluatePushEligibility({
 }
 
 module.exports = {
-  DEFAULT_PUSH_ALLOWLIST,
   createNoOpPushHooks,
   evaluatePushEligibility,
   parseAllowlistExtra,
-  resolvePushAllowlist,
 };

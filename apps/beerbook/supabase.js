@@ -1512,6 +1512,16 @@ const DB = {
         return await this._api('PATCH', `/api/admin/cosmetics/${encodeURIComponent(id)}/deactivate`);
     },
 
+    async adminGetPushNotificationTypes() {
+        if (this.isDemo) return { data: [] };
+        return await this._api('GET', '/api/admin/push-notification-types');
+    },
+
+    async adminPatchPushNotificationTypes(body) {
+        if (this.isDemo) return { data: [] };
+        return await this._api('PATCH', '/api/admin/push-notification-types', { body: JSON.stringify(body) });
+    },
+
     _demoGetFollows() {
         return Utils.storage.get('demo_follows', {});
     },

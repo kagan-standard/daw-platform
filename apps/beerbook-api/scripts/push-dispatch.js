@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /* eslint-disable no-console */
 
-const { evaluatePushEligibility, resolvePushAllowlist, createNoOpPushHooks } = require('../lib/pushEligibility');
+const { evaluatePushEligibility, createNoOpPushHooks } = require('../lib/pushEligibility');
+const { fetchPushAllowlistBundle, mergePushAllowlist } = require('../lib/pushAllowlistStore');
 
 const REST_URL = (process.env.SUPABASE_REST_URL || 'http://supabase-rest:3000').replace(/\/$/, '');
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -119,7 +120,8 @@ async function markIneligible(rest, row, reason) {
 }
 
 async function runOnce({ restFn = createRest(), sendFn = sendToExpo } = {}) {
-  const allowlist = resolvePushAllowlist();
+  const bundle = await fetchPushAllowlistBundle(restFn);
+  const allowlist = mergePushAllowlist(bundle, process.env);
   const hooks = createNoOpPushHooks();
   const claimedRows = await restFn('POST', '/rpc/claim_push_dispatch_batch', {
     p_batch_size: PUSH_BATCH_SIZE,

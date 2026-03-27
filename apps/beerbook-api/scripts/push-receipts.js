@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /* eslint-disable no-console */
 
-const { evaluatePushEligibility, resolvePushAllowlist } = require('../lib/pushEligibility');
+const { evaluatePushEligibility } = require('../lib/pushEligibility');
+const { fetchPushAllowlistBundle, mergePushAllowlist } = require('../lib/pushAllowlistStore');
 
 const REST_URL = (process.env.SUPABASE_REST_URL || 'http://supabase-rest:3000').replace(/\/$/, '');
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -123,7 +124,8 @@ async function runOnce({ restFn = createRest(), receiptsFn = fetchExpoReceipts }
     throw err;
   }
 
-  const allowlist = resolvePushAllowlist();
+  const bundle = await fetchPushAllowlistBundle(restFn);
+  const allowlist = mergePushAllowlist(bundle, process.env);
   let receiptOk = 0;
   let pending = 0;
   let permanentFailure = 0;

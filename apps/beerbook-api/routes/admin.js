@@ -769,6 +769,88 @@ module.exports = function adminRoutes(opts) {
     }
   });
 
+  // GET /api/admin/push-notification-types — catalog + push_enabled (ordered).
+  router.get('/push-notification-types', async (req, res, next) => {
+    try {
+      const cat = await rest(
+        'GET',
+        '/push_notification_catalog?select=notification_type,label,sort_order,description&order=sort_order.asc',
+      );
+      if (cat.status >= 400) return res.status(cat.status).json(cat.body || { error: 'Failed to load push catalog' });
+      const tog = await rest('GET', '/push_notification_push_toggle?select=notification_type,push_enabled,updated_at');
+      if (tog.status >= 400) return res.status(tog.status).json(tog.body || { error: 'Failed to load push toggles' });
+      const togglesByType = Object.fromEntries(
+        (Array.isArray(tog.body) ? tog.body : []).map((r) => [r.notification_type, r]),
+      );
+      const data = (Array.isArray(cat.body) ? cat.body : []).map((c) => {
+        const t = togglesByType[c.notification_type];
+        return {
+          notification_type: c.notification_type,
+          label: c.label,
+          description: c.description ?? null,
+          push_enabled: t ? !!t.push_enabled : false,
+          updated_at: t?.updated_at || null,
+        };
+      });
+      res.json({ data });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // PATCH /api/admin/push-notification-types — body: { toggles: { "streak_at_risk": false } }
+  router.patch('/push-notification-types', async (req, res, next) => {
+    try {
+      const v = await adminValidation.validatePushNotificationTogglesPatch(req.body || {});
+      if (!v.valid) return res.status(400).json({ error: v.error });
+      const catalogRes = await rest('GET', '/push_notification_catalog?select=notification_type');
+      if (catalogRes.status >= 400) {
+        return res.status(500).json({ error: 'Failed to load catalog for validation' });
+      }
+      const allowed = new Set(
+        (Array.isArray(catalogRes.body) ? catalogRes.body : []).map((r) => r.notification_type).filter(Boolean),
+      );
+      const unknown = Object.keys(v.data.toggles).filter((k) => !allowed.has(k));
+      if (unknown.length) {
+        return res.status(400).json({ error: `Unknown notification_type: ${unknown.join(', ')}` });
+      }
+      const now = new Date().toISOString();
+      for (const [notificationType, pushEnabled] of Object.entries(v.data.toggles)) {
+        const enc = encodeURIComponent(notificationType);
+        const out = await rest('PATCH', `/push_notification_push_toggle?notification_type=eq.${enc}`, {
+          headers: { 'Content-Type': 'application/json', Prefer: 'return=representation' },
+          body: JSON.stringify({ push_enabled: pushEnabled, updated_at: now }),
+        });
+        if (out.status >= 400) return res.status(out.status).json(out.body || { error: 'Failed to update toggle' });
+        const rows = Array.isArray(out.body) ? out.body : [];
+        if (rows.length === 0) return res.status(404).json({ error: `No toggle row for ${notificationType}` });
+      }
+      const cat = await rest(
+        'GET',
+        '/push_notification_catalog?select=notification_type,label,sort_order,description&order=sort_order.asc',
+      );
+      if (cat.status >= 400) return res.status(cat.status).json(cat.body || { error: 'Failed to reload catalog' });
+      const tog = await rest('GET', '/push_notification_push_toggle?select=notification_type,push_enabled,updated_at');
+      if (tog.status >= 400) return res.status(tog.status).json(tog.body || { error: 'Failed to reload toggles' });
+      const togglesByType = Object.fromEntries(
+        (Array.isArray(tog.body) ? tog.body : []).map((r) => [r.notification_type, r]),
+      );
+      const data = (Array.isArray(cat.body) ? cat.body : []).map((c) => {
+        const t = togglesByType[c.notification_type];
+        return {
+          notification_type: c.notification_type,
+          label: c.label,
+          description: c.description ?? null,
+          push_enabled: t ? !!t.push_enabled : false,
+          updated_at: t?.updated_at || null,
+        };
+      });
+      res.json({ data });
+    } catch (e) {
+      next(e);
+    }
+  });
+
   // PATCH /api/admin/config — update global app config (e.g. theme). Admin only.
   router.patch('/config', async (req, res, next) => {
     try {
