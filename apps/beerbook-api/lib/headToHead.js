@@ -7,7 +7,6 @@
 const { styleToFamily } = require('./styleFamily');
 
 const HEAD_TO_HEAD_REWARD_TABS = Number(process.env.HEAD_TO_HEAD_REWARD_TABS) || 2;
-const HEAD_TO_HEAD_COOLDOWN_HOURS = Number(process.env.HEAD_TO_HEAD_COOLDOWN_HOURS) || 1;
 const HEAD_TO_HEAD_YG_TOLERANCE = 2;
 
 /**
@@ -27,21 +26,6 @@ function ratingToHeadToHeadBeer(r) {
     created_at: r.created_at ?? undefined,
     photo_url: r.photo_url ?? undefined,
   };
-}
-
-/**
- * Check cooldown: do not offer if user has a pending prompt or completed/skipped one in the last N hours.
- * @param {function} rest - (method, path, opts) => Promise<{ status, body }>
- * @param {string} userId - user_id (Keycloak sub)
- * @returns {Promise<boolean>} true if we should NOT offer (cooldown active)
- */
-async function isHeadToHeadCooldownActive(rest, userId) {
-  const since = new Date(Date.now() - HEAD_TO_HEAD_COOLDOWN_HOURS * 60 * 60 * 1000).toISOString();
-  const path = `/head_to_head_prompts?user_id=eq.${encodeURIComponent(userId)}&created_at=gte.${encodeURIComponent(since)}&limit=1`;
-  const res = await rest('GET', path);
-  if (res.status >= 400) return true; // on error, don't offer
-  const rows = Array.isArray(res.body) ? res.body : [];
-  return rows.length > 0;
 }
 
 /**
@@ -114,7 +98,7 @@ async function createPromptAndBuildPayload(rest, userId, currentRating, challeng
 
 /**
  * Decide whether to offer head-to-head after this rating and, if so, create prompt and return payload.
- * Only for authenticated users. Returns null if cooldown, no challenger, or error.
+ * Only for authenticated users. Returns null if no valid challenger or error.
  * @param {function} rest - (method, path, opts) => Promise<{ status, body }>
  * @param {string} userId - user_id
  * @param {object} currentRatingRow - the rating just created (with id, style, beer_id, etc.)
@@ -122,7 +106,6 @@ async function createPromptAndBuildPayload(rest, userId, currentRating, challeng
  */
 async function maybeOfferHeadToHead(rest, userId, currentRatingRow) {
   if (!userId || !currentRatingRow?.id) return null;
-  if (await isHeadToHeadCooldownActive(rest, userId)) return null;
   const challenger = await getChallengerRating(rest, userId, currentRatingRow);
   if (!challenger) return null;
   return createPromptAndBuildPayload(rest, userId, currentRatingRow, challenger);
@@ -130,7 +113,6 @@ async function maybeOfferHeadToHead(rest, userId, currentRatingRow) {
 
 module.exports = {
   ratingToHeadToHeadBeer,
-  isHeadToHeadCooldownActive,
   getChallengerRating,
   createPromptAndBuildPayload,
   maybeOfferHeadToHead,

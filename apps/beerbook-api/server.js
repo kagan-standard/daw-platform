@@ -1782,7 +1782,7 @@ app.post('/api/ratings', softAuthMiddleware, actorMiddleware, async (req, res) =
     ? (await overlayCatalogBeerOnRatings([returnedRating], rest))[0] || returnedRating
     : returnedRating;
 
-  // Phase 1 head-to-head: optional prompt for authenticated users (match-quality and cooldown in lib).
+  // Phase 1 head-to-head: optional prompt for authenticated users when a valid challenger exists (lib).
   let headToHead = null;
   if (isUser && sub && withCatalogRating?.id) {
     try {

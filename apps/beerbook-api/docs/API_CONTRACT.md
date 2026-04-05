@@ -837,7 +837,7 @@ Note: Accepts both `snake_case` and `camelCase` for most fields.
 | `head_to_head.current_beer` | object | The beer just rated: `{ rating_id, beer_name, brewery?, style?, venue_name?, location_name?, created_at?, photo_url? }` (no YG value). |
 | `head_to_head.challenger_beer` | object | A past rating to compare: same shape as `current_beer`. |
 
-Match quality and when to prompt are backend-owned (e.g. same user history, same style or YG band, cooldowns). Guests never receive `head_to_head`.
+Match quality and when to prompt are backend-owned (e.g. same user history, same style or YG band). Guests never receive `head_to_head`.
 
 **Success Response — UPDATE EXISTING RATING (200):**
 
@@ -976,7 +976,7 @@ Response does **not** include tabs_earned, tabs_breakdown, achievements_unlocked
 
 ### Head-to-head (Phase 1)
 
-Optional comparison prompt after a rating. Only offered to authenticated users when backend match-quality and cooldown rules allow. Clients use the prompt `id` from the create response to call complete or skip.
+Optional comparison prompt after a rating. Offered to authenticated users whenever backend match-quality rules yield a valid challenger. Clients use the prompt `id` from the create response to call complete or skip.
 
 #### POST /api/head-to-head/:id/complete
 
