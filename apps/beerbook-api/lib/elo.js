@@ -3,7 +3,9 @@
  * Initial 1500; K by maturity (higher K for fewer comparisons).
  */
 
-const ELO_INITIAL = Number(process.env.ELO_INITIAL) || 1500;
+const { STARTING_ELO } = require('./eloTiers');
+
+const ELO_INITIAL = STARTING_ELO;
 const ELO_K_MATURE = Number(process.env.ELO_K_MATURE) || 16;
 const ELO_K_NEW = Number(process.env.ELO_K_NEW) || 32;
 const ELO_MATURITY_CAP = Number(process.env.ELO_MATURITY_CAP) || 30;
@@ -66,7 +68,7 @@ async function getOrCreateBeerElo(rest, beerId) {
   const row = rows[0];
   if (row) {
     return {
-      global_elo: Number(row.global_elo) || ELO_INITIAL,
+      global_elo: row.global_elo != null ? Number(row.global_elo) : ELO_INITIAL,
       comparison_count: Number(row.comparison_count) || 0,
     };
   }
@@ -83,14 +85,33 @@ async function getOrCreateBeerElo(rest, beerId) {
   if (insertRes.status >= 400) return null;
   const inserted = Array.isArray(insertRes.body) ? insertRes.body[0] : insertRes.body;
   return {
-    global_elo: Number(inserted?.global_elo) || ELO_INITIAL,
+    global_elo: inserted?.global_elo != null ? Number(inserted.global_elo) : ELO_INITIAL,
     comparison_count: Number(inserted?.comparison_count) || 0,
   };
 }
 
 /**
+ * Fetch the YG-derived ELO floor for a beer via the compute_yg_elo RPC.
+ * Returns the floor (0–1500) or 0 on error.
+ */
+async function getYgEloFloor(rest, beerId) {
+  try {
+    const res = await rest('POST', '/rpc/compute_yg_elo', {
+      body: JSON.stringify({ p_beer_id: beerId }),
+    });
+    if (res.status >= 400) return 0;
+    const val = Array.isArray(res.body) ? res.body[0] : res.body;
+    return typeof val === 'number' ? val : (Number(val) || 0);
+  } catch {
+    return 0;
+  }
+}
+
+/**
  * Update beer_elo_ratings after a comparison. Optionally write beer_elo_events.
  * Only updates when both winnerBeerId and loserBeerId are non-null; skips silently if either is null.
+ * After computing new ELOs, clamps each to its YG floor so H2H losses cannot push
+ * a well-rated beer below what its YG average justifies.
  * @param {function} rest - (method, path, opts) => Promise<{ status, body }>
  * @param {string} winnerBeerId - beer_id of winner (can be null for name-only rating)
  * @param {string} loserBeerId - beer_id of loser (can be null)
@@ -103,12 +124,21 @@ async function updateEloAfterComparison(rest, winnerBeerId, loserBeerId, resultI
   const loserState = await getOrCreateBeerElo(rest, loserBeerId);
   if (!winnerState || !loserState) return false;
 
-  const { winnerNewElo, loserNewElo, winnerK, loserK } = computeNewElos(
+  const { winnerNewElo: rawWinnerElo, loserNewElo: rawLoserElo, winnerK, loserK } = computeNewElos(
     winnerState.global_elo,
     loserState.global_elo,
     winnerState.comparison_count,
     loserState.comparison_count,
   );
+
+  // Fetch YG floors in parallel and clamp: H2H losses cannot drop below YG floor
+  const [winnerFloor, loserFloor] = await Promise.all([
+    getYgEloFloor(rest, winnerBeerId),
+    getYgEloFloor(rest, loserBeerId),
+  ]);
+  const winnerNewElo = Math.max(rawWinnerElo, winnerFloor);
+  const loserNewElo = Math.max(rawLoserElo, loserFloor);
+
   const now = new Date().toISOString();
 
   const patchWinner = rest('PATCH', `/beer_elo_ratings?beer_id=eq.${encodeURIComponent(winnerBeerId)}`, {

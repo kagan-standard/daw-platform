@@ -117,14 +117,23 @@ module.exports = function tabsRoutes(opts) {
   async function formatTabProfile(userId, profileDefaults = {}) {
     const profile = await ensureUserTabsProfile(rest, userId, profileDefaults);
     const weekStartIso = getPeriodStartUtc('weekly');
-    const [tier, profRes, weeklyAwardsRes] = await Promise.all([
+    const encodedId = encodeURIComponent(userId);
+    const [tier, profRes, weeklyAwardsRes, venueRes, cheersRes] = await Promise.all([
       getTierMultiplier(rest, profile.current_tier),
-      rest('GET', `/profiles?id=eq.${encodeURIComponent(userId)}&select=tabs_balance&limit=1`),
+      rest('GET', `/profiles?id=eq.${encodedId}&select=tabs_balance&limit=1`),
       rest(
         'GET',
-        `/tabs_ledger?user_id=eq.${encodeURIComponent(userId)}&event_type=eq.rating_award&created_at=gte.${encodeURIComponent(weekStartIso)}&select=id&limit=1`,
+        `/tabs_ledger?user_id=eq.${encodedId}&event_type=eq.rating_award&created_at=gte.${encodeURIComponent(weekStartIso)}&select=id&limit=1`,
         { headers: { Prefer: 'count=exact' } }
       ),
+      rest('POST', `/rpc/count_distinct_venues`, {
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ p_user_id: userId }),
+      }),
+      rest('POST', `/rpc/count_cheers_received`, {
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ p_user_id: userId }),
+      }),
     ]);
     const tierMultiplier = Number(tier.multiplier) || 1.0;
     const seederMultiplier = profile.is_seeder ? 1.5 : 1.0;
@@ -137,6 +146,8 @@ module.exports = function tabsRoutes(opts) {
     const weeklyAwardsCount = weeklyAwardsRes.status < 400
       ? (totalFromContentRange(weeklyAwardsRes.headers['content-range']) ?? 0)
       : 0;
+    const uniqueVenues = venueRes.status < 400 ? (Number(venueRes.body) || 0) : 0;
+    const cheersReceived = cheersRes.status < 400 ? (Number(cheersRes.body) || 0) : 0;
     return {
       user_id: profile.user_id,
       current_tier: profile.current_tier,
@@ -151,6 +162,8 @@ module.exports = function tabsRoutes(opts) {
       current_streak_weeks: Number(profile.current_streak_weeks) || 0,
       weekly_cap_reached: weeklyAwardsCount >= 10,
       weeks_inactive: Number(profile.weeks_inactive) || 0,
+      unique_venues: uniqueVenues,
+      cheers_received: cheersReceived,
       week_start: profile.week_start,
       updated_at: profile.updated_at,
     };

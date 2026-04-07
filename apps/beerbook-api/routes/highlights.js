@@ -4,6 +4,7 @@
  * Optionally includes first_rated_by { user_id, display_name } when the first rater can be resolved.
  */
 const express = require('express');
+const { getTierName } = require('../lib/eloTiers');
 
 function getCurrentWeekRange() {
   const d = new Date();
@@ -84,6 +85,7 @@ module.exports = function (opts) {
             source: 'admin',
             power_score: elo ? elo.power_score : null,
             comparison_count: elo ? elo.comparison_count : null,
+            elo_tier: elo && elo.power_score != null ? getTierName(elo.power_score) : null,
           },
         });
       }
@@ -124,6 +126,7 @@ module.exports = function (opts) {
           source: 'auto',
           power_score: elo ? elo.power_score : null,
           comparison_count: elo ? elo.comparison_count : null,
+          elo_tier: elo && elo.power_score != null ? getTierName(elo.power_score) : null,
         },
       });
     } catch (e) {

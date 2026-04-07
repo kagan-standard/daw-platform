@@ -5,7 +5,7 @@
 services:
   # ---------- Public (Traefik-exposed) ----------
   keycloak:
-    image: quay.io/keycloak/keycloak:26.2
+    image: quay.io/keycloak/keycloak:26.5.0
     container_name: keycloak
     restart: unless-stopped
     command: start --features=token-exchange,admin-fine-grained-authz:v1 --proxy-headers=xforwarded --hostname=https://auth.beerbookapp.com --http-enabled=true --hostname-strict=false --spi-theme-static-max-age=-1 --spi-theme-cache-themes=false
@@ -18,7 +18,7 @@ services:
       KC_FEATURES: token-exchange
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
     volumes:
-      - ../../infra/keycloak/apple-identity-provider-1.14.0.jar:/opt/keycloak/providers/apple-identity-provider-1.14.0.jar:ro
+      - ../../infra/keycloak/apple-identity-provider-1.17.0.jar:/opt/keycloak/providers/apple-identity-provider-1.17.0.jar:ro
       - ../../infra/keycloak/themes/daw:/opt/keycloak/themes/daw:ro
     depends_on:
       keycloak-db: { condition: service_healthy }
@@ -79,6 +79,7 @@ services:
     volumes:
       - /opt/daw-platform/apps/beerbook-api/public/images/avatars:/app/public/images/avatars:ro
       - /opt/daw-platform/apps/beerbook-api/scripts:/app/scripts:ro
+      - /opt/daw-platform/apps/beerbook-api/workers:/app/workers:ro
       - uploads_data:/data/uploads
     environment:
       KEYCLOAK_ISSUER: https://auth.beerbookapp.com/realms/daw
@@ -166,7 +167,12 @@ services:
     image: supabase/realtime:v2.30.34
     container_name: supabase-realtime
     restart: unless-stopped
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     environment:
+      RLIMIT_NOFILE: "65536"
       DB_HOST: supabase-db
       DB_PORT: "5432"
       DB_USER: postgres

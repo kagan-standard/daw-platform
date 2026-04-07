@@ -1,5 +1,6 @@
 const express = require('express');
 const adminValidation = require('../lib/adminValidation');
+const { CHALLENGE_TEMPLATES, getTemplate } = require('../lib/challengeTemplates');
 
 const USER_SORT_WHITELIST = new Set(['last_active', 'total_ratings', 'created_at']);
 const ORDER_WHITELIST = new Set(['asc', 'desc']);
@@ -400,7 +401,86 @@ module.exports = function adminRoutes(opts) {
     }
   });
 
-  // ---------- Weekly Challenges CRUD ----------
+  // ---------- Challenge Templates & Scheduling ----------
+
+  // GET /api/admin/challenges/templates — list all challenge templates for admin picker
+  router.get('/challenges/templates', async (req, res) => {
+    res.json(CHALLENGE_TEMPLATES);
+  });
+
+  // POST /api/admin/challenges/schedule — schedule a challenge from a template
+  router.post('/challenges/schedule', async (req, res, next) => {
+    try {
+      const { template_id, week_start, reward_tabs, target_count, target_style, reward_label, reward_badge_id } = req.body || {};
+
+      if (!template_id) return res.status(400).json({ error: 'template_id is required' });
+      const template = getTemplate(template_id);
+      if (!template) return res.status(400).json({ error: `Unknown template_id: ${template_id}` });
+
+      if (!week_start) return res.status(400).json({ error: 'week_start is required' });
+      const ws = new Date(week_start);
+      if (Number.isNaN(ws.getTime()) || ws.getUTCDay() !== 1 || ws.getUTCHours() !== 0 || ws.getUTCMinutes() !== 0 || ws.getUTCSeconds() !== 0) {
+        return res.status(400).json({ error: 'week_start must be a Monday 00:00 UTC' });
+      }
+
+      const rt = reward_tabs == null ? 0 : parseInt(reward_tabs, 10);
+      if (!Number.isInteger(rt) || rt < 0) return res.status(400).json({ error: 'reward_tabs must be a non-negative integer' });
+
+      const tc = target_count == null ? template.defaultTarget : parseInt(target_count, 10);
+      if (!Number.isInteger(tc) || tc < 1) return res.status(400).json({ error: 'target_count must be a positive integer' });
+
+      // target_style only valid for ratings_count
+      const ts = template.metric === 'ratings_count' ? (target_style == null ? null : String(target_style).trim() || null) : null;
+
+      const rl = String(reward_label || template.label).trim();
+      if (!rl) return res.status(400).json({ error: 'reward_label is required' });
+
+      let rbi = reward_badge_id;
+      if (rbi != null && rbi !== '') {
+        rbi = String(rbi).trim();
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+        if (!uuidRegex.test(rbi)) return res.status(400).json({ error: 'reward_badge_id must be a valid UUID' });
+      } else {
+        rbi = null;
+      }
+
+      // Check no challenge exists for that week
+      const existingRes = await rest('GET', `/weekly_challenges?week_start=eq.${encodeURIComponent(week_start)}&limit=1`);
+      if (existingRes.status < 400 && Array.isArray(existingRes.body) && existingRes.body.length > 0) {
+        return res.status(409).json({ error: 'A challenge already exists for this week' });
+      }
+
+      // Compute week_end
+      const weEnd = new Date(ws);
+      weEnd.setUTCDate(weEnd.getUTCDate() + 7);
+      weEnd.setUTCMilliseconds(-1);
+
+      const payload = {
+        week_start,
+        week_end: weEnd.toISOString(),
+        title: template.label,
+        description: template.description,
+        target_count: tc,
+        target_style: ts,
+        reward_label: rl,
+        reward_badge_id: rbi,
+        metric: template.metric,
+        reward_tabs: rt,
+      };
+
+      const out = await rest('POST', '/weekly_challenges', {
+        headers: { 'Content-Type': 'application/json', Prefer: 'return=representation' },
+        body: JSON.stringify(payload),
+      });
+      if (out.status >= 400) return res.status(out.status).json(out.body || { error: 'Failed to create challenge' });
+      const row = Array.isArray(out.body) && out.body.length ? out.body[0] : out.body;
+      res.status(201).json(row);
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // ---------- Weekly Challenges CRUD (deprecated: prefer /challenges/schedule for creation) ----------
   router.get('/challenges', async (req, res, next) => {
     try {
       const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 200);

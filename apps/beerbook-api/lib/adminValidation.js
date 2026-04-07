@@ -5,6 +5,11 @@
 
 const SLUG_REGEX = /^[a-z0-9_]+$/;
 
+const CHALLENGE_METRICS = new Set([
+  'ratings_count', 'styles_count', 'venue_checkins', 'tabs_earned', 'tabs_spent',
+  'members_added', 'backs_risen', 'photos_submitted', 'beers_added', 'price_taggings',
+]);
+
 const ACHIEVEMENT_SUBTYPES = new Set([
   'checkin_count', 'total_ratings', 'unique_styles', 'unique_venues', 'review_min_len',
   'stars_gte', 'stars_lte', 'price', 'cheers_given', 'cheers_received', 'streak_weeks',
@@ -75,9 +80,15 @@ async function validateChallengeCreate(body) {
     reward_badge_id = null;
   }
 
+  const metric = body.metric == null ? 'ratings_count' : String(body.metric).trim();
+  if (!CHALLENGE_METRICS.has(metric)) return { valid: false, error: `metric must be one of: ${[...CHALLENGE_METRICS].join(', ')}` };
+
+  const reward_tabs = body.reward_tabs == null ? 0 : parseInt(body.reward_tabs, 10);
+  if (!Number.isInteger(reward_tabs) || reward_tabs < 0) return { valid: false, error: 'reward_tabs must be a non-negative integer' };
+
   return {
     valid: true,
-    data: { week_start, week_end, title, description, target_count, target_style, reward_label, reward_badge_id },
+    data: { week_start, week_end, title, description, target_count, target_style, reward_label, reward_badge_id, metric, reward_tabs },
   };
 }
 
@@ -122,6 +133,16 @@ async function validateChallengePatch(body) {
       if (!uuidRegex.test(String(v))) return { valid: false, error: 'reward_badge_id must be a valid UUID' };
       data.reward_badge_id = String(v).trim();
     }
+  }
+  if (body.metric !== undefined) {
+    const m = String(body.metric).trim();
+    if (!CHALLENGE_METRICS.has(m)) return { valid: false, error: `metric must be one of: ${[...CHALLENGE_METRICS].join(', ')}` };
+    data.metric = m;
+  }
+  if (body.reward_tabs !== undefined) {
+    const rt = parseInt(body.reward_tabs, 10);
+    if (!Number.isInteger(rt) || rt < 0) return { valid: false, error: 'reward_tabs must be a non-negative integer' };
+    data.reward_tabs = rt;
   }
   return { valid: true, data };
 }

@@ -118,32 +118,28 @@ async function run(restFn) {
     for (const profile of profiles) {
       const userId = profile.user_id;
       const encodedUser = encodeURIComponent(userId);
-      const [ratings, submissions] = await Promise.all([
-        rest(
-          'GET',
-          `/ratings?user_id=eq.${encodedUser}&created_at=gte.${encodeURIComponent(from)}&created_at=lte.${encodeURIComponent(to)}&select=id,notes&limit=1000`
-        ),
-        rest(
-          'GET',
-          `/beer_submissions?submitted_by=eq.${encodedUser}&status=eq.approved&reviewed_at=gte.${encodeURIComponent(from)}&reviewed_at=lte.${encodeURIComponent(to)}&select=id&limit=1000`
-        ),
-      ]);
+
+      // Fetch previous week's ratings to check maintenance threshold
+      const ratings = await rest(
+        'GET',
+        `/ratings?user_id=eq.${encodedUser}&created_at=gte.${encodeURIComponent(from)}&created_at=lte.${encodeURIComponent(to)}&select=id&limit=1000`
+      );
       const ratingsCount = Array.isArray(ratings) ? ratings.length : 0;
-      const reviewsCount = (Array.isArray(ratings) ? ratings : []).filter((r) => (r.notes || '').trim().length >= 10).length;
-      const contributionsCount = Array.isArray(submissions) ? submissions.length : 0;
 
       let currentTier = profile.current_tier || 'taster';
-      const wasActiveLastWeek = Boolean(profile.last_active_week)
-        && new Date(profile.last_active_week).getTime() >= new Date(from).getTime();
-      let weeksInactive = Number(profile.weeks_inactive) || 0;
+      const currentReq = reqByTier.get(currentTier);
+      const maintenanceMin = Number(currentReq?.maintenance_ratings_per_week || 2);
+
+      // Trust the RPC-cached streak (tier-aware since migration 20260426140000)
       let currentStreak = Number(profile.current_streak_weeks) || 0;
+      let weeksInactive = Number(profile.weeks_inactive) || 0;
       let notification = null;
 
-      if (wasActiveLastWeek) {
-        weeksInactive = Number(profile.weeks_inactive) || 0;
+      // ── Maintenance demotion: below maintenance_ratings_per_week → increment weeks_inactive
+      if (ratingsCount >= maintenanceMin) {
+        weeksInactive = 0;
       } else {
         weeksInactive += 1;
-        currentStreak = 0;
         if (weeksInactive >= 4) {
           const idx = TIERS.indexOf(currentTier);
           if (idx > 0) {
@@ -151,23 +147,20 @@ async function run(restFn) {
             notification = {
               type: 'tier_demotion',
               title: 'Tier adjusted',
-              message: `You have been moved to ${currentTier.replace('_', ' ')} after inactivity.`,
+              message: `You have been moved to ${currentTier.replace('_', ' ')} after falling below the activity minimum.`,
             };
           }
           weeksInactive = 0;
-          currentStreak = 0;
         }
       }
 
+      // ── Promotion: streak already encodes that user met next tier's full weekly bar
       const nextTier = TIERS[TIERS.indexOf(currentTier) + 1];
       if (nextTier) {
         const nextReq = reqByTier.get(nextTier);
-        const meetsNext = ratingsCount >= Number(nextReq?.required_ratings_per_week || 0)
-          && reviewsCount >= Number(nextReq?.required_reviews_per_week || 0)
-          && contributionsCount >= Number(nextReq?.required_contributions_per_week || 0);
-
-        if (meetsNext && currentStreak >= Number(nextReq?.required_consecutive_weeks || 0)) {
+        if (currentStreak >= Number(nextReq?.required_consecutive_weeks || 0)) {
           currentTier = nextTier;
+          currentStreak = 0; // reset streak on promotion
           notification = {
             type: 'tier_promotion',
             title: 'Tier promotion',
@@ -181,6 +174,8 @@ async function run(restFn) {
         current_streak_weeks: currentStreak,
         weeks_inactive: weeksInactive,
         ratings_this_week: 0,
+        reviews_this_week: 0,
+        contributions_this_week: 0,
         week_start: weekStart,
         tier_promoted_at: currentTier !== profile.current_tier ? new Date().toISOString() : profile.tier_promoted_at,
         updated_at: new Date().toISOString(),

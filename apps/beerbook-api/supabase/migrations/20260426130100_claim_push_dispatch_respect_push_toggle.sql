@@ -7,7 +7,7 @@ RETURNS TABLE (
   state_id uuid,
   notification_id text,
   token_id uuid,
-  user_id uuid,
+  user_id text,
   notification_type text,
   title text,
   message text,

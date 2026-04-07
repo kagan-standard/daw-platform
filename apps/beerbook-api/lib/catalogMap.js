@@ -2,6 +2,8 @@
  * Maps a raw beer row (from PostgREST/Supabase) to the catalog browse/detail shape.
  * Used by GET /api/catalog/browse and GET /api/catalog/beer/:id.
  */
+const { getTierName } = require('./eloTiers');
+
 function toNumberOrNull(v) {
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
@@ -52,6 +54,8 @@ function mapCatalogBeer(row) {
     comparison_count: row.comparison_count != null ? toNumberOrNull(row.comparison_count) : null,
     // Style-scoped Elo when upstream view/table provides it (for sort=style_elo)
     style_elo: row.style_elo != null ? toNumberOrNull(row.style_elo) : null,
+    // Tier derived from power score
+    elo_tier: row.global_elo != null ? getTierName(Number(row.global_elo)) : null,
   };
 }
 

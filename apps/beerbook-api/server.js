@@ -26,6 +26,8 @@ const {
 const { actorMiddleware, ENABLE_GUEST_RATINGS, validateGuestId } = require('./lib/actorIdentity');
 const { CANONICAL_FAMILIES, styleDistributionToFamilies, styleToFamily } = require('./lib/styleFamily');
 const { mapCatalogBeer } = require('./lib/catalogMap');
+const { fetchBeerTrend, fetchBeerTrendsBatch } = require('./lib/eloTrend');
+const { getBackingInfo } = require('./lib/backingLookup');
 const { maybeOfferHeadToHead } = require('./lib/headToHead');
 const { updateEloAfterComparison } = require('./lib/elo');
 const { deleteAccountForUser } = require('./lib/deleteAccount');
@@ -599,6 +601,8 @@ const tabsRoutes = require('./routes/tabs')({ ...routeHelpers });
 const followsRoutes = require('./routes/follows')({ ...routeHelpers });
 const crewsRoutes = require('./routes/crews')({ ...routeHelpers });
 const pushRoutes = require('./routes/push')({ ...routeHelpers });
+const backsRoutes = require('./routes/backs')({ ...routeHelpers });
+const rankingsRoutes = require('./routes/rankings')({ ...routeHelpers });
 const internalRoutesModule = require('./routes/internal');
 const internalOpts = { rest, totalFromContentRange, getKeycloakUserId };
 const internalRoutes = internalRoutesModule(internalOpts);
@@ -621,6 +625,8 @@ app.use('/api', tabsRoutes);
 app.use('/api', followsRoutes);
 app.use('/api', crewsRoutes);
 app.use('/api', pushRoutes);
+app.use('/api', backsRoutes);
+app.use('/api/rankings', rankingsRoutes);
 if (process.env.INTERNAL_PROCESS_EVENT_SECRET) {
   const internalLimiter = rateLimit({
     windowMs: RATE_WINDOW_MS,
@@ -1009,8 +1015,18 @@ app.get('/api/catalog/browse', async (req, res) => {
     }
     const rows = Array.isArray(body) ? body : [];
     const total = totalFromContentRange(headers['content-range']) ?? rows.length;
+    let data = rows.map(mapCatalogBeer);
+    // Batch-enrich with ELO trend when browsing by power_score
+    if (useEloView && data.length > 0) {
+      const ids = data.map(d => d.id).filter(Boolean);
+      const trends = await fetchBeerTrendsBatch(rest, ids);
+      data = data.map(d => ({
+        ...d,
+        elo_trend: trends[d.id] || { trend: 'new', delta: null, tier_changed: false },
+      }));
+    }
     res.json({
-      data: rows.map(mapCatalogBeer),
+      data,
       pagination: { limit, offset, total },
     });
   } catch (e) {
@@ -1081,8 +1097,8 @@ app.get('/api/catalog/validate-new', async (req, res) => {
   }
 });
 
-// GET /api/catalog/beer/:id — single catalog beer (expanded detail); includes power_score when available (Phase 5)
-app.get('/api/catalog/beer/:id', async (req, res) => {
+// GET /api/catalog/beer/:id — single catalog beer (expanded detail); includes power_score, elo_tier, elo_trend, backing (Phase 5+)
+app.get('/api/catalog/beer/:id', softAuthMiddleware, async (req, res) => {
   const id = encodeURIComponent((req.params.id || '').trim());
   try {
     const { status, body } = await rest(
@@ -1094,7 +1110,16 @@ app.get('/api/catalog/beer/:id', async (req, res) => {
     }
     const row = Array.isArray(body) && body[0] ? body[0] : null;
     if (!row) return res.status(404).json({ error: 'Beer not found' });
-    res.json(mapCatalogBeer(row));
+    const mapped = mapCatalogBeer(row);
+    // Enrich with ELO trend and backing data in parallel
+    const userId = req.claims?.sub || null;
+    const [trend, backing] = await Promise.all([
+      fetchBeerTrend(rest, row.id).catch(() => null),
+      getBackingInfo(rest, row.id, userId).catch(() => ({ total_backers: 0, top_backers: [], user_back: null })),
+    ]);
+    mapped.elo_trend = trend || { trend: 'new', delta: null, tier_changed: false };
+    mapped.backing = backing;
+    res.json(mapped);
   } catch (e) {
     console.error('Catalog beer error:', e);
     res.status(502).json({ error: 'Catalog fetch failed' });

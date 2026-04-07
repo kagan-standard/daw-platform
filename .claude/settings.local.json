@@ -10,7 +10,23 @@
       "Bash(find /c/Users/kenyo/OneDrive/Desktop/daw-platform/daw-platform -type f \\\\\\(-name README* -o -name *.md \\\\\\) ! -path *node_modules* ! -path *.git*)",
       "Bash(grep -l \"drinksafterwork\\\\|beerbookapp\" /c/Users/kenyo/OneDrive/Desktop/daw-platform/daw-platform/*.md)",
       "Bash(grep -r well-known /c/Users/kenyo/OneDrive/Desktop/daw-platform/daw-platform --include=*.js --include=*.json --include=*.md)",
-      "Bash(grep -r \"landing\\\\|homepage\\\\|public\" /c/Users/kenyo/OneDrive/Desktop/daw-platform/daw-platform --include=*.json --include=*.js --exclude-dir=node_modules)"
+      "Bash(grep -r \"landing\\\\|homepage\\\\|public\" /c/Users/kenyo/OneDrive/Desktop/daw-platform/daw-platform --include=*.json --include=*.js --exclude-dir=node_modules)",
+      "Bash(grep -r \"EXPO\\\\|Firebase\\\\|FCM\\\\|APNs\" /opt/daw-platform --include=*.js --include=*.md --include=*.yml --include=*.yaml)",
+      "Bash(grep -r \"EXPO_PUSH_URL\\\\|PUSH_BATCH_SIZE\\\\|push-dispatch\\\\|push-receipts\" /opt/daw-platform/infra --include=*.yml --include=*.yaml)",
+      "Bash(grep:*)",
+      "Read(//opt/daw-platform/**)",
+      "Read(//tmp/**)",
+      "Bash(docker exec:*)",
+      "Bash(docker cp:*)",
+      "Bash(docker compose:*)",
+      "Bash(find:*)",
+      "Bash(ls -lrt /opt/daw-platform/apps/beerbook-api/supabase/migrations/*.sql)",
+      "Bash(ls /opt/daw-platform/apps/beerbook-api/supabase/migrations/*.sql)",
+      "Bash(curl -s https://api.beerbook.drinksafterwork.net/health)",
+      "Bash(curl -s https://api.beerbook.drinksafterwork.net/api/admin/challenges/templates)",
+      "Bash(python3 -m json.tool)",
+      "Bash(curl -s 'https://api.beerbook.drinksafterwork.net/api/rankings/beers?limit=3')",
+      "Bash(curl -s 'https://api.beerbook.drinksafterwork.net/api/rankings/beers?tier=Legend&limit=3')"
     ]
   }
 }
