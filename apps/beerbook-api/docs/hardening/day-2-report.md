@@ -2,7 +2,7 @@
 
 **Date:** 2026-04-08
 **Branch:** hardening/main
-**Tag:** hardening-day-2-complete (pending gate approval)
+**Tag:** hardening-day-2-complete
 
 ---
 
@@ -10,16 +10,14 @@
 
 ### T2.1 — streak-risk-check.js cron entry
 
-**Status: DONE (schedule pending confirmation)**
+**Status: DONE — confirmed Thursday**
 
 Entry added to crontab:
 ```
-0 18 * * 3 docker exec beerbook-api node scripts/streak-risk-check.js >> /var/log/beerbook/streak-risk-check.log 2>&1
+0 18 * * 4 docker exec beerbook-api node scripts/streak-risk-check.js >> /var/log/beerbook/streak-risk-check.log 2>&1
 ```
 
-Backup saved: `/tmp/crontab.bak`
-
-Schedule uses `docker exec` pattern matching all other cron entries. Log directory `/var/log/beerbook/` created.
+Script header says "Mid-week streak risk notifications (Thursday)" and `JOB_NAME = 'streak_risk_check'` — the Wednesday schedule was a placeholder guess from the audit. Switched to Thursday per script intent. Thursday 6pm UTC = ~1pm ET, gives users Fri/Sat/Sun to act before Monday eval.
 
 Full cron schedule documented in `docs/CRON_SCHEDULE.md`.
 
@@ -64,6 +62,22 @@ Capped per audit findings:
 
 All marked with `// TODO(scale): replace with paginated/filtered query post-launch`.
 
+### T2.6 — Cap additional user-facing unbounded queries
+
+**Status: DONE**
+
+Per human triage at Gate #1: cap the 3 user-facing queries, defer admin-only and implicitly-bounded ones.
+
+| File | Route | Cap | Rationale |
+|---|---|---|---|
+| `routes/map.js:140` | `GET /api/map/user/:id` (geotagged ratings) | 2000 | User-facing; prolific users could have hundreds |
+| `routes/activity.js:461` | `GET /api/ratings/:id/cheers` (reactions) | 500 | User-facing; viral rating could accumulate unbounded |
+| `routes/tabs.js:245-246` | `GET /api/achievements/catalog` (achievements + categories) | 500 each | User-facing; seeded catalog, cap is safety net |
+
+All marked with `// TODO(scale): paginate post-launch`.
+
+**Deferred to post-launch:** admin-only queries (`routes/admin.js` x3 — challenge queue, achievement categories, cosmetics) and leaderboard profile lookup (implicitly bounded by top-10 RPC).
+
 ### T2.5 — Cron schedule documentation
 
 **Status: DONE** — `docs/CRON_SCHEDULE.md` documents all 13 cron entries.
@@ -89,11 +103,7 @@ All marked with `// TODO(scale): replace with paginated/filtered query post-laun
 
 ### 1. Cron schedule confirmation
 
-**Proposed:** `0 18 * * 3` = Wednesday 6:00 PM UTC
-
-Rationale: mid-week gives users ~4.5 days to submit a rating before Monday 00:00 UTC eval. The audit flagged the script was unscheduled but did not prescribe a time.
-
-**Please confirm or adjust this schedule.**
+**Resolved:** Switched to `0 18 * * 4` (Thursday 6pm UTC). The script's own header specified Thursday; the Wednesday schedule was a placeholder. Good example of discovery-before-action — the plan said "placeholder, ask the human" and Claude Code flagged it rather than silently committing Wednesday.
 
 ### 2. Admin status of test user
 
@@ -117,7 +127,7 @@ The explore found additional unbounded queries NOT in the audit's worst-offender
 | `routes/tabs.js:244-245` | Achievements/categories | All achievements + categories |
 | `routes/leaderboard.js:46` | Leaderboard profiles | Profiles for top reviewers (bounded by leaderboard size) |
 
-Admin-only routes are lower risk. The user-facing ones (`map/user/:id`, `activity` reactions, `tabs` achievements) could grow but are unlikely to OOM at current scale. **Surfacing for your awareness — did not cap these without confirmation.**
+**Resolved as T2.6:** Capped the 3 user-facing queries (map/user, cheers reactions, achievements catalog). Admin-only routes (4-6) and leaderboard (7) deferred to post-launch.
 
 ### 4. Day 1 T1.3 handler list (retroactive review)
 
@@ -155,14 +165,32 @@ No outstanding discovery items flagged by the human from Day 0/Day 1 that haven'
 
 ---
 
+### T2.2 rest() verification
+
+**Confirmed:** `rest` in `routes/tabs.js` is the server.js opts-object version, destructured at line 110 via `tabsRoutes(opts)` pattern. The `{status, body}` destructuring in the T2.2 handler (line 791) is correct. The 403 branch at lines 788-789 is clean: denied only if requester is neither owner nor admin.
+
+---
+
 ## Commits
 
 ```
 be9dadf [day-2] auth-gate GET /api/tabs/profile/:userId
 0b8a9ba [day-2] cap worst unbounded queries (audit finding #2 partial)
 896e93c [day-2] add streak-risk-check cron + document full cron schedule
+380939d [day-2] fix: align streak-risk-check cron to Thursday per script intent
+ccf758d [day-2] cap 3 additional user-facing unbounded queries (T2.6)
 ```
 
 ---
 
-**STOPPED at Human Gate #1. Awaiting approval to proceed to Day 3.**
+## Gate #1 — Closed
+
+All three conditions met:
+1. Cron switched to Thursday (`0 18 * * 4`) — committed `380939d`
+2. T2.6 caps on 3 user-facing queries — committed `ccf758d`, V2.5 passes
+3. `rest()` import verified as server.js opts-object version — T2.2 handler correct
+
+## Carry-overs into Day 3
+
+- **T3.6:** Migrate `tab_balance` reader at `routes/tabs.js:1332` to compute from `tabs_ledger`. Verify new value matches before switching. Then remove `tab_balance` writes from `lib/tabs.js` (deferred from T2.3).
+- Day 3 T3.1 writer inventory should include `tab_balance` alongside `lifetime_tabs_earned`.
