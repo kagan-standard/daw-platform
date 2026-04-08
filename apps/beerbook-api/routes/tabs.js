@@ -111,6 +111,7 @@ module.exports = function tabsRoutes(opts) {
     authMiddleware,
     softAuthMiddleware = (_req, _res, next) => next(),
     adminMiddleware,
+    isAdmin,
     totalFromContentRange,
   } = opts;
 
@@ -780,9 +781,13 @@ module.exports = function tabsRoutes(opts) {
   });
 
   // GET /api/tabs/profile/:userId
-  router.get('/tabs/profile/:userId', async (req, res, next) => {
+  router.get('/tabs/profile/:userId', authMiddleware, async (req, res, next) => {
     try {
+      const requesterId = req.claims.sub;
       const userId = req.params.userId;
+      if (requesterId !== userId && !isAdmin(requesterId)) {
+        return res.status(403).json({ error: 'forbidden' });
+      }
       const out = await rest('GET', `/user_tabs_profile?user_id=eq.${encodeURIComponent(userId)}&limit=1`);
       if (out.status >= 400) return res.status(out.status).json(out.body || { error: 'Upstream error' });
       if (!Array.isArray(out.body) || out.body.length === 0) return res.status(404).json({ error: 'Tab profile not found' });

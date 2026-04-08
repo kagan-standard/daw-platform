@@ -440,6 +440,7 @@ app.use('/api', limiter);
 const routeHelpers = {
   rest,
   totalFromContentRange,
+  isAdmin,
   parsePagination: () => {}, // set after parsePagination is defined
   authMiddleware: () => {}, // set after authMiddleware is defined
   softAuthMiddleware: (req, res, next) => next(),
