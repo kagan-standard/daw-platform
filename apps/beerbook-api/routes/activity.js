@@ -458,7 +458,8 @@ module.exports = function (opts) {
   // GET /api/ratings/:id/cheers
   router.get('/ratings/:id/cheers', (req, res, next) => {
     const id = encodeURIComponent(req.params.id);
-    rest('GET', `/reactions?rating_id=eq.${id}&reaction_type=eq.cheers`)
+    // TODO(scale): paginate post-launch
+    rest('GET', `/reactions?rating_id=eq.${id}&reaction_type=eq.cheers&limit=500`)
       .then(({ status, body }) => {
         if (status >= 400) return res.status(status).json(body || { error: 'Upstream error' });
         const list = Array.isArray(body) ? body : [];

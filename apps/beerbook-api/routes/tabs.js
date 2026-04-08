@@ -242,8 +242,9 @@ module.exports = function tabsRoutes(opts) {
 
       // Fetch all active achievements + categories + user unlocks in parallel
       const [allAchRes, catRes, uaRes] = await Promise.all([
-        rest('GET', '/achievements?active=eq.true&select=id,key,name,description,reward_tabs,category_key,difficulty,is_hidden,subtype,rules&order=category_key.asc,key.asc'),
-        rest('GET', '/achievement_categories?order=sort_order.asc,key.asc&select=key,name,icon'),
+        // TODO(scale): paginate post-launch
+        rest('GET', '/achievements?active=eq.true&select=id,key,name,description,reward_tabs,category_key,difficulty,is_hidden,subtype,rules&order=category_key.asc,key.asc&limit=500'),
+        rest('GET', '/achievement_categories?order=sort_order.asc,key.asc&select=key,name,icon&limit=500'),
         rest('GET', `/user_achievements?user_id=eq.${encodeURIComponent(userId)}&select=achievement_id,unlocked_at`),
       ]);
 

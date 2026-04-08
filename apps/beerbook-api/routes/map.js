@@ -137,7 +137,8 @@ module.exports = function (opts) {
   // GET /api/map/user/:id — single user's beer trail (geotagged, chronological)
   router.get('/user/:id', authMiddleware, (req, res, next) => {
     const id = encodeURIComponent(req.params.id);
-    rest('GET', `/ratings?user_id=eq.${id}&latitude=not.is.null&longitude=not.is.null&order=created_at.asc`)
+    // TODO(scale): replace with bbox-filter or paginated query post-launch
+    rest('GET', `/ratings?user_id=eq.${id}&latitude=not.is.null&longitude=not.is.null&order=created_at.asc&limit=2000`)
       .then(({ status, body }) => {
         if (status >= 400) return res.status(status).json(body || { error: 'Upstream error' });
         res.json({ data: Array.isArray(body) ? body : [] });
