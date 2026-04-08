@@ -23,9 +23,9 @@ module.exports = function (opts) {
         rest('POST', '/rpc/venues_within_radius', {
           body: JSON.stringify({ lat, lng, radius_m: radius }),
         }),
-        rest('GET', '/venue_menus'),
+        rest('GET', '/venue_menus?limit=500'), // TODO(scale): replace with paginated/filtered query post-launch
         rest('GET', '/yg_exchange?limit=500'),
-        rest('GET', '/happy_hours'),
+        rest('GET', '/happy_hours?limit=500'), // TODO(scale): replace with paginated/filtered query post-launch
       ]);
       if (venuesRes.status >= 400) return res.status(venuesRes.status).json(venuesRes.body || { error: 'Upstream error' });
       const venues = Array.isArray(venuesRes.body) ? venuesRes.body : [];

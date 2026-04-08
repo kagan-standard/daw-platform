@@ -294,7 +294,7 @@ module.exports = function (opts) {
           ? rest('GET', `/profiles?id=in.(${inClause})&select=id,display_name,avatar_url`)
           : Promise.resolve({ status: 200, body: [] }),
         userIds.length
-          ? rest('GET', `/ratings?user_id=in.(${inClause})&select=id,user_id,beer_name,style,rating,venue_id,location_verified`)
+          ? rest('GET', `/ratings?user_id=in.(${inClause})&select=id,user_id,beer_name,style,rating,venue_id,location_verified&limit=2000`) // TODO(scale): replace with paginated/filtered query post-launch
           : Promise.resolve({ status: 200, body: [] }),
       ]);
       const profiles = Array.isArray(profilesRes.body) ? profilesRes.body : [];

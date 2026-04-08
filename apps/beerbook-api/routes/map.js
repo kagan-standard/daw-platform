@@ -59,7 +59,7 @@ module.exports = function (opts) {
   router.get('/venues', async (req, res, next) => {
     try {
       const [venuesRes, ratingsRes] = await Promise.all([
-        rest('GET', '/venues?select=id,name,latitude,longitude,created_by,created_at'),
+        rest('GET', '/venues?select=id,name,latitude,longitude,created_by,created_at&limit=1000'), // TODO(scale): replace with paginated/filtered query post-launch
         rest('GET', `/ratings?venue_id=not.is.null&select=id,beer_name,rating,venue_id,created_at&order=created_at.desc&limit=${MAP_VENUES_RATINGS_LIMIT}`),
       ]);
       if (venuesRes.status >= 400) {

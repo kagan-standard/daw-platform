@@ -82,7 +82,7 @@ module.exports = function (opts) {
     const encoded = encodeURIComponent(name);
     Promise.all([
       rest('GET', `/beer_averages?beer_name=eq.${encoded}&limit=1`),
-      rest('GET', `/ratings?beer_name=eq.${encoded}&order=created_at.desc`),
+      rest('GET', `/ratings?beer_name=eq.${encoded}&order=created_at.desc&limit=500`), // TODO(scale): replace with paginated/filtered query post-launch
       rest('GET', `/price_logs?beer_name=eq.${encoded}&order=logged_at.desc&limit=100`),
     ])
       .then(([avgRes, ratingsRes, pricesRes]) => {
