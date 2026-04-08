@@ -16,9 +16,9 @@ All jobs run on the VPS host crontab and execute inside the `beerbook-api` conta
 | `5 0 * * 1` | `workers/challenge-promoter.js` | `/var/log/challenge-promoter.log` | Promote challenges (Mon 00:05 UTC) |
 | `0 12 * * 1` | `workers/botw-weekly.js` | `/var/log/botw-weekly.log` | Beer of the Week selection (Mon noon UTC) |
 | `0 0 * * 1` | `scripts/weekly-tabs-eval.js` | `/var/log/weekly-tabs-eval.log` | Weekly tabs evaluation (Mon midnight UTC) |
-| `0 18 * * 3` | `scripts/streak-risk-check.js` | `/var/log/beerbook/streak-risk-check.log` | **PENDING CONFIRMATION** — streak risk notifications (Wed 6pm UTC). Added Day 2 hardening. Schedule is a placeholder from the audit; human must confirm. |
+| `0 18 * * 4` | `scripts/streak-risk-check.js` | `/var/log/beerbook/streak-risk-check.log` | Mid-week streak risk notifications (Thu 6pm UTC / ~1pm ET). Gives users Fri–Sun to rate before Monday eval. |
 
 ## Notes
 
 - `weekly-tabs-eval.js` runs at Monday 00:00 UTC. Any new cron touching `user_tabs_profile` should avoid this window to prevent races.
-- `streak-risk-check.js` is intentionally mid-week (Wednesday) so users have time to act before the Monday eval.
+- `streak-risk-check.js` runs Thursday 6pm UTC — gives users Fri/Sat/Sun to act before the Monday eval.
