@@ -1022,7 +1022,7 @@ app.get('/api/catalog/browse', async (req, res) => {
       const trends = await fetchBeerTrendsBatch(rest, ids);
       data = data.map(d => ({
         ...d,
-        elo_trend: trends[d.id] || { trend: 'new', delta: null, tier_changed: false },
+        elo_trend: trends[d.id] || { trend_3d: { trend: 'new', delta: 0, tier_changed: false }, trend_7d: { trend: 'new', delta: 0, tier_changed: false } },
       }));
     }
     res.json({
@@ -1117,7 +1117,7 @@ app.get('/api/catalog/beer/:id', softAuthMiddleware, async (req, res) => {
       fetchBeerTrend(rest, row.id).catch(() => null),
       getBackingInfo(rest, row.id, userId).catch(() => ({ total_backers: 0, top_backers: [], user_back: null })),
     ]);
-    mapped.elo_trend = trend || { trend: 'new', delta: null, tier_changed: false };
+    mapped.elo_trend = trend || { trend_3d: { trend: 'new', delta: 0, tier_changed: false }, trend_7d: { trend: 'new', delta: 0, tier_changed: false } };
     mapped.backing = backing;
     res.json(mapped);
   } catch (e) {
@@ -1282,16 +1282,17 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', service: 'beerbook-api' });
 });
 
-// GET /api/config — public; returns global app config (e.g. theme for mobile). No auth required.
+// GET /api/config — public; returns global app config (theme + tab_burst). No auth required.
 app.get('/api/config', async (req, res, next) => {
   try {
-    const out = await rest('GET', "/app_config?id=eq.default&select=theme&limit=1");
+    const out = await rest('GET', "/app_config?id=eq.default&select=theme,tab_burst_settings&limit=1");
     if (out.status >= 400) {
       return res.status(out.status).json(out.body || { error: 'Failed to fetch config' });
     }
     const row = Array.isArray(out.body) && out.body.length ? out.body[0] : null;
     const theme = (row && row.theme) ? row.theme : 'default';
-    res.json({ theme });
+    const tabBurst = (row && row.tab_burst_settings) ? row.tab_burst_settings : null;
+    res.json({ theme, tab_burst: tabBurst });
   } catch (e) {
     next(e);
   }
@@ -1415,6 +1416,32 @@ function sanitizeRatingDbFields(input) {
     }
   });
   return out;
+}
+
+// Best-effort catalog backfill: enrich beers.style and beers.abv from a rating's data.
+// style_category is derived automatically by the beers_set_style_category DB trigger.
+async function backfillCatalogFromRating(rest, beerId, ratingStyle, ratingAbv) {
+  if (!beerId) return;
+  const styleVal = (ratingStyle && String(ratingStyle).trim() !== '') ? String(ratingStyle).trim() : null;
+  const abvVal = (ratingAbv != null && !Number.isNaN(Number(ratingAbv))) ? Number(ratingAbv) : null;
+  if (styleVal == null && abvVal == null) return;
+  try {
+    const encodedId = encodeURIComponent(beerId);
+    if (styleVal != null) {
+      await rest('PATCH', `/beers?id=eq.${encodedId}&or=(style.is.null,style.eq.)`, {
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ style: styleVal }),
+      });
+    }
+    if (abvVal != null) {
+      await rest('PATCH', `/beers?id=eq.${encodedId}&abv=is.null`, {
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ abv: abvVal }),
+      });
+    }
+  } catch (err) {
+    console.error(`[catalog-backfill] failed for beer_id=${beerId}:`, err?.message || err);
+  }
 }
 
 // POST /api/ratings — user (JWT) or guest (X-Guest-Id when ENABLE_GUEST_RATINGS). YG-only: yg_value required.
@@ -1690,6 +1717,7 @@ app.post('/api/ratings', softAuthMiddleware, actorMiddleware, async (req, res) =
       return res.status(updateRes.status).json(updateRes.body || { error: 'Update failed' });
     }
     const updatedRow = Array.isArray(updateRes.body) ? updateRes.body[0] : updateRes.body;
+    await backfillCatalogFromRating(rest, record.beer_id, record.style, record.abv);
     return res.json({
       data: updatedRow || null,
       updated: true,
@@ -1707,6 +1735,8 @@ app.post('/api/ratings', softAuthMiddleware, actorMiddleware, async (req, res) =
   const row = Array.isArray(insertRes.body) ? insertRes.body[0] : insertRes.body;
   const ratingId = row?.id || null;
   const ratingRow = row || ratingFields;
+
+  await backfillCatalogFromRating(rest, record.beer_id, record.style, record.abv);
 
   let tabsEarned = 0;
   let breakdown = {};
@@ -1997,6 +2027,8 @@ app.patch('/api/ratings/:id', softAuthMiddleware, actorMiddleware, async (req, r
     return res.status(patchRes.status >= 500 ? 502 : patchRes.status).json(patchRes.body || { error: 'Update failed' });
   }
   const updatedRow = Array.isArray(patchRes.body) ? patchRes.body[0] : patchRes.body;
+  const finalRow = updatedRow || existingRows[0];
+  await backfillCatalogFromRating(rest, finalRow.beer_id, finalRow.style, finalRow.abv);
   const withCatalogRow = updatedRow
     ? (await overlayCatalogBeerOnRatings([updatedRow], rest))[0] || updatedRow
     : updatedRow;

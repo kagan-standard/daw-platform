@@ -514,15 +514,41 @@ function validateBeerPatch(body) {
 
 const APP_THEMES = new Set(['default', 'st_patricks_day']);
 
-/** @returns {Promise<{ valid: boolean, error?: string, data?: { theme: string } }>} */
-async function validateConfigPatch(body) {
-  const theme = body.theme;
-  if (theme === undefined || theme === null) return { valid: false, error: 'theme is required' };
-  const themeStr = String(theme).trim();
-  if (!APP_THEMES.has(themeStr)) {
-    return { valid: false, error: 'theme must be one of: default, st_patricks_day' };
+/** @returns {Promise<{ valid: boolean, error?: string, data?: { theme?: string, tab_burst_settings?: object } }>} */
+async function validateConfigPatch(body, currentTabBurst) {
+  const hasTheme = body.theme !== undefined && body.theme !== null;
+  const hasTabBurst = body.tab_burst !== undefined && body.tab_burst !== null;
+
+  if (!hasTheme && !hasTabBurst) {
+    return { valid: false, error: 'No config fields provided' };
   }
-  return { valid: true, data: { theme: themeStr } };
+
+  const data = {};
+
+  if (hasTheme) {
+    const themeStr = String(body.theme).trim();
+    if (!APP_THEMES.has(themeStr)) {
+      return { valid: false, error: 'theme must be one of: default, st_patricks_day' };
+    }
+    data.theme = themeStr;
+  }
+
+  if (hasTabBurst) {
+    if (typeof body.tab_burst !== 'object' || Array.isArray(body.tab_burst)) {
+      return { valid: false, error: 'tab_burst must be an object' };
+    }
+    // Merge with current stored value so admin can update one field at a time
+    const merged = { ...(currentTabBurst || {}), ...body.tab_burst };
+    // Deep-merge colors if both exist
+    if (body.tab_burst.colors && currentTabBurst?.colors) {
+      merged.colors = { ...currentTabBurst.colors, ...body.tab_burst.colors };
+    }
+    const v = validateTabBurstSettings(merged);
+    if (!v.valid) return v;
+    data.tab_burst_settings = merged;
+  }
+
+  return { valid: true, data };
 }
 
 /** @returns {Promise<{ valid: boolean, error?: string, data?: { toggles: Record<string, boolean> } }>} */
@@ -545,6 +571,78 @@ async function validatePushNotificationTogglesPatch(body) {
   return { valid: true, data: { toggles: out } };
 }
 
+const TAB_BURST_STYLES = new Set(['fountain', 'firework', 'shotgun', 'popcorn', 'geyser']);
+const TAB_BURST_COLOR_KEYS = ['gold', 'goldBright', 'goldGlow', 'goldFlash', 'shadowDark', 'textShadow'];
+
+function validateTabBurstSettings(merged) {
+  if (typeof merged !== 'object' || merged === null || Array.isArray(merged)) {
+    return { valid: false, error: 'tab_burst must be an object' };
+  }
+
+  if (merged.style !== undefined && !TAB_BURST_STYLES.has(merged.style)) {
+    return { valid: false, error: 'tab_burst.style must be one of: fountain, firework, shotgun, popcorn, geyser' };
+  }
+
+  const numRanges = {
+    tabSize: { min: 0, max: 200, exMin: true },
+    tabAspectRatio: { min: 0, max: 5, exMin: true },
+    spin: { min: 0, max: 50 },
+    spread: { min: 0, max: 20 },
+    gravity: { min: -2, max: 2 },
+    launchPower: { min: 0, max: 30, exMin: true },
+    fadeSpeed: { min: 0, max: 1, exMin: true },
+    maxEarn: { min: 1, max: 1000 },
+    minVisualTabs: { min: 1, max: 200 },
+    maxVisualTabs: { min: 1, max: 500 },
+    speedMultiplier: { min: 0, max: 10, exMin: true },
+    maxDeltaTime: { min: 0, max: 1, exMin: true },
+  };
+
+  for (const [field, range] of Object.entries(numRanges)) {
+    if (merged[field] !== undefined) {
+      const v = merged[field];
+      if (typeof v !== 'number' || !Number.isFinite(v)) {
+        return { valid: false, error: `tab_burst.${field} must be a finite number` };
+      }
+      if (range.exMin ? v <= range.min : v < range.min) {
+        return { valid: false, error: `tab_burst.${field} must be ${range.exMin ? '>' : '>='} ${range.min}` };
+      }
+      if (v > range.max) {
+        return { valid: false, error: `tab_burst.${field} must be <= ${range.max}` };
+      }
+    }
+  }
+
+  if (merged.maxVisualTabs !== undefined && merged.minVisualTabs !== undefined) {
+    if (merged.maxVisualTabs < merged.minVisualTabs) {
+      return { valid: false, error: 'tab_burst.maxVisualTabs must be >= minVisualTabs' };
+    }
+  }
+
+  for (const boolField of ['showBadge', 'showFlash', 'hapticEnabled']) {
+    if (merged[boolField] !== undefined && typeof merged[boolField] !== 'boolean') {
+      return { valid: false, error: `tab_burst.${boolField} must be a boolean` };
+    }
+  }
+
+  if (merged.colors !== undefined) {
+    if (typeof merged.colors !== 'object' || merged.colors === null || Array.isArray(merged.colors)) {
+      return { valid: false, error: 'tab_burst.colors must be an object' };
+    }
+    for (const key of TAB_BURST_COLOR_KEYS) {
+      if (!(key in merged.colors)) {
+        return { valid: false, error: `tab_burst.colors.${key} is required` };
+      }
+      const cv = merged.colors[key];
+      if (typeof cv !== 'string' || cv.length === 0 || cv.length > 64) {
+        return { valid: false, error: `tab_burst.colors.${key} must be a non-empty string (max 64 chars)` };
+      }
+    }
+  }
+
+  return { valid: true };
+}
+
 module.exports = {
   validateChallengeCreate,
   validateChallengePatch,
@@ -558,5 +656,6 @@ module.exports = {
   validateCosmeticPatch,
   validateBeerPatch,
   validateConfigPatch,
+  validateTabBurstSettings,
   validatePushNotificationTogglesPatch,
 };

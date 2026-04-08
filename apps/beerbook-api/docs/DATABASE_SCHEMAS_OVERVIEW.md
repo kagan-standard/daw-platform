@@ -64,7 +64,9 @@ This file outlines the current BeerBook database schema state after applying the
 
 ### `app_config`
 - **Primary key:** `id` (text, default `'default'`) — single-row table for global app settings
-- **Columns:** `theme` (text, not null, default `'default'`; check: `'default'` | `'st_patricks_day'`)
+- **Columns:**
+  - `theme` (text, not null, default `'default'`; check: `'default'` | `'st_patricks_day'`)
+  - `tab_burst_settings` (jsonb, nullable) — TabBurst animation overrides; `null` means use mobile defaults
 - **Usage:** GET /api/config (read), PATCH /api/admin/config (admin update)
 
 ### `push_notification_catalog`

@@ -173,6 +173,8 @@ async function run(restFn) {
         current_tier: currentTier,
         current_streak_weeks: currentStreak,
         weeks_inactive: weeksInactive,
+        // ratings_this_week is now computed live via count_ratings_this_week RPC;
+        // this reset is a non-authoritative cache update for consistency only.
         ratings_this_week: 0,
         reviews_this_week: 0,
         contributions_this_week: 0,

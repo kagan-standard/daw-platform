@@ -27,6 +27,52 @@ function uniqueCount(list, selector) {
   return new Set((list || []).map(selector).filter(Boolean)).size;
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/**
+ * Validate challenge override fields shared by /schedule and /queue endpoints.
+ * Returns { ok, values, error }.
+ */
+async function validateChallengeOverrides(body, template, rest) {
+  const values = {};
+
+  const tc = body.target_count == null ? template.defaultTarget : parseInt(body.target_count, 10);
+  if (!Number.isInteger(tc) || tc < 1) return { ok: false, error: 'target_count must be a positive integer' };
+  values.target_count = tc;
+
+  values.target_style = template.metric === 'ratings_count'
+    ? (body.target_style == null ? null : String(body.target_style).trim() || null)
+    : null;
+
+  const rl = String(body.reward_label || template.label).trim();
+  if (!rl || rl.length > 200) return { ok: false, error: 'reward_label is required (max 200 chars)' };
+  values.reward_label = rl;
+
+  const rt = body.reward_tabs == null ? 0 : parseInt(body.reward_tabs, 10);
+  if (!Number.isInteger(rt) || rt < 0) return { ok: false, error: 'reward_tabs must be a non-negative integer' };
+  values.reward_tabs = rt;
+
+  let rbi = body.reward_badge_id;
+  if (rbi != null && rbi !== '') {
+    rbi = String(rbi).trim();
+    if (!UUID_RE.test(rbi)) return { ok: false, error: 'reward_badge_id must be a valid UUID' };
+    // Verify cosmetic exists
+    try {
+      const cosRes = await rest('GET', `/cosmetics?id=eq.${encodeURIComponent(rbi)}&select=id&limit=1`);
+      if (cosRes.status < 400 && Array.isArray(cosRes.body) && cosRes.body.length === 0) {
+        return { ok: false, error: 'reward_badge_id does not match any cosmetic' };
+      }
+    } catch (err) {
+      console.warn('[admin] cosmetic lookup failed, allowing write through:', err.message);
+    }
+    values.reward_badge_id = rbi;
+  } else {
+    values.reward_badge_id = null;
+  }
+
+  return { ok: true, values };
+}
+
 module.exports = function adminRoutes(opts) {
   const router = express.Router();
   const { rest, authMiddleware, adminMiddleware, totalFromContentRange } = opts;
@@ -405,13 +451,13 @@ module.exports = function adminRoutes(opts) {
 
   // GET /api/admin/challenges/templates — list all challenge templates for admin picker
   router.get('/challenges/templates', async (req, res) => {
-    res.json(CHALLENGE_TEMPLATES);
+    res.json({ data: CHALLENGE_TEMPLATES });
   });
 
   // POST /api/admin/challenges/schedule — schedule a challenge from a template
   router.post('/challenges/schedule', async (req, res, next) => {
     try {
-      const { template_id, week_start, reward_tabs, target_count, target_style, reward_label, reward_badge_id } = req.body || {};
+      const { template_id, week_start } = req.body || {};
 
       if (!template_id) return res.status(400).json({ error: 'template_id is required' });
       const template = getTemplate(template_id);
@@ -423,26 +469,8 @@ module.exports = function adminRoutes(opts) {
         return res.status(400).json({ error: 'week_start must be a Monday 00:00 UTC' });
       }
 
-      const rt = reward_tabs == null ? 0 : parseInt(reward_tabs, 10);
-      if (!Number.isInteger(rt) || rt < 0) return res.status(400).json({ error: 'reward_tabs must be a non-negative integer' });
-
-      const tc = target_count == null ? template.defaultTarget : parseInt(target_count, 10);
-      if (!Number.isInteger(tc) || tc < 1) return res.status(400).json({ error: 'target_count must be a positive integer' });
-
-      // target_style only valid for ratings_count
-      const ts = template.metric === 'ratings_count' ? (target_style == null ? null : String(target_style).trim() || null) : null;
-
-      const rl = String(reward_label || template.label).trim();
-      if (!rl) return res.status(400).json({ error: 'reward_label is required' });
-
-      let rbi = reward_badge_id;
-      if (rbi != null && rbi !== '') {
-        rbi = String(rbi).trim();
-        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-        if (!uuidRegex.test(rbi)) return res.status(400).json({ error: 'reward_badge_id must be a valid UUID' });
-      } else {
-        rbi = null;
-      }
+      const v = await validateChallengeOverrides(req.body, template, rest);
+      if (!v.ok) return res.status(400).json({ error: v.error });
 
       // Check no challenge exists for that week
       const existingRes = await rest('GET', `/weekly_challenges?week_start=eq.${encodeURIComponent(week_start)}&limit=1`);
@@ -460,12 +488,12 @@ module.exports = function adminRoutes(opts) {
         week_end: weEnd.toISOString(),
         title: template.label,
         description: template.description,
-        target_count: tc,
-        target_style: ts,
-        reward_label: rl,
-        reward_badge_id: rbi,
+        target_count: v.values.target_count,
+        target_style: v.values.target_style,
+        reward_label: v.values.reward_label,
+        reward_badge_id: v.values.reward_badge_id,
         metric: template.metric,
-        reward_tabs: rt,
+        reward_tabs: v.values.reward_tabs,
       };
 
       const out = await rest('POST', '/weekly_challenges', {
@@ -478,6 +506,152 @@ module.exports = function adminRoutes(opts) {
     } catch (e) {
       next(e);
     }
+  });
+
+  // ---------- Challenge Queue (must be before /challenges/:id to avoid param capture) ----------
+
+  // GET /api/admin/challenges/queue — ordered queue
+  router.get('/challenges/queue', async (req, res, next) => {
+    try {
+      const out = await rest('GET', '/challenge_queue?order=sort_order.asc,created_at.asc&select=*');
+      if (out.status >= 400) return res.status(out.status).json(out.body || { error: 'Failed to fetch queue' });
+      res.json({ data: Array.isArray(out.body) ? out.body : [] });
+    } catch (e) { next(e); }
+  });
+
+  // POST /api/admin/challenges/queue — add entry to end of queue
+  router.post('/challenges/queue', async (req, res, next) => {
+    try {
+      const { template_key, notes } = req.body || {};
+      if (!template_key) return res.status(400).json({ error: 'template_key is required' });
+      const template = getTemplate(template_key);
+      if (!template) return res.status(400).json({ error: `Unknown template_key: ${template_key}` });
+
+      const v = await validateChallengeOverrides(req.body, template, rest);
+      if (!v.ok) return res.status(400).json({ error: v.error });
+
+      if (notes != null && String(notes).length > 500) {
+        return res.status(400).json({ error: 'notes must be 500 chars or fewer' });
+      }
+
+      // Get max sort_order for appending
+      const maxRes = await rest('GET', '/challenge_queue?select=sort_order&order=sort_order.desc&limit=1');
+      const maxOrder = maxRes.status < 400 && Array.isArray(maxRes.body) && maxRes.body.length
+        ? maxRes.body[0].sort_order : 0;
+
+      const payload = {
+        template_key,
+        sort_order: maxOrder + 10,
+        target_count: v.values.target_count,
+        target_style: v.values.target_style,
+        reward_label: v.values.reward_label,
+        reward_tabs: v.values.reward_tabs,
+        reward_badge_id: v.values.reward_badge_id,
+        notes: notes != null ? String(notes).trim() || null : null,
+        created_by: req.claims.sub,
+      };
+
+      const out = await rest('POST', '/challenge_queue', {
+        headers: { 'Content-Type': 'application/json', Prefer: 'return=representation' },
+        body: JSON.stringify(payload),
+      });
+      if (out.status >= 400) return res.status(out.status).json(out.body || { error: 'Failed to add queue entry' });
+      const row = Array.isArray(out.body) && out.body.length ? out.body[0] : out.body;
+      res.status(201).json(row);
+    } catch (e) { next(e); }
+  });
+
+  // POST /api/admin/challenges/queue/reorder — reassign sort_order from ordered_ids array
+  router.post('/challenges/queue/reorder', async (req, res, next) => {
+    try {
+      const { ordered_ids } = req.body || {};
+      if (!Array.isArray(ordered_ids) || ordered_ids.length === 0) {
+        return res.status(400).json({ error: 'ordered_ids must be a non-empty array' });
+      }
+      for (const oid of ordered_ids) {
+        if (typeof oid !== 'string' || !UUID_RE.test(oid)) {
+          return res.status(400).json({ error: `Invalid UUID in ordered_ids: ${oid}` });
+        }
+      }
+
+      // Fetch current queue ids
+      const curRes = await rest('GET', '/challenge_queue?select=id&order=sort_order.asc');
+      if (curRes.status >= 400) return res.status(500).json({ error: 'Failed to fetch current queue' });
+      const currentIds = new Set((Array.isArray(curRes.body) ? curRes.body : []).map(r => r.id));
+      const submittedIds = new Set(ordered_ids);
+
+      if (currentIds.size !== submittedIds.size || [...currentIds].some(id => !submittedIds.has(id))) {
+        return res.status(400).json({ error: 'ordered_ids must contain exactly the current queue entries — refresh and try again' });
+      }
+
+      // Assign sort_order
+      for (let i = 0; i < ordered_ids.length; i++) {
+        await rest('PATCH', `/challenge_queue?id=eq.${encodeURIComponent(ordered_ids[i])}`, {
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sort_order: (i + 1) * 10 }),
+        });
+      }
+
+      // Return fresh queue
+      const freshRes = await rest('GET', '/challenge_queue?order=sort_order.asc,created_at.asc&select=*');
+      res.json({ data: Array.isArray(freshRes.body) ? freshRes.body : [] });
+    } catch (e) { next(e); }
+  });
+
+  // PATCH /api/admin/challenges/queue/:id — update overrides (not sort_order or template_key)
+  router.patch('/challenges/queue/:id', async (req, res, next) => {
+    try {
+      const id = encodeURIComponent(req.params.id);
+
+      // Fetch existing
+      const existRes = await rest('GET', `/challenge_queue?id=eq.${id}&limit=1`);
+      if (existRes.status >= 400 || !Array.isArray(existRes.body) || !existRes.body.length) {
+        return res.status(404).json({ error: 'Queue entry not found' });
+      }
+      const existing = existRes.body[0];
+      const template = getTemplate(existing.template_key);
+      if (!template) return res.status(500).json({ error: 'Queue entry references unknown template' });
+
+      // Merge body over existing for validation
+      const merged = {
+        target_count: req.body.target_count ?? existing.target_count,
+        target_style: req.body.target_style !== undefined ? req.body.target_style : existing.target_style,
+        reward_label: req.body.reward_label ?? existing.reward_label,
+        reward_tabs: req.body.reward_tabs ?? existing.reward_tabs,
+        reward_badge_id: req.body.reward_badge_id !== undefined ? req.body.reward_badge_id : existing.reward_badge_id,
+      };
+      const v = await validateChallengeOverrides(merged, template, rest);
+      if (!v.ok) return res.status(400).json({ error: v.error });
+
+      const patch = { ...v.values };
+      if (req.body.notes !== undefined) {
+        if (req.body.notes != null && String(req.body.notes).length > 500) {
+          return res.status(400).json({ error: 'notes must be 500 chars or fewer' });
+        }
+        patch.notes = req.body.notes != null ? String(req.body.notes).trim() || null : null;
+      }
+
+      const out = await rest('PATCH', `/challenge_queue?id=eq.${id}`, {
+        headers: { 'Content-Type': 'application/json', Prefer: 'return=representation' },
+        body: JSON.stringify(patch),
+      });
+      if (out.status >= 400) return res.status(out.status).json(out.body || { error: 'Failed to update queue entry' });
+      const row = Array.isArray(out.body) && out.body.length ? out.body[0] : out.body;
+      res.json(row);
+    } catch (e) { next(e); }
+  });
+
+  // DELETE /api/admin/challenges/queue/:id
+  router.delete('/challenges/queue/:id', async (req, res, next) => {
+    try {
+      const id = encodeURIComponent(req.params.id);
+      const existRes = await rest('GET', `/challenge_queue?id=eq.${id}&select=id&limit=1`);
+      if (existRes.status >= 400 || !Array.isArray(existRes.body) || !existRes.body.length) {
+        return res.status(404).json({ error: 'Queue entry not found' });
+      }
+      await rest('DELETE', `/challenge_queue?id=eq.${id}`);
+      res.status(204).send();
+    } catch (e) { next(e); }
   });
 
   // ---------- Weekly Challenges CRUD (deprecated: prefer /challenges/schedule for creation) ----------
@@ -964,18 +1138,35 @@ module.exports = function adminRoutes(opts) {
     }
   });
 
-  // PATCH /api/admin/config — update global app config (e.g. theme). Admin only.
+  // PATCH /api/admin/config — update global app config (theme and/or tab_burst). Admin only.
   router.patch('/config', async (req, res, next) => {
     try {
-      const v = await adminValidation.validateConfigPatch(req.body || {});
+      // Fetch current tab_burst_settings for merge (partial updates)
+      let currentTabBurst = null;
+      if (req.body && req.body.tab_burst) {
+        const curRes = await rest('GET', '/app_config?id=eq.default&select=tab_burst_settings&limit=1');
+        if (curRes.status < 400 && Array.isArray(curRes.body) && curRes.body.length) {
+          currentTabBurst = curRes.body[0].tab_burst_settings || null;
+        }
+      }
+
+      const v = await adminValidation.validateConfigPatch(req.body || {}, currentTabBurst);
       if (!v.valid) return res.status(400).json({ error: v.error });
-      const out = await rest('PATCH', "/app_config?id=eq.default", {
+
+      const patch = {};
+      if (v.data.theme !== undefined) patch.theme = v.data.theme;
+      if (v.data.tab_burst_settings !== undefined) patch.tab_burst_settings = v.data.tab_burst_settings;
+
+      const out = await rest('PATCH', '/app_config?id=eq.default', {
         headers: { 'Content-Type': 'application/json', Prefer: 'return=representation' },
-        body: JSON.stringify({ theme: v.data.theme }),
+        body: JSON.stringify(patch),
       });
       if (out.status >= 400) return res.status(out.status).json(out.body || { error: 'Failed to update config' });
       const row = Array.isArray(out.body) && out.body.length ? out.body[0] : out.body;
-      res.json({ theme: (row && row.theme) ? row.theme : v.data.theme });
+      res.json({
+        theme: (row && row.theme) ? row.theme : (v.data.theme || 'default'),
+        tab_burst: (row && row.tab_burst_settings) ? row.tab_burst_settings : null,
+      });
     } catch (e) {
       next(e);
     }

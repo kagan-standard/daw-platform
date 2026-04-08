@@ -55,14 +55,15 @@ async function ensureUserTabsProfile(rest, userId, profileDefaults = {}) {
 
   const currentWeekStart = getCurrentWeekStartUtc();
   if (new Date(profile.week_start || 0).getTime() < new Date(currentWeekStart).getTime()) {
+    // Only advance week_start. ratings_this_week is now computed live via
+    // the count_ratings_this_week RPC — no need to reset it here.
     const reset = await rest('PATCH', `/user_tabs_profile?user_id=eq.${id}`, {
       headers: { Prefer: 'return=representation' },
       body: JSON.stringify({
-        ratings_this_week: 0,
         week_start: currentWeekStart,
       }),
     });
-    if (reset.status >= 400) throw new Error('Failed to reset weekly tab counters');
+    if (reset.status >= 400) throw new Error('Failed to advance week_start');
     profile = Array.isArray(reset.body) && reset.body[0] ? reset.body[0] : profile;
   }
 

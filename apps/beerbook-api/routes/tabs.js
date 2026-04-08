@@ -118,7 +118,7 @@ module.exports = function tabsRoutes(opts) {
     const profile = await ensureUserTabsProfile(rest, userId, profileDefaults);
     const weekStartIso = getPeriodStartUtc('weekly');
     const encodedId = encodeURIComponent(userId);
-    const [tier, profRes, weeklyAwardsRes, venueRes, cheersRes] = await Promise.all([
+    const [tier, profRes, weeklyAwardsRes, venueRes, cheersRes, ratingsWeekRes] = await Promise.all([
       getTierMultiplier(rest, profile.current_tier),
       rest('GET', `/profiles?id=eq.${encodedId}&select=tabs_balance&limit=1`),
       rest(
@@ -134,11 +134,15 @@ module.exports = function tabsRoutes(opts) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ p_user_id: userId }),
       }),
+      rest('POST', `/rpc/count_ratings_this_week`, {
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ p_user_id: userId, p_week_start: weekStartIso }),
+      }),
     ]);
     const tierMultiplier = Number(tier.multiplier) || 1.0;
     const seederMultiplier = profile.is_seeder ? 1.5 : 1.0;
     const combinedMultiplier = Number((tierMultiplier * seederMultiplier).toFixed(2));
-    const ratingsThisWeek = Number(profile.ratings_this_week) || 0;
+    const ratingsThisWeek = ratingsWeekRes.status < 400 ? (Number(ratingsWeekRes.body) || 0) : 0;
     const tabsBalanceFromProfile = profRes.status < 400 && Array.isArray(profRes.body) && profRes.body[0] != null
       ? Number(profRes.body[0].tabs_balance)
       : NaN;

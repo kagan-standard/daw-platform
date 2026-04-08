@@ -26,7 +26,24 @@
       "Bash(curl -s https://api.beerbook.drinksafterwork.net/api/admin/challenges/templates)",
       "Bash(python3 -m json.tool)",
       "Bash(curl -s 'https://api.beerbook.drinksafterwork.net/api/rankings/beers?limit=3')",
-      "Bash(curl -s 'https://api.beerbook.drinksafterwork.net/api/rankings/beers?tier=Legend&limit=3')"
+      "Bash(curl -s 'https://api.beerbook.drinksafterwork.net/api/rankings/beers?tier=Legend&limit=3')",
+      "Bash(curl -s https://api.beerbook.drinksafterwork.net/api/health)",
+      "Bash(jq)",
+      "Bash(curl -s -w \"\\\\nHTTP_STATUS: %{http_code}\\\\n\" https://api.beerbook.drinksafterwork.net/api/rankings/challenge/current)",
+      "Bash(curl -s https://api.beerbook.drinksafterwork.net/api/rankings/challenge/current)",
+      "Bash(curl -s -X POST https://auth.beerbookapp.com/realms/master/protocol/openid-connect/token -d client_id=admin-cli -d grant_type=password -d username=admin -d password=jjaAbFSTZj/szC7S69IaWDAw2yMwk4sv)",
+      "Bash(curl -s -X POST https://auth.beerbookapp.com/realms/daw/protocol/openid-connect/token -d client_id=beerbook-mobile -d grant_type=password -d username=rambo -d password=TempTest123!)",
+      "Bash(curl -s 'https://api.beerbook.drinksafterwork.net/api/rankings/beers?limit=20')",
+      "Bash(curl -s 'https://api.beerbook.drinksafterwork.net/api/rankings/beers?limit=30')",
+      "Bash(crontab -l)",
+      "Bash(curl -s https://api.beerbook.drinksafterwork.net/api/config)",
+      "Bash(curl -s https://api.beerbook.drinksafterwork.net/api/admin/challenges/templates -H \"Authorization: Bearer $\\(docker exec beerbook-api cat /run/secrets/admin_token || echo ''\\)\")",
+      "Bash(curl -s -X POST https://auth.beerbookapp.com/realms/daw/protocol/openid-connect/token -d client_id=admin-cli -d client_secret=GNfXaL6cVGos3pKgF9psGJlRzRqwVVey -d grant_type=client_credentials)",
+      "Bash(curl -s -X POST https://auth.beerbookapp.com/realms/daw/protocol/openid-connect/token -d client_id=beerbook-service -d client_secret=GNfXaL6cVGos3pKgF9psGJlRzRqwVVey -d grant_type=client_credentials)",
+      "Bash(curl -s -X POST https://auth.beerbookapp.com/realms/daw/protocol/openid-connect/token -d client_id=beerbook-mobile -d grant_type=password -d username=admin -d password=jjaAbFSTZj/szC7S69IaWDAw2yMwk4sv)",
+      "Bash(node --test test/beer-of-the-week-fallback.test.js)",
+      "Bash(curl -s https://api.beerbook.drinksafterwork.net/api/highlights/beer-of-the-week)",
+      "Bash(node --test)"
     ]
   }
 }

@@ -295,10 +295,11 @@ This applies to crew operations, follow operations, and any other proxied writes
 - **Success Response (200):**
 
 ```json
-{ "theme": "default" }
+{ "theme": "default", "tab_burst": null }
 ```
 
-or `{ "theme": "st_patricks_day" }`. Returns the current global app theme. If no stored value exists, returns `"theme": "default"`.
+- `theme`: current global app theme (`"default"` | `"st_patricks_day"`). Defaults to `"default"` if unset.
+- `tab_burst`: TabBurst animation settings object or `null` (use mobile defaults). When set, contains: `style`, `tabSize`, `tabAspectRatio`, `spin`, `spread`, `gravity`, `launchPower`, `fadeSpeed`, `maxEarn`, `minVisualTabs`, `maxVisualTabs`, `showBadge`, `showFlash`, `hapticEnabled`, `speedMultiplier`, `maxDeltaTime`, `colors` (object with keys: `gold`, `goldBright`, `goldGlow`, `goldFlash`, `shadowDark`, `textShadow`).
 
 ---
 
@@ -4067,9 +4068,11 @@ Returns the migration-defined push catalog merged with current toggle state, ord
 
 - **Auth:** required (admin only; same as other `/api/admin` routes)
 - **File:** `routes/admin.js`
-- **Body:** `{ "theme": "default" | "st_patricks_day" }`. `theme` is required and must be one of these two values.
-- **Validation:** 400 if `theme` is missing or not one of `default`, `st_patricks_day` (error message in `error`).
-- **Success Response (200):** Same shape as GET /api/config, e.g. `{ "theme": "default" }` or `{ "theme": "st_patricks_day" }`.
+- **Body:** At least one of `theme` or `tab_burst` is required. Both are optional individually.
+  - `"theme"`: `"default"` | `"st_patricks_day"`
+  - `"tab_burst"`: partial or full TabBurst settings object. Partial updates are merged with the current stored value before validation.
+- **Validation:** 400 if neither field is provided, if `theme` is invalid, or if any `tab_burst` field fails validation (style must be one of `fountain|firework|shotgun|popcorn|geyser`; numeric fields have specific ranges; `colors` must have all six keys).
+- **Success Response (200):** Same shape as GET /api/config: `{ "theme": "...", "tab_burst": { ... } | null }`.
 
 ---
 
