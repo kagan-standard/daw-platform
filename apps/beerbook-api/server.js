@@ -8,7 +8,6 @@ const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
 const { createRemoteJWKSet, jwtVerify } = require('jose');
 const {
-  awardTabsForRating,
   ensureProfileExists,
   ensureUserTabsProfile,
   getTierMultiplier,
@@ -1884,6 +1883,14 @@ app.post('/api/ratings', softAuthMiddleware, actorMiddleware, asyncHandler(async
 }));
 
 // DELETE /api/ratings/:id — user (JWT) or guest (X-Guest-Id), ownership check
+// KNOWN GAP (pre-launch): This endpoint hard-deletes the rating row but does
+// not touch tabs_ledger. Users who earned a rating_award for this rating keep
+// the tabs after deletion. This is bounded by the weekly cap (cap counts
+// ledger rows, so users cannot exceed 10 awarded ratings per week regardless
+// of deletions), so it is not an economy exploit. The visible symptom is
+// leaderboard/profile inconsistency: a user can show 0 ratings but N
+// lifetime_tabs_earned. Deferred to post-launch. Proper fix is likely
+// soft-delete on ratings + reversal ledger entries. See hardening Day 3 report.
 app.delete('/api/ratings/:id', softAuthMiddleware, actorMiddleware, asyncHandler(async (req, res) => {
   const id = encodeURIComponent(req.params.id);
   const actor = req.actor;
