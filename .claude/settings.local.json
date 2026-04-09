@@ -43,7 +43,14 @@
       "Bash(curl -s -X POST https://auth.beerbookapp.com/realms/daw/protocol/openid-connect/token -d client_id=beerbook-mobile -d grant_type=password -d username=admin -d password=jjaAbFSTZj/szC7S69IaWDAw2yMwk4sv)",
       "Bash(node --test test/beer-of-the-week-fallback.test.js)",
       "Bash(curl -s https://api.beerbook.drinksafterwork.net/api/highlights/beer-of-the-week)",
-      "Bash(node --test)"
+      "Bash(node --test)",
+      "Read(//var/log/**)",
+      "Bash(curl -s -o /tmp/err.json -w \"%{http_code}\\\\n\" https://api.beerbook.drinksafterwork.net/api/ratings/not-a-real-uuid)",
+      "Bash(git:*)",
+      "Bash(chmod +x /tmp/check_unbounded.sh)",
+      "Bash(/tmp/check_unbounded.sh)",
+      "Bash(node -c server.js)",
+      "Bash(curl -sf https://api.beerbook.drinksafterwork.net/api/health)"
     ]
   }
 }

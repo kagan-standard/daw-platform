@@ -31,6 +31,19 @@ const { getBackingInfo } = require('./lib/backingLookup');
 const { maybeOfferHeadToHead } = require('./lib/headToHead');
 const { updateEloAfterComparison } = require('./lib/elo');
 const { deleteAccountForUser } = require('./lib/deleteAccount');
+const asyncHandler = require('./lib/asyncHandler');
+
+// ---------- Process-level error handlers ----------
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[FATAL] Unhandled Rejection at:', promise, 'reason:', reason);
+  // Do not exit — let the request fail gracefully.
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('[FATAL] Uncaught Exception:', err);
+  // Exit so Docker restarts us cleanly. This is intentional.
+  process.exit(1);
+});
 
 const app = express();
 app.set('trust proxy', 1);
@@ -427,6 +440,7 @@ app.use('/api', limiter);
 const routeHelpers = {
   rest,
   totalFromContentRange,
+  isAdmin,
   parsePagination: () => {}, // set after parsePagination is defined
   authMiddleware: () => {}, // set after authMiddleware is defined
   softAuthMiddleware: (req, res, next) => next(),
@@ -1300,7 +1314,7 @@ app.get('/api/config', async (req, res, next) => {
 
 // GET /api/ratings — public, paginated
 // BUG FIX #3: Added validateSort middleware
-app.get('/api/ratings', softAuthMiddleware, validateSort, async (req, res) => {
+app.get('/api/ratings', softAuthMiddleware, validateSort, asyncHandler(async (req, res) => {
   const { limit, offset, sort, order } = parsePagination(req);
   const orderDir = order === 'asc' ? 'asc' : 'desc';
   const feed = String(req.query.feed || '').trim();
@@ -1354,10 +1368,10 @@ app.get('/api/ratings', softAuthMiddleware, validateSort, async (req, res) => {
     data: enriched,
     pagination: { limit, offset, total },
   });
-});
+}));
 
 // GET /api/ratings/user/:id — public, paginated
-app.get('/api/ratings/user/:id', softAuthMiddleware, validateSort, async (req, res) => {
+app.get('/api/ratings/user/:id', softAuthMiddleware, validateSort, asyncHandler(async (req, res) => {
   const { limit, offset, sort, order } = parsePagination(req);
   const orderDir = order === 'asc' ? 'asc' : 'desc';
   const id = encodeURIComponent(req.params.id);
@@ -1377,7 +1391,7 @@ app.get('/api/ratings/user/:id', softAuthMiddleware, validateSort, async (req, r
     data: enriched,
     pagination: { limit, offset, total },
   });
-});
+}));
 
 const RATING_DB_COLUMNS = new Set([
   'user_id',
@@ -1446,7 +1460,7 @@ async function backfillCatalogFromRating(rest, beerId, ratingStyle, ratingAbv) {
 
 // POST /api/ratings — user (JWT) or guest (X-Guest-Id when ENABLE_GUEST_RATINGS). YG-only: yg_value required.
 // Phase 2.1: lat/lng, location_name, venue_id, photo_url. Tabs/achievements/milestones only for authenticated users.
-app.post('/api/ratings', softAuthMiddleware, actorMiddleware, async (req, res) => {
+app.post('/api/ratings', softAuthMiddleware, actorMiddleware, asyncHandler(async (req, res) => {
   const actor = req.actor;
   const isUser = actor.type === 'user';
   const sub = isUser ? actor.sub : null;
@@ -1867,10 +1881,10 @@ app.post('/api/ratings', softAuthMiddleware, actorMiddleware, async (req, res) =
     responsePayload.head_to_head = headToHead;
   }
   res.status(201).json(responsePayload);
-});
+}));
 
 // DELETE /api/ratings/:id — user (JWT) or guest (X-Guest-Id), ownership check
-app.delete('/api/ratings/:id', softAuthMiddleware, actorMiddleware, async (req, res) => {
+app.delete('/api/ratings/:id', softAuthMiddleware, actorMiddleware, asyncHandler(async (req, res) => {
   const id = encodeURIComponent(req.params.id);
   const actor = req.actor;
   let getPath;
@@ -1888,10 +1902,10 @@ app.delete('/api/ratings/:id', softAuthMiddleware, actorMiddleware, async (req, 
     return res.status(502).json({ error: 'Delete failed' });
   }
   res.status(204).end();
-});
+}));
 
 // PATCH /api/ratings/:id — edit existing rating by ID (user or guest). Content update only; no tabs/achievements.
-app.patch('/api/ratings/:id', softAuthMiddleware, actorMiddleware, async (req, res) => {
+app.patch('/api/ratings/:id', softAuthMiddleware, actorMiddleware, asyncHandler(async (req, res) => {
   const id = req.params.id;
   if (!id || typeof id !== 'string' || id.trim() === '') {
     return res.status(400).json({ error: 'Rating id is required' });
@@ -2033,10 +2047,10 @@ app.patch('/api/ratings/:id', softAuthMiddleware, actorMiddleware, async (req, r
     ? (await overlayCatalogBeerOnRatings([updatedRow], rest))[0] || updatedRow
     : updatedRow;
   return res.status(200).json({ data: withCatalogRow || existingRows[0] });
-});
+}));
 
 // POST /api/guest-ratings/claim — auth required. Reassign guest-owned ratings to user; on conflict (same beer/venue) keep user rating, discard guest.
-app.post('/api/guest-ratings/claim', authMiddleware, async (req, res) => {
+app.post('/api/guest-ratings/claim', authMiddleware, asyncHandler(async (req, res) => {
   const { sub, preferred_username } = req.claims;
   const guestIdRaw = req.body?.guest_id ?? req.body?.guestId;
   const result = validateGuestId(guestIdRaw);
@@ -2092,11 +2106,11 @@ app.post('/api/guest-ratings/claim', authMiddleware, async (req, res) => {
   }
 
   res.status(200).json({ claimed, discarded });
-});
+}));
 
 // ---------- Head-to-head (Phase 1): complete and skip; auth required, idempotent ----------
 // POST /api/head-to-head/:id/complete — body { winner_rating_id }; records result, marks prompt completed.
-app.post('/api/head-to-head/:id/complete', authMiddleware, async (req, res) => {
+app.post('/api/head-to-head/:id/complete', authMiddleware, asyncHandler(async (req, res) => {
   const promptId = (req.params.id || '').trim();
   const winnerRatingId = req.body?.winner_rating_id ?? req.body?.winnerRatingId ?? null;
   if (!promptId) {
@@ -2163,10 +2177,10 @@ app.post('/api/head-to-head/:id/complete', authMiddleware, async (req, res) => {
     reward_tabs: rewardTabs,
     tabs_earned: rewardTabs,
   });
-});
+}));
 
 // POST /api/head-to-head/:id/skip — no body; marks prompt skipped, idempotent.
-app.post('/api/head-to-head/:id/skip', authMiddleware, async (req, res) => {
+app.post('/api/head-to-head/:id/skip', authMiddleware, asyncHandler(async (req, res) => {
   const promptId = (req.params.id || '').trim();
   if (!promptId) {
     return res.status(400).json({ error: 'Head-to-head prompt id is required' });
@@ -2191,10 +2205,10 @@ app.post('/api/head-to-head/:id/skip', authMiddleware, async (req, res) => {
     body: JSON.stringify({ status: 'skipped' }),
   });
   return res.status(200).json({ success: true });
-});
+}));
 
 // GET /api/ratings/:id/comments — public, paginated, newest first
-app.get('/api/ratings/:id/comments', async (req, res) => {
+app.get('/api/ratings/:id/comments', asyncHandler(async (req, res) => {
   const id = encodeURIComponent(req.params.id);
   const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 100);
   const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
@@ -2205,10 +2219,10 @@ app.get('/api/ratings/:id/comments', async (req, res) => {
     return res.status(status >= 500 ? 502 : status).json(body || { error: 'Failed to fetch comments' });
   }
   res.json({ data: Array.isArray(body) ? body : [] });
-});
+}));
 
 // POST /api/ratings/:id/comments — auth required, creates comment and increments comment_count (atomic RPC)
-app.post('/api/ratings/:id/comments', authMiddleware, async (req, res) => {
+app.post('/api/ratings/:id/comments', authMiddleware, asyncHandler(async (req, res) => {
   const id = encodeURIComponent(req.params.id);
   const { body: bodyText } = req.body || {};
   const userId = req.claims.sub;
@@ -2242,10 +2256,10 @@ app.post('/api/ratings/:id/comments', authMiddleware, async (req, res) => {
 
   const row = comment && typeof comment === 'object' && !Array.isArray(comment) ? comment : null;
   res.status(201).json({ data: row || { rating_id: id, user_id: userId, user_name: userName, body: trimmed } });
-});
+}));
 
 // DELETE /api/ratings/:id/comments/:commentId — auth required, author only; atomic delete + decrement RPC
-app.delete('/api/ratings/:id/comments/:commentId', authMiddleware, async (req, res) => {
+app.delete('/api/ratings/:id/comments/:commentId', authMiddleware, asyncHandler(async (req, res) => {
   const commentId = encodeURIComponent(req.params.commentId);
   const userId = req.claims.sub;
 
@@ -2269,7 +2283,7 @@ app.delete('/api/ratings/:id/comments/:commentId', authMiddleware, async (req, r
   }
 
   res.status(200).json({ success: true });
-});
+}));
 
 // GET /api/profile and /api/profile/me — auth required, get or create
 // BUG FIX #5: Added Prefer: return=representation on profile creation
@@ -2309,7 +2323,7 @@ app.get('/api/profile', authMiddleware, handleProfileRequest);
 app.get('/api/profile/me', authMiddleware, handleProfileRequest);
 
 // PATCH /api/profile — auth required, partial profile update
-app.patch('/api/profile', authMiddleware, async (req, res) => {
+app.patch('/api/profile', authMiddleware, asyncHandler(async (req, res) => {
   const { sub, preferred_username, email } = req.claims;
   const body = req.body && typeof req.body === 'object' ? req.body : {};
   const updates = {};
@@ -2368,7 +2382,7 @@ app.patch('/api/profile', authMiddleware, async (req, res) => {
     ...enriched,
     is_admin: isAdmin(sub),
   });
-});
+}));
 
 function remapStatsToStyleFamilies(stats) {
   if (!stats || typeof stats !== 'object') return stats ?? {};
@@ -2459,7 +2473,7 @@ app.get('/api/stats/:userId', async (req, res) => {
 
 // GET /api/stats — public, paginated (beer_averages + summary counts)
 // BUG FIX #4: Use count=exact on beer_averages to get accurate totalBeers
-app.get('/api/stats', softAuthMiddleware, async (req, res) => {
+app.get('/api/stats', softAuthMiddleware, asyncHandler(async (req, res) => {
   const crewId = String(req.query.crew_id || '').trim();
   const { limit, offset } = parsePagination(req);
   if (crewId) {
@@ -2523,7 +2537,7 @@ app.get('/api/stats', softAuthMiddleware, async (req, res) => {
       totalUsers,
     },
   });
-});
+}));
 
 // ---------- Phase 2.6: Share-URL resolution — /review/:ratingId ----------
 const reviewLinkLimiter = rateLimit({
@@ -2579,6 +2593,20 @@ app.use((err, req, res, next) => {
     return res.status(400).json({ error: err.message });
   }
   next(err);
+});
+
+// Generic error handler — catches anything asyncHandler or Multer handler didn't handle
+app.use((err, req, res, next) => {
+  const requestId = req.headers['x-request-id'] || 'unknown';
+  console.error(`[ERROR] [${requestId}] ${req.method} ${req.path}:`, err);
+  if (res.headersSent) {
+    return next(err);
+  }
+  res.status(err.status || 500).json({
+    error: 'internal_server_error',
+    message: process.env.NODE_ENV === 'production' ? 'An unexpected error occurred' : err.message,
+    request_id: requestId,
+  });
 });
 
 // ---------- Startup ----------
