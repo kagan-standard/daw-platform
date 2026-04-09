@@ -1730,6 +1730,8 @@ docker exec -e PGPASSWORD=$(grep <DB_PASSWORD_ENV_VAR> <ENV_FILE> | cut -d= -f2)
 
 - **elo-snapshot idempotency** — Cron runs once daily, you'd have to manually re-run to create duplicates. Genuinely low risk pre-launch.
 
+- **Rating deletion does not reverse rating_award ledger entries** — Bounded by weekly cap; not an economy exploit. Creates visible profile/leaderboard inconsistency. Proper fix is soft-delete pattern on ratings table plus compensating ledger entries. Candidate for first post-launch sprint.
+
 - **Cron failure alerting** — Sentry covers the API. Cron alerting is a separate integration (Slack webhook from each script). Post-launch.
 
 - **Retroactively committing LIVE-ONLY schema items to the repo** — The discovery phase (P0.0.4) will surface functions/indexes that exist on the VPS but not in the repo migration files. This plan documents them but does not commit them retroactively. That's a separate cleanup task because deciding the right migration timestamp and ordering for already-applied schema is its own design question.
