@@ -1730,7 +1730,7 @@ docker exec -e PGPASSWORD=$(grep <DB_PASSWORD_ENV_VAR> <ENV_FILE> | cut -d= -f2)
 
 - **elo-snapshot idempotency** — Cron runs once daily, you'd have to manually re-run to create duplicates. Genuinely low risk pre-launch.
 
-- **Rating deletion does not reverse rating_award ledger entries** — Bounded by weekly cap; not an economy exploit. Creates visible profile/leaderboard inconsistency. Proper fix is soft-delete pattern on ratings table plus compensating ledger entries. Candidate for first post-launch sprint.
+- **Rating deletion does not reverse rating_award ledger entries** — Bounded by weekly cap; not an economy exploit. Creates visible profile/leaderboard inconsistency. Proper fix is soft-delete pattern on ratings table plus compensating ledger entries. Candidate for first post-launch sprint. Additionally, rating deletion cascade-destroys H2H prompts, results, and beer_elo_events while leaving beer_elo_ratings changes orphaned (comparison_count and global_elo survive without audit trail). See `t3-10-elo-audit.md` section 5 for full explanation.
 
 - **Cron failure alerting** — Sentry covers the API. Cron alerting is a separate integration (Slack webhook from each script). Post-launch.
 
