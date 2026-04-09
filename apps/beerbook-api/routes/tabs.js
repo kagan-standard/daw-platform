@@ -1317,21 +1317,31 @@ module.exports = function tabsRoutes(opts) {
   // GET /api/admin/tabs/stats
   router.get('/admin/tabs/stats', authMiddleware, adminMiddleware, async (req, res, next) => {
     try {
-      const [usersOut, tabsOut] = await Promise.all([
+      const [usersOut, tabsOut, circulationOut] = await Promise.all([
         rest('GET', '/profiles?select=id&limit=1', { headers: { Prefer: 'count=exact' } }),
         rest('GET', '/user_tabs_profile?limit=5000'),
+        // tabs_in_circulation is now sourced from profiles.tabs_balance, which is
+        // maintained by the tabs_ledger_after_insert trigger as the ground-truth
+        // balance field. The previous implementation summed user_tabs_profile.tab_balance,
+        // which was a dead-write column that drifted to zero after legacy JS writers
+        // were retired. See hardening Day 3 report for migration history.
+        // TODO(scale): paginate when user count exceeds ~5000
+        rest('GET', '/profiles?select=tabs_balance&tabs_balance=gt.0&limit=10000'),
       ]);
-      if (usersOut.status >= 400 || tabsOut.status >= 400) {
+      if (usersOut.status >= 400 || tabsOut.status >= 400 || circulationOut.status >= 400) {
         return res.status(502).json({ error: 'Failed to fetch tabs stats' });
       }
       const tabs = Array.isArray(tabsOut.body) ? tabsOut.body : [];
+      const circulationRows = Array.isArray(circulationOut.body) ? circulationOut.body : [];
       const byTier = {};
-      let inCirculation = 0;
       tabs.forEach((row) => {
         const tier = row.current_tier || 'taster';
         byTier[tier] = (byTier[tier] || 0) + 1;
-        inCirculation += Number(row.tab_balance) || 0;
       });
+      const inCirculation = circulationRows.reduce(
+        (sum, row) => sum + (Number(row.tabs_balance) || 0),
+        0
+      );
       res.json({
         total_users: totalFromContentRange(usersOut.headers['content-range']) ?? 0,
         users_with_tabs_profile: tabs.length,
