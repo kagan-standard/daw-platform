@@ -6,7 +6,7 @@
 
 const { styleToFamily } = require('./styleFamily');
 
-const HEAD_TO_HEAD_REWARD_TABS = Number(process.env.HEAD_TO_HEAD_REWARD_TABS) || 2;
+const HEAD_TO_HEAD_REWARD_TABS = Number(process.env.HEAD_TO_HEAD_REWARD_TABS) || 10;
 const HEAD_TO_HEAD_YG_TOLERANCE = 2;
 
 /**
