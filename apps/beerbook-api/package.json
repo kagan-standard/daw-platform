@@ -13,12 +13,15 @@
     "push:token-prune": "node scripts/push-token-prune.js",
     "ci:check-migrations": "node scripts/check-migration-safety.js"
   },
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "overrides": {
     "@tootallnate/once": ">=3.0.1"
   },
   "dependencies": {
     "@google-cloud/vision": "^4.0.0",
+    "@sentry/node": "^10.48.0",
     "express": "^4.21.0",
     "express-rate-limit": "^7.2.0",
     "jose": "^5.9.6",

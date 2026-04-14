@@ -99,6 +99,8 @@ services:
       UPLOAD_DIR: "/data/uploads"
       ADMIN_USER_ID: ${ADMIN_USER_ID}
       INTERNAL_PROCESS_EVENT_SECRET: ${INTERNAL_PROCESS_EVENT_SECRET}
+      SENTRY_DSN: ${SENTRY_DSN}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT}
     depends_on:
       supabase-rest: { condition: service_started }
     networks:

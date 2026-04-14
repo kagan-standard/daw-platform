@@ -2,6 +2,16 @@
  * BeerBook API — BFF: Keycloak JWT validation, pagination, rate limit, CORS.
  * Proxies to PostgREST (internal) with SUPABASE_SERVICE_ROLE_KEY.
  */
+const Sentry = require('@sentry/node');
+
+if (process.env.SENTRY_DSN) {
+  Sentry.init({
+    dsn: process.env.SENTRY_DSN,
+    environment: process.env.SENTRY_ENVIRONMENT || 'production',
+    tracesSampleRate: 0.1,
+  });
+}
+
 const express = require('express');
 const path = require('path');
 const crypto = require('crypto');
@@ -34,6 +44,7 @@ const asyncHandler = require('./lib/asyncHandler');
 
 // ---------- Process-level error handlers ----------
 process.on('unhandledRejection', (reason, promise) => {
+  if (process.env.SENTRY_DSN) { Sentry.captureException(reason); }
   console.error('[FATAL] Unhandled Rejection at:', promise, 'reason:', reason);
   // Do not exit — let the request fail gracefully.
 });
@@ -2633,6 +2644,9 @@ app.get('/review/:ratingId', reviewLinkLimiter, async (req, res) => {
   }
 });
 
+// Sentry error handler — must be before other error middleware
+if (process.env.SENTRY_DSN) { Sentry.setupExpressErrorHandler(app); }
+
 // Multer error handling (for upload routes)
 const multer = require('multer');
 app.use((err, req, res, next) => {
@@ -2650,6 +2664,7 @@ app.use((err, req, res, next) => {
 
 // Generic error handler — catches anything asyncHandler or Multer handler didn't handle
 app.use((err, req, res, next) => {
+  if (process.env.SENTRY_DSN) { Sentry.captureException(err); }
   const requestId = req.headers['x-request-id'] || 'unknown';
   console.error(`[ERROR] [${requestId}] ${req.method} ${req.path}:`, err);
   if (res.headersSent) {
