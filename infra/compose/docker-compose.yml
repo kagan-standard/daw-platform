@@ -114,6 +114,19 @@ services:
       - "traefik.http.routers.beerbook-api.tls=true"
       - "traefik.http.routers.beerbook-api.tls.certresolver=default"
       - "traefik.http.services.beerbook-api.loadbalancer.server.port=3001"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3001/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+    mem_limit: 512m
 
   # ---------- Keycloak DB (internal only) ----------
   keycloak-db:
@@ -160,6 +173,8 @@ services:
       PGRST_DB_SCHEMAS: public
       PGRST_DB_ANON_ROLE: anon
       PGRST_JWT_SECRET: ${PGRST_JWT_SECRET}
+      PGRST_DB_POOL: "25"
+      PGRST_DB_MAX_ROWS: "5000"
     depends_on:
       supabase-db: { condition: service_healthy }
     networks:
