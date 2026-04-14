@@ -1,0 +1,28 @@
+-- T3.9c: Add h2h_award event type support to tabs economy.
+--
+-- BACKGROUND
+-- ----------
+-- POST /api/head-to-head/:id/complete returned tabs_earned in the response
+-- but never inserted a ledger row. This migration supports the new h2h_award
+-- event type. Code changes in server.js grant the tabs via tabs_ledger INSERT.
+--
+-- SCHEMA CHANGES
+-- ----------
+-- tabs_ledger.event_type has NO CHECK constraint (plain text column).
+-- No schema change required — h2h_award rows can be inserted immediately.
+--
+-- tab_notifications.notification_type has a CHECK constraint but does not
+-- need h2h_award — the completion response returns tabs_earned directly
+-- to the client; no async notification is sent.
+--
+-- tabs_ledger_after_insert trigger handles h2h_award automatically:
+--   - profiles.tabs_balance += amount
+--   - user_tabs_profile.lifetime_tabs_earned += amount (for positive amounts)
+--
+-- This migration is intentionally empty (documentation only). The event type
+-- is established by the first INSERT from the updated complete handler.
+-- Keeping the migration file for audit trail and to maintain the convention
+-- that every economy change has a corresponding migration timestamp.
+
+-- No-op: tabs_ledger.event_type is unconstrained text.
+SELECT 1;

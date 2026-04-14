@@ -2178,11 +2178,57 @@ app.post('/api/head-to-head/:id/complete', authMiddleware, asyncHandler(async (r
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ status: 'completed' }),
   });
-  const rewardTabs = prompt.reward_tabs ?? 0;
+
+  // Grant h2h_award tabs via ledger (trigger maintains profiles.tabs_balance
+  // and user_tabs_profile.lifetime_tabs_earned automatically).
+  const baseReward = Number(prompt.reward_tabs) || 0;
+  let tabsEarned = 0;
+  if (baseReward > 0) {
+    try {
+      const profile = await ensureUserTabsProfile(rest, sub, {});
+      const tierInfo = await getTierMultiplier(rest, profile.current_tier);
+      const tierMult = Number(tierInfo.multiplier) || 1.0;
+      const seederMult = profile.is_seeder ? 1.5 : 1.0;
+      const finalAmount = Math.round(baseReward * tierMult * seederMult);
+
+      const ledgerRes = await rest('POST', '/tabs_ledger', {
+        body: JSON.stringify({
+          event_id: prompt.id,
+          user_id: sub,
+          event_type: 'h2h_award',
+          amount: finalAmount,
+          breakdown: {
+            base: baseReward,
+            tier_multiplier: tierMult,
+            seeder_multiplier: seederMult,
+            prompt_id: prompt.id,
+            winner_beer_id: winnerBeerId,
+            loser_beer_id: loserBeerId,
+          },
+          context: {
+            prompt_id: prompt.id,
+            winner_rating_id: wid,
+            loser_rating_id: loserRatingId,
+          },
+        }),
+      });
+      if (ledgerRes.status < 400) {
+        tabsEarned = finalAmount;
+      } else if (ledgerRes.body?.code === '23505') {
+        // Idempotent: prompt already granted (duplicate event_id)
+        tabsEarned = finalAmount;
+      } else {
+        console.error('h2h_award ledger insert failed:', ledgerRes.status, ledgerRes.body);
+      }
+    } catch (err) {
+      console.error('h2h_award tab grant failed (non-blocking):', err?.message || err);
+    }
+  }
+
   return res.status(200).json({
     success: true,
-    reward_tabs: rewardTabs,
-    tabs_earned: rewardTabs,
+    reward_tabs: tabsEarned,
+    tabs_earned: tabsEarned,
   });
 }));
 
