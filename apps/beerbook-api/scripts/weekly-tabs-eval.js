@@ -113,78 +113,41 @@ async function run(restFn) {
     // ---- Paginated profile fetch ----
     const profiles = await fetchAllProfiles(rest);
     const requirements = await rest('GET', '/tier_requirements?order=display_order.asc');
-    const reqByTier = new Map(requirements.map((r) => [r.tier, r]));
+    const reqByTier = new Map((requirements || []).map((r) => [r.tier, r]));
+    let usersProcessed = 0;
 
     for (const profile of profiles) {
-      const userId = profile.user_id;
-      const encodedUser = encodeURIComponent(userId);
-
-      // Fetch previous week's ratings to check maintenance threshold
-      const ratings = await rest(
-        'GET',
-        `/ratings?user_id=eq.${encodedUser}&created_at=gte.${encodeURIComponent(from)}&created_at=lte.${encodeURIComponent(to)}&select=id&limit=1000`
-      );
-      const ratingsCount = Array.isArray(ratings) ? ratings.length : 0;
-
-      let currentTier = profile.current_tier || 'taster';
-      const currentReq = reqByTier.get(currentTier);
-      const maintenanceMin = Number(currentReq?.maintenance_ratings_per_week || 2);
-
-      // Trust the RPC-cached streak (tier-aware since migration 20260426140000)
-      let currentStreak = Number(profile.current_streak_weeks) || 0;
-      let weeksInactive = Number(profile.weeks_inactive) || 0;
-      let notification = null;
-
-      // ── Maintenance demotion: below maintenance_ratings_per_week → increment weeks_inactive
-      if (ratingsCount >= maintenanceMin) {
-        weeksInactive = 0;
-      } else {
-        weeksInactive += 1;
-        if (weeksInactive >= 4) {
-          const idx = TIERS.indexOf(currentTier);
-          if (idx > 0) {
-            currentTier = TIERS[idx - 1];
-            notification = {
-              type: 'tier_demotion',
-              title: 'Tier adjusted',
-              message: `You have been moved to ${currentTier.replace('_', ' ')} after falling below the activity minimum.`,
-            };
-          }
-          weeksInactive = 0;
+      try {
+        const result = await rest('POST', '/rpc/eval_user_weekly_tabs', {
+          p_user_id: profile.user_id,
+          p_window_start: from,
+          p_window_end: to,
+        });
+        const row = Array.isArray(result) ? result[0] : result;
+        if (!row) {
+          console.log(`[weekly-eval] ${profile.user_id}: no profile row returned, skipping`);
+          continue;
         }
-      }
 
-      // ── Promotion: streak already encodes that user met next tier's full weekly bar
-      const nextTier = TIERS[TIERS.indexOf(currentTier) + 1];
-      if (nextTier) {
-        const nextReq = reqByTier.get(nextTier);
-        if (currentStreak >= Number(nextReq?.required_consecutive_weeks || 0)) {
-          currentTier = nextTier;
-          currentStreak = 0; // reset streak on promotion
-          notification = {
-            type: 'tier_promotion',
-            title: 'Tier promotion',
-            message: `Congratulations! You reached ${nextReq.display_name}.`,
-          };
+        console.log(
+          `[weekly-eval] ${profile.user_id}: tier ${row.prev_tier}->${row.new_tier}`
+          + ` streak ${row.prev_streak}->${row.new_streak}`
+          + ` inactive ${row.prev_weeks_inactive}->${row.new_weeks_inactive}`
+          + ` (prior=${row.prior_week_ratings_count}, promoted=${row.promoted}, demoted=${row.demoted})`
+        );
+
+        if (row.promoted) {
+          const displayName = reqByTier.get(row.new_tier)?.display_name || row.new_tier.replace('_', ' ');
+          await sendNotification(rest, profile.user_id, 'tier_promotion', 'Tier promotion',
+            `Congratulations! You reached ${displayName}.`, weekStart);
+        } else if (row.demoted) {
+          await sendNotification(rest, profile.user_id, 'tier_demotion', 'Tier adjusted',
+            `You have been moved to ${row.new_tier.replace('_', ' ')} after falling below the activity minimum.`, weekStart);
         }
-      }
 
-      await rest('PATCH', `/user_tabs_profile?user_id=eq.${encodedUser}`, {
-        current_tier: currentTier,
-        current_streak_weeks: currentStreak,
-        weeks_inactive: weeksInactive,
-        // ratings_this_week is now computed live via count_ratings_this_week RPC;
-        // this reset is a non-authoritative cache update for consistency only.
-        ratings_this_week: 0,
-        reviews_this_week: 0,
-        contributions_this_week: 0,
-        week_start: weekStart,
-        tier_promoted_at: currentTier !== profile.current_tier ? new Date().toISOString() : profile.tier_promoted_at,
-        updated_at: new Date().toISOString(),
-      });
-
-      if (notification) {
-        await sendNotification(rest, userId, notification.type, notification.title, notification.message, weekStart);
+        usersProcessed++;
+      } catch (err) {
+        console.error(`[weekly-eval] ${profile.user_id} failed:`, err);
       }
     }
 
@@ -192,10 +155,10 @@ async function run(restFn) {
     await rest('POST', '/rpc/complete_job_run', {
       p_job_name: JOB_NAME,
       p_week_start: weekStart,
-      p_users_processed: profiles.length,
+      p_users_processed: usersProcessed,
     });
 
-    console.log(`Weekly tabs eval completed for ${profiles.length} users`);
+    console.log(`Weekly tabs eval completed for ${usersProcessed} users`);
   } catch (err) {
     // ---- Mark job failed (allows retry) ----
     try {
