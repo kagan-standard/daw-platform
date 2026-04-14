@@ -41,6 +41,24 @@ const { maybeOfferHeadToHead } = require('./lib/headToHead');
 const { updateEloAfterComparison } = require('./lib/elo');
 const { deleteAccountForUser } = require('./lib/deleteAccount');
 const asyncHandler = require('./lib/asyncHandler');
+const pino = require('pino');
+const pinoHttp = require('pino-http');
+
+const logger = pino({
+  level: process.env.LOG_LEVEL || 'info',
+  base: { service: 'beerbook-api' },
+  timestamp: pino.stdTimeFunctions.isoTime,
+});
+
+const httpLogger = pinoHttp({
+  logger,
+  genReqId: (req) => req.requestId,
+  customLogLevel: (req, res, err) => {
+    if (err || res.statusCode >= 500) return 'error';
+    if (res.statusCode >= 400) return 'warn';
+    return 'info';
+  },
+});
 
 // ---------- Process-level error handlers ----------
 process.on('unhandledRejection', (reason, promise) => {
@@ -404,6 +422,7 @@ function corsMiddleware(req, res, next) {
 
 app.use(corsMiddleware);
 app.use(requestIdMiddleware);
+app.use(httpLogger);
 app.use(express.json());
 // Serve static assets from /public at the root path (e.g., /images/...)
 app.use(express.static(path.join(__dirname, 'public')));
@@ -1468,9 +1487,28 @@ async function backfillCatalogFromRating(rest, beerId, ratingStyle, ratingAbv) {
   }
 }
 
+// Per-user rate limit: 20 ratings/min. Keyed by JWT sub (authed) or IP (guest).
+// Layered on top of the global /api limiter — this one is stricter and route-scoped.
+const ratingLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.claims?.sub || req.ip,
+  handler: (req, res) => {
+    res.setHeader('Retry-After', '60');
+    res.status(429).json({
+      error_code: 'RATE_LIMITED',
+      error: 'Too Many Requests',
+      retryAfter: 60,
+      request_id: req.requestId || null,
+    });
+  },
+});
+
 // POST /api/ratings — user (JWT) or guest (X-Guest-Id when ENABLE_GUEST_RATINGS). YG-only: yg_value required.
 // Phase 2.1: lat/lng, location_name, venue_id, photo_url. Tabs/achievements/milestones only for authenticated users.
-app.post('/api/ratings', softAuthMiddleware, actorMiddleware, asyncHandler(async (req, res) => {
+app.post('/api/ratings', softAuthMiddleware, ratingLimiter, actorMiddleware, asyncHandler(async (req, res) => {
   const actor = req.actor;
   const isUser = actor.type === 'user';
   const sub = isUser ? actor.sub : null;
@@ -2665,8 +2703,8 @@ app.use((err, req, res, next) => {
 // Generic error handler — catches anything asyncHandler or Multer handler didn't handle
 app.use((err, req, res, next) => {
   if (process.env.SENTRY_DSN) { Sentry.captureException(err); }
-  const requestId = req.headers['x-request-id'] || 'unknown';
-  console.error(`[ERROR] [${requestId}] ${req.method} ${req.path}:`, err);
+  const requestId = req.requestId || 'unknown';
+  logger.error({ err, requestId, method: req.method, path: req.path }, 'request_error');
   if (res.headersSent) {
     return next(err);
   }
